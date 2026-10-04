@@ -419,6 +419,7 @@ pub fn profiles(ui: &mut egui::Ui, state: &mut AppState) {
                         convars: ConVarEdits::default(),
                         video: Default::default(),
                         hud: Default::default(),
+                        addons: Default::default(),
                     };
                     picked = Some((profile, false));
                     state.ui.new_profile_name.clear();

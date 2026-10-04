@@ -12,6 +12,7 @@ path = "src/main.rs"
 [features]
 default = []
 remote = ["dep:tiny_http"]
+fetch = ["dt-core/fetch"]
 
 [dependencies]
 dt-core.workspace = true

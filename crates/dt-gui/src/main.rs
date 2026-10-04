@@ -14,6 +14,7 @@ mod remote;
 mod settings;
 mod simple;
 mod state;
+mod theme;
 mod views;
 
 use std::path::PathBuf;

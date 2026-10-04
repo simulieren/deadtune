@@ -104,6 +104,7 @@ impl App {
 
     /// Called once the window exists, for things that need the egui context.
     pub fn started(mut self, ctx: &egui::Context) -> App {
+        crate::theme::install(ctx);
         self.game_poll = Some(spawn_game_poll(ctx.clone()));
         self
     }

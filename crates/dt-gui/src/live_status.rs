@@ -87,25 +87,102 @@ pub fn launch_control(ui: &mut Ui, state: &mut AppState, fit: Fit) {
         }
         return;
     }
-    let (text, size, min) = match fit {
-        Fit::Wide => ("Launch Deadlock", 14.0, vec2(ui.available_width(), 34.0)),
-        Fit::Chip => ("Launch Deadlock", 12.0, vec2(0.0, 24.0)),
-        Fit::Dot => ("Launch", 12.0, vec2(0.0, 22.0)),
+    let safe = state.settings.safe_mode;
+    let menu_width = 26.0;
+    let (text, size, min) = match (fit, safe) {
+        (Fit::Wide, false) => (
+            "Launch Deadlock",
+            14.0,
+            vec2(ui.available_width() - menu_width - 4.0, 34.0),
+        ),
+        (Fit::Wide, true) => (
+            "Launch (safe mode)",
+            14.0,
+            vec2(ui.available_width() - menu_width - 4.0, 34.0),
+        ),
+        (Fit::Chip, false) => ("Launch Deadlock", 12.0, vec2(0.0, 24.0)),
+        (Fit::Chip, true) => ("Launch (safe mode)", 12.0, vec2(0.0, 24.0)),
+        (Fit::Dot, _) => ("Launch", 12.0, vec2(0.0, 22.0)),
     };
-    let launch = egui::Button::new(RichText::new(text).size(size).strong().color(ON_ACCENT))
-        .fill(ACCENT)
-        .min_size(min);
-    if ui
-        .add(launch)
-        .on_hover_text(format!(
+    let launch = || {
+        egui::Button::new(RichText::new(text).size(size).strong().color(ON_ACCENT))
+            .fill(if safe { WARN } else { ACCENT })
+            .min_size(min)
+    };
+    let hover = if safe {
+        "Safe mode: every DeadTune pak is out of the game folder. Starts Deadlock through Steam \
+         with DeadTune's boot cfg."
+            .to_string()
+    } else {
+        format!(
             "Starts Deadlock through Steam with DeadTune's boot cfg: {}",
             state.launch_args().args.join(" ")
-        ))
-        .clicked()
-        && let Err(e) = state.launch_game()
-    {
-        state.status = Some(Status::Error(format!("launch: {e}")));
+        )
+    };
+    let parts = |ui: &mut Ui, state: &mut AppState| {
+        if ui.add(launch()).on_hover_text(&hover).clicked()
+            && let Err(e) = state.launch_game()
+        {
+            state.status = Some(Status::Error(format!("launch: {e}")));
+        }
+        launch_menu(ui, state, fit);
+    };
+    if rtl {
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            parts(ui, state);
+        });
+    } else {
+        parts(ui, state);
     }
+}
+
+/// The small menu beside Launch: safe mode on (removes every DeadTune pak now, keeps the
+/// profile) and off (puts them back through the normal Apply).
+fn launch_menu(ui: &mut Ui, state: &mut AppState, fit: Fit) {
+    let safe = state.settings.safe_mode;
+    let height = match fit {
+        Fit::Wide => 34.0,
+        Fit::Chip => 24.0,
+        Fit::Dot => 22.0,
+    };
+    let button =
+        egui::Button::new(RichText::new("v").size(11.0).color(TEXT)).min_size(vec2(26.0, height));
+    egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
+        if safe {
+            if ui
+                .button("Restore addons")
+                .on_hover_text("Puts every addon the profile has on back into the game folder.")
+                .clicked()
+            {
+                ui.close();
+                state.status = Some(match state.toggle_safe_mode() {
+                    Ok(_) => Status::Info(
+                        "Addons restored. They load the next time Deadlock starts.".into(),
+                    ),
+                    Err(e) => Status::Error(e),
+                });
+            }
+        } else if ui
+            .button("Safe mode: launch without addons")
+            .on_hover_text(
+                "Removes every DeadTune pak from game/citadel/addons right now (other mods stay), \
+                 remembers what was on, and starts Deadlock. Restore addons from this menu later.",
+            )
+            .clicked()
+        {
+            ui.close();
+            state.status = Some(match state.toggle_safe_mode() {
+                Ok(_) => match state.launch_game() {
+                    Ok(()) => Status::Info(
+                        "Safe mode: DeadTune's addons are out of the game folder until you restore them."
+                            .into(),
+                    ),
+                    Err(e) => Status::Error(format!("launch: {e}")),
+                },
+                Err(e) => Status::Error(e),
+            });
+        }
+    });
 }
 
 fn results_tip(results: &[(String, Outcome)], transcript: &[String]) -> String {

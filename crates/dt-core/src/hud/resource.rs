@@ -173,15 +173,25 @@ pub fn style_text(res: &Resource) -> Result<&str, ResourceError> {
     data_text(&data_block(res)?.data, res.type_version)
 }
 
+/// The image table bytes of a compiled stylesheet (DATA between the CRC and the text).
+pub fn image_table(res: &Resource) -> Result<&[u8], ResourceError> {
+    let data = &data_block(res)?.data;
+    Ok(&data[4..text_offset(data, res.type_version)?])
+}
+
+/// The compiler's source CRC, which the DATA prefix hides behind the text's own CRC. Two
+/// stylesheets built from the same source share it whatever their text says.
+pub fn source_crc(res: &Resource) -> Result<u32, ResourceError> {
+    let data = &data_block(res)?.data;
+    Ok(u32_at(data, 0)? ^ crc32(data_text(data, res.type_version)?.as_bytes()))
+}
+
 /// Replaces the stylesheet text, keeping the image table, and recomputes the DATA prefix as
 /// `source_crc ^ crc32(text)`, where `source_crc = old_prefix ^ crc32(old_text)`.
 pub fn with_style_text(res: &Resource, text: &str) -> Result<Resource, ResourceError> {
     let old = &data_block(res)?.data;
     let offset = text_offset(old, res.type_version)?;
-    let old_text = data_text(old, res.type_version)?;
-    let old_prefix = u32_at(old, 0)?;
-    let source_crc = old_prefix ^ crc32(old_text.as_bytes());
-    let prefix = source_crc ^ crc32(text.as_bytes());
+    let prefix = source_crc(res)? ^ crc32(text.as_bytes());
 
     let mut data = Vec::with_capacity(offset + text.len());
     data.extend_from_slice(&prefix.to_le_bytes());
@@ -283,16 +293,23 @@ mod tests {
     fn new_text_prefix_relation() {
         let res = Resource::parse(SMALL).unwrap();
         let old = &res.block(b"DATA").unwrap().data;
-        let source_crc = u32_at(old, 0).unwrap() ^ crc32(style_text(&res).unwrap().as_bytes());
+        let source = u32_at(old, 0).unwrap() ^ crc32(style_text(&res).unwrap().as_bytes());
+        assert_eq!(source_crc(&res).unwrap(), source);
 
         let text = ".a{color:red;}";
         let out = with_style_text(&res, text).unwrap();
         let data = &out.block(b"DATA").unwrap().data;
-        assert_eq!(
-            u32_at(data, 0).unwrap(),
-            source_crc ^ crc32(text.as_bytes())
-        );
+        assert_eq!(u32_at(data, 0).unwrap(), source ^ crc32(text.as_bytes()));
         assert_eq!(&data[4..6], &[0, 0]);
+        assert_eq!(
+            source_crc(&out).unwrap(),
+            source,
+            "source crc survives a rewrite"
+        );
+        assert_eq!(image_table(&out).unwrap(), image_table(&res).unwrap());
+        let table = image_table(&with_images(VANILLA)).unwrap().to_vec();
+        assert_eq!(&table[..2], &[2, 0], "two images listed");
+        assert!(table.len() >= 2 + 26 + 28, "{}", table.len());
 
         let back = Resource::parse(&out.to_bytes()).unwrap();
         assert_eq!(style_text(&back).unwrap(), text);

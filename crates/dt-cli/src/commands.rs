@@ -20,10 +20,10 @@ const BRIDGE_HELP: &str = "--bridge none|execfile|netcon[:port]";
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "doctor",
-        usage: "doctor",
-        summary: "self test for a new machine; writes nothing into the game",
+        usage: "doctor [--report]",
+        summary: "self test for a new machine; --report prints the plain-text diagnostic report",
         values: &[],
-        switches: &[],
+        switches: &["report"],
         run: cmd_info::doctor,
     },
     Command {
@@ -241,6 +241,14 @@ pub const COMMANDS: &[Command] = &[
         values: &[],
         switches: &[],
         run: cmd_addons::fetch,
+    },
+    Command {
+        name: "addons verify",
+        usage: "addons verify",
+        summary: "read every installed DeadTune pak back and check it (lengths, CRCs, compiled resources)",
+        values: &[],
+        switches: &[],
+        run: cmd_addons::verify,
     },
     Command {
         name: "addons build",

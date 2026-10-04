@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Instant, SystemTime};
 
+use dt_core::addons::guard::{self, Event as GuardEvent, Guard, Verdict};
 use dt_core::addons::install::{Action, AddonsPlan, InstalledState};
 use dt_core::addons::textures::Progress;
 use dt_core::addons::{self, AddonId, AddonsConfig};
@@ -365,6 +366,19 @@ pub struct UiState {
     pub addon_expanded: Option<AddonId>,
     /// Path typed into the addons page's Import box.
     pub addon_import_path: String,
+    /// The launch-guard banner's "Show details" fold.
+    pub guard_details: bool,
+}
+
+/// What an addon card says about the launch guard's experience with it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Badge {
+    /// The game started with this exact pak.
+    Verified { at: u64 },
+    /// Installed, but no launch has been through with it yet.
+    Untried,
+    /// A launch with it failed and DeadTune removed it.
+    Broke { at: u64, fatal: Option<String> },
 }
 
 /// Starting layouts on the HUD tab. Each is plain `HudLayout` values, so a user
@@ -552,6 +566,10 @@ pub struct AppState {
     pub ack: Tracker,
     conlog: LogTail,
     conlog_polled: Option<Instant>,
+    /// Decides whether the addons the game started with are safe; see `dt_core::addons::guard`.
+    pub guard: Guard,
+    /// Console log lines since the guard last looked.
+    guard_lines: Vec<String>,
     pub relaunch: Relaunch,
     pub bench: BenchState,
     pub ui: UiState,
@@ -644,6 +662,8 @@ impl AppState {
             base: Base::resolve(&profile),
             conlog: LogTail::for_game(&paths),
             conlog_polled: None,
+            guard: Guard::load(&store.root).unwrap_or_default(),
+            guard_lines: Vec::new(),
             paths,
             store,
             data_dir,
@@ -727,7 +747,8 @@ impl AppState {
 
     pub fn run_checks(&mut self) {
         let (tx, rx) = channel();
-        let (paths, data_dir) = (self.paths.clone(), self.data_dir.clone());
+        // The addon and HUD records live in the store root, not the data dir.
+        let (paths, data_dir) = (self.paths.clone(), self.store.root.clone());
         std::thread::spawn(move || {
             let _ = tx.send(dt_core::doctor::run(Some(&paths), &data_dir));
         });
@@ -832,11 +853,17 @@ impl AppState {
         self.saved.as_ref() != Some(&self.profile)
     }
 
+    /// Ranked-safe and safe mode both take every DeadTune pak out of the game folder.
+    fn without_addons(&self) -> bool {
+        self.settings.source == TargetSource::RankedSafe || self.settings.safe_mode
+    }
+
     pub fn refresh_preview(&mut self) {
         // Ranked-safe also takes our HUD addon out: stock means stock.
-        let layout = match self.settings.source {
-            TargetSource::Profile => &self.profile.hud,
-            TargetSource::RankedSafe => &HudLayout::default(),
+        let layout = if self.without_addons() {
+            &HudLayout::default()
+        } else {
+            &self.profile.hud
         };
         let hud = match &self.hud_cache {
             Some((cached, plan)) if cached == layout => plan.clone(),
@@ -850,9 +877,10 @@ impl AppState {
         // A HUD that cannot be built (missing game archive, foreign addon) must not block
         // convar changes; the HUD tab shows the reason instead.
         let hud = hud.unwrap_or(None);
-        let config = match self.settings.source {
-            TargetSource::Profile => &self.profile.addons,
-            TargetSource::RankedSafe => &AddonsConfig::default(),
+        let config = if self.without_addons() {
+            &AddonsConfig::default()
+        } else {
+            &self.profile.addons
         };
         let addons = match &self.addons_cache {
             Some((cached, plan)) if cached == config => plan.clone(),
@@ -1115,6 +1143,20 @@ impl AppState {
         result
     }
 
+    /// Safe mode removes every DeadTune pak (performance addons and the HUD) right away and
+    /// keeps them out until it is turned off; the profile remembers what was on.
+    pub fn toggle_safe_mode(&mut self) -> Result<Applied, String> {
+        let previous = self.settings.safe_mode;
+        self.settings.safe_mode = !previous;
+        self.refresh_preview();
+        let result = self.apply();
+        if result.is_err() {
+            self.settings.safe_mode = previous;
+            self.refresh_preview();
+        }
+        result
+    }
+
     pub fn set_in_sandbox(&mut self, in_sandbox: bool) {
         self.ctx.in_sandbox = in_sandbox;
         self.refresh_preview();
@@ -1133,6 +1175,183 @@ impl AppState {
             self.ctx.game_running = running;
             self.refresh_preview();
         }
+        self.guard_tick(running, started_at, SystemTime::now());
+    }
+
+    /// One guard step per game poll; a verdict removes failed addons or marks good ones.
+    pub fn guard_tick(&mut self, running: bool, started_at: Option<SystemTime>, now: SystemTime) {
+        let installed = guard::installed_paks(&self.paths, &self.store.root);
+        let lines = std::mem::take(&mut self.guard_lines);
+        let event = self.guard.step(&guard::Observation {
+            running,
+            started_at,
+            now,
+            installed: &installed,
+            lines: &lines,
+        });
+        let Some(event) = event else {
+            return;
+        };
+        let names = |ids: &[AddonId]| {
+            ids.iter()
+                .map(|id| addons::info(*id).name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        match event {
+            GuardEvent::Started { changed } => {
+                self.status = Some(Status::Info(format!(
+                    "Testing on this launch: {}. If Deadlock fails to start, DeadTune removes them.",
+                    names(&changed)
+                )));
+            }
+            GuardEvent::Passed { ids } => {
+                self.status = Some(Status::Info(format!(
+                    "Deadlock started fine with {}.",
+                    names(&ids)
+                )));
+                self.install_candidate();
+            }
+            GuardEvent::Failed { ids, .. } => {
+                self.rollback_addons(&ids);
+                self.status = Some(Status::Error(format!(
+                    "Deadlock didn't start with {}. DeadTune removed them.",
+                    names(&ids)
+                )));
+                self.install_candidate();
+            }
+        }
+        self.save_guard();
+    }
+
+    fn save_guard(&mut self) {
+        if let Err(e) = self.guard.save(&self.store.root) {
+            self.status = Some(Status::Error(format!("saving the launch guard: {e}")));
+        }
+    }
+
+    /// Deletes the paks of `ids` (only files DeadTune's record names) and switches them off in
+    /// the profile, on disk too, so no later Apply puts them back unasked.
+    fn rollback_addons(&mut self, ids: &[AddonId]) {
+        guard::rollback(&mut self.guard, ids, &self.paths, &self.store.root);
+        for id in ids {
+            self.profile.addons.set_enabled(*id, false);
+        }
+        let dir = self.profiles_dir();
+        if let Some(saved) = &mut self.saved {
+            for id in ids {
+                saved.addons.set_enabled(*id, false);
+            }
+            if let Err(e) = profiles::save(&dir, saved) {
+                self.status = Some(Status::Error(format!("saving the profile: {e}")));
+            }
+        }
+        self.addons_cache = None;
+        self.refresh_preview();
+    }
+
+    /// Starts the one-at-a-time flow for the last failure's suspects.
+    pub fn start_one_at_a_time(&mut self) {
+        let Some(failure) = &self.guard.failure else {
+            return;
+        };
+        self.guard.start_sequence(failure.ids.clone());
+        self.install_candidate();
+        self.save_guard();
+    }
+
+    pub fn stop_one_at_a_time(&mut self) {
+        self.guard.stop_sequence();
+        self.save_guard();
+    }
+
+    /// Switches the sequence's next suspect on and installs it for the next launch.
+    fn install_candidate(&mut self) {
+        let Some(id) = self.guard.candidate() else {
+            return;
+        };
+        self.profile.addons.set_enabled(id, true);
+        self.addons_cache = None;
+        self.refresh_preview();
+        let name = addons::info(id).name;
+        self.status = Some(match self.apply() {
+            Ok(_) => Status::Info(format!(
+                "{name} is on and installed. Start Deadlock to test it; DeadTune reports the result."
+            )),
+            Err(e) => Status::Error(format!("Couldn't install {name} for its test: {e}")),
+        });
+    }
+
+    pub fn dismiss_guard_failure(&mut self) {
+        self.guard.dismiss();
+        self.save_guard();
+    }
+
+    /// What the launch guard knows about an addon's pak.
+    pub fn addon_badge(&self, id: AddonId, installed: Option<&InstalledState>) -> Option<Badge> {
+        let sha = match installed {
+            Some(InstalledState::Current(r) | InstalledState::Stale(r)) => Some(r.sha256.as_str()),
+            _ => None,
+        };
+        match (sha, self.guard.verdict(id)) {
+            (Some(sha), verdict) if self.guard.is_verified(id, sha) => Some(Badge::Verified {
+                at: match verdict {
+                    Some(Verdict::Verified { at }) => *at,
+                    _ => 0,
+                },
+            }),
+            (None, Some(Verdict::Failed { at, fatal })) => Some(Badge::Broke {
+                at: *at,
+                fatal: fatal.clone(),
+            }),
+            (Some(_), _) => Some(Badge::Untried),
+            (None, _) => None,
+        }
+    }
+
+    /// Screenshot lever and test hook: a failed trial for `ids` with `fatal` captured, as if
+    /// the game had just died with them installed.
+    pub fn inject_trial_failure(&mut self, ids: Vec<AddonId>, fatal: Option<String>) {
+        let now = guard::unix(SystemTime::now());
+        self.guard.failure = Some(guard::Failure {
+            ids: ids.clone(),
+            fatal: fatal.clone(),
+            at: now,
+            removed: Vec::new(),
+            kept: Vec::new(),
+        });
+        for id in &ids {
+            self.guard.verdicts.insert(
+                *id,
+                Verdict::Failed {
+                    at: now,
+                    fatal: fatal.clone(),
+                },
+            );
+        }
+        self.rollback_addons(&ids);
+        self.save_guard();
+    }
+
+    /// Screenshot lever: every installed pak counts as started with.
+    pub fn inject_trial_verified(&mut self) {
+        let now = guard::unix(SystemTime::now());
+        for pak in guard::installed_paks(&self.paths, &self.store.root) {
+            self.guard.last_good.insert(pak.id, pak.sha256);
+            self.guard
+                .verdicts
+                .insert(pak.id, Verdict::Verified { at: now });
+        }
+        self.save_guard();
+    }
+
+    pub fn diagnostic_report(&self) -> String {
+        dt_core::doctor::report(
+            Some(&self.paths),
+            &self.store.root,
+            env!("CARGO_PKG_VERSION"),
+            &self.launch_args().args,
+        )
     }
 
     /// Re-reads the live files after the watcher reports changes.
@@ -1238,8 +1457,8 @@ impl AppState {
         self.refresh_preview();
     }
 
-    pub fn set_blur(&mut self, hud: bool, menu: bool) {
-        self.profile.addons.blur = addons::BlurOptions { hud, menu };
+    pub fn set_blur(&mut self, opts: addons::BlurOptions) {
+        self.profile.addons.blur = opts;
         self.refresh_preview();
     }
 
@@ -1550,6 +1769,12 @@ impl AppState {
         self.conlog_polled = Some(now);
         for line in self.conlog.poll() {
             self.ack.observe_line(&line);
+            self.guard_lines.push(line);
+        }
+        // Drained every game poll; bounded in case none comes.
+        if self.guard_lines.len() > 10_000 {
+            let excess = self.guard_lines.len() - 10_000;
+            self.guard_lines.drain(..excess);
         }
         self.ack.tick(now);
         if matches!(self.ack.status(), PushStatus::Confirmed { .. }) {
@@ -2696,5 +2921,156 @@ mod tests {
                 tweaks: 0
             }
         );
+    }
+
+    fn upstream(dir: &str, file: &str) -> PathBuf {
+        PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../research/configs/OptimizationLock/Various Addons Relating to Performance/"
+        ))
+        .join(dir)
+        .join(file)
+    }
+
+    /// Imports and installs the Sinner light fix, the simplest pak to put in the game folder.
+    fn with_sinner_installed(state: &mut AppState) -> PathBuf {
+        state
+            .import_addon(&upstream("Sinner Light Fix Mod", "pak26_dir.vpk"))
+            .unwrap();
+        state.set_addon_enabled(AddonId::SinnerLightFix, true);
+        state.apply().unwrap();
+        state.save_profile().unwrap();
+        let pak = dt_core::hud::install::addons_dir(&state.paths).join("pak73_dir.vpk");
+        assert!(pak.exists());
+        pak
+    }
+
+    #[test]
+    fn a_failed_trial_removes_the_new_addon_switches_it_off_and_raises_the_banner() {
+        let (_dir, mut state) = state();
+        let pak = with_sinner_installed(&mut state);
+        let launched = SystemTime::now() + Duration::from_secs(5);
+        state.observe_game(true, Some(launched));
+        assert!(state.guard.trial.is_some(), "a new pak is on trial");
+        assert!(matches!(
+            state.addon_badge(
+                AddonId::SinnerLightFix,
+                state.addon_states().get(&AddonId::SinnerLightFix)
+            ),
+            Some(Badge::Untried)
+        ));
+        state.guard_lines.push(
+            "FATAL ERROR: Unable to read default keybinding configuration user_keys_default".into(),
+        );
+        state.observe_game(true, Some(launched));
+
+        assert!(!pak.exists(), "the pak that broke the start is gone");
+        assert!(!state.profile.addons.is_enabled(AddonId::SinnerLightFix));
+        assert!(
+            !state
+                .saved
+                .as_ref()
+                .unwrap()
+                .addons
+                .is_enabled(AddonId::SinnerLightFix)
+        );
+        let on_disk = profiles::load(&state.profiles_dir(), &state.profile.name).unwrap();
+        assert!(
+            !on_disk.addons.is_enabled(AddonId::SinnerLightFix),
+            "profile on disk updated"
+        );
+        let failure = state.guard.failure.clone().expect("banner shows");
+        assert_eq!(failure.ids, [AddonId::SinnerLightFix]);
+        assert_eq!(failure.removed, ["pak73_dir.vpk"]);
+        assert!(failure.fatal.as_deref().unwrap().starts_with("FATAL ERROR"));
+        assert!(matches!(
+            state.addon_badge(AddonId::SinnerLightFix, None),
+            Some(Badge::Broke { fatal: Some(_), .. })
+        ));
+        assert!(matches!(state.status, Some(Status::Error(ref m)) if m.contains("didn't start")));
+        assert_eq!(
+            Guard::load(&state.store.root).unwrap().failure,
+            Some(failure)
+        );
+
+        state.dismiss_guard_failure();
+        assert!(state.guard.failure.is_none());
+        assert!(Guard::load(&state.store.root).unwrap().failure.is_none());
+    }
+
+    #[test]
+    fn a_passed_trial_marks_the_addon_verified() {
+        let (_dir, mut state) = state();
+        with_sinner_installed(&mut state);
+        let launched = SystemTime::now() + Duration::from_secs(5);
+        state.observe_game(true, Some(launched));
+        state.guard_lines.push("DEADTUNE_BOOT 0.3.0".into());
+        state.observe_game(true, Some(launched));
+        let states = state.addon_states();
+        assert!(matches!(
+            state.addon_badge(
+                AddonId::SinnerLightFix,
+                states.get(&AddonId::SinnerLightFix)
+            ),
+            Some(Badge::Verified { .. })
+        ));
+        assert!(state.profile.addons.is_enabled(AddonId::SinnerLightFix));
+        assert!(matches!(state.status, Some(Status::Info(ref m)) if m.contains("started fine")));
+    }
+
+    #[test]
+    fn injected_failure_drives_the_banner_without_a_game() {
+        let (_dir, mut state) = state();
+        state.set_addon_enabled(AddonId::BlurDisabler, true);
+        state.inject_trial_failure(
+            vec![AddonId::BlurDisabler, AddonId::ParticleDisabler],
+            Some("FATAL ERROR: test".into()),
+        );
+        let failure = state.guard.failure.as_ref().unwrap();
+        assert_eq!(failure.ids.len(), 2);
+        assert!(!state.profile.addons.is_enabled(AddonId::BlurDisabler));
+        assert!(matches!(
+            state.addon_badge(AddonId::ParticleDisabler, None),
+            Some(Badge::Broke { .. })
+        ));
+        state.start_one_at_a_time();
+        assert_eq!(state.guard.candidate(), Some(AddonId::BlurDisabler));
+        assert!(
+            state.profile.addons.is_enabled(AddonId::BlurDisabler),
+            "first suspect back on"
+        );
+        assert!(!state.profile.addons.is_enabled(AddonId::ParticleDisabler));
+        state.stop_one_at_a_time();
+        assert!(state.guard.sequence.is_none());
+    }
+
+    #[test]
+    fn safe_mode_removes_every_pak_and_restores_on_the_way_back() {
+        let (_dir, mut state) = state();
+        let pak = with_sinner_installed(&mut state);
+        state.toggle_safe_mode().unwrap();
+        assert!(state.settings.safe_mode);
+        assert!(!pak.exists());
+        assert!(
+            state.profile.addons.is_enabled(AddonId::SinnerLightFix),
+            "remembered"
+        );
+        assert!(plan(&state).is_empty());
+        state.toggle_safe_mode().unwrap();
+        assert!(!state.settings.safe_mode);
+        assert!(pak.exists());
+    }
+
+    #[test]
+    fn diagnostic_report_names_the_installed_pak() {
+        let (_dir, mut state) = state();
+        with_sinner_installed(&mut state);
+        let text = state.diagnostic_report();
+        assert!(text.contains("pak73_dir.vpk"), "{text}");
+        assert!(
+            text.contains("DeadTune: Sinner's Sacrifice light fix"),
+            "{text}"
+        );
+        assert!(text.contains("-condebug"), "launch args: {text}");
     }
 }

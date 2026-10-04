@@ -192,6 +192,31 @@ impl App {
                 if let Ok(id) = std::env::var("DEADTUNE_ADDON_EXPAND") {
                     state.ui.addon_expanded = AddonId::parse(id.trim());
                 }
+                // `DEADTUNE_FAKE_TRIAL=failed:vindicta_scope,blur_disabler` shows the launch
+                // guard's failure banner, details open, for those addons (every one if none
+                // are listed) with a captured FATAL line.
+                if let Ok(spec) = std::env::var("DEADTUNE_FAKE_TRIAL")
+                    && let Some(list) = spec.strip_prefix("failed")
+                {
+                    let ids: Vec<AddonId> = list
+                        .trim_start_matches(':')
+                        .split(',')
+                        .filter_map(|s| AddonId::parse(s.trim()))
+                        .collect();
+                    let ids = if ids.is_empty() {
+                        AddonId::ALL.to_vec()
+                    } else {
+                        ids
+                    };
+                    state.inject_trial_failure(
+                        ids,
+                        Some(
+                            "FATAL ERROR: Unable to read default keybinding configuration user_keys_default"
+                                .into(),
+                        ),
+                    );
+                    state.ui.guard_details = true;
+                }
                 // Screenshot lever: `DEADTUNE_FAKE_PUSH=waiting|confirmed|mixed|timeout` shows
                 // that live-status; `DEADTUNE_FAKE_BOOT=1` pretends the boot cfg ran.
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_PUSH") {
@@ -342,6 +367,13 @@ impl App {
                     views::run_apply(ctx, state);
                 }
             }
+        }
+        // `DEADTUNE_FAKE_TRIAL=verified` marks whatever Apply just installed as started with.
+        if job.frames == 6
+            && std::env::var("DEADTUNE_FAKE_TRIAL").is_ok_and(|v| v == "verified")
+            && let Screen::Main(state) = &mut self.screen
+        {
+            state.inject_trial_verified();
         }
         if job.frames == 20 && !job.requested {
             job.requested = true;

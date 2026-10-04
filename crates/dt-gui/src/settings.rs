@@ -68,6 +68,8 @@ pub struct Settings {
     pub bind_key: String,
     pub netcon_port: u16,
     pub source: TargetSource,
+    /// Every DeadTune pak stays out of the game folder until this is off again.
+    pub safe_mode: bool,
     /// Advanced-view stars; the mini window lists them when opened from there.
     pub favourites: BTreeSet<String>,
     /// Simple-view pins; the mini window lists them under the key settings.
@@ -90,6 +92,7 @@ impl Default for Settings {
             bind_key: "F8".into(),
             netcon_port: dt_core::bridge::netcon::DEFAULT_PORT,
             source: TargetSource::default(),
+            safe_mode: false,
             favourites: BTreeSet::new(),
             pinned: BTreeSet::new(),
             launch: LaunchOptions {

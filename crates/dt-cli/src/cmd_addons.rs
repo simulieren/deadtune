@@ -55,7 +55,7 @@ pub fn list(env: &Env, args: &Args) -> CliResult {
         let kind = match a.kind {
             Kind::Toggle => "on/off",
             Kind::ParticleGroups => "per effect group",
-            Kind::GeneratedCss => "generated",
+            Kind::Blur => "upstream pak; or rebuilt from game files (experimental)",
             Kind::Textures => "built on demand",
         };
         println!(
@@ -174,6 +174,31 @@ pub fn build(env: &Env, args: &Args) -> CliResult {
     Ok(())
 }
 
+/// Reads every installed DeadTune pak back; exits 1 when one fails its check.
+pub fn verify(env: &Env, args: &Args) -> CliResult {
+    args.positionals::<0>("no positional arguments")?;
+    let paths = env.paths()?;
+    let reports = addons::verify::verify_installed(&paths, &env.data_dir);
+    if reports.is_empty() {
+        println!("no DeadTune paks installed");
+        return Ok(());
+    }
+    let mut failed = 0;
+    for r in &reports {
+        println!("{r}");
+        if !r.result.as_ref().is_ok_and(|v| v.is_ok()) {
+            failed += 1;
+        }
+    }
+    if failed > 0 {
+        return Err(fail(format!(
+            "{failed} pak(s) failed; remove them from the Addons page (or `addons disable` + apply) and rebuild"
+        )));
+    }
+    println!("All {} pak(s) read back clean.", reports.len());
+    Ok(())
+}
+
 /// One-line addon facts for `status` and `doctor`.
 pub fn report_lines(env: &Env, paths: &GamePaths) -> Vec<String> {
     let states = match install::installed_state(paths, &env.data_dir) {
@@ -210,6 +235,9 @@ pub fn describe_action(action: &Action) -> String {
                 "needs download (`addons fetch` or `addons import`)".to_string()
             }
             install::Blocker::GameFiles(e) => format!("game files unreadable: {e}"),
+            install::Blocker::Invalid(e) => {
+                format!("built pak failed its check, not installed: {e}")
+            }
         },
     }
 }

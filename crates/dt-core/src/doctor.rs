@@ -371,6 +371,204 @@ pub fn hud_conflicts(paths: &GamePaths) -> Vec<PathBuf> {
     found
 }
 
+/// How many console log lines the report quotes.
+pub const REPORT_LOG_LINES: usize = 80;
+
+/// Plain text for a bug report: versions, the SearchPaths block, what sits in the addons
+/// folder and who owns it, DeadTune's records, the launch guard, the console log tail and
+/// a read-back of every installed pak. Reads only.
+pub fn report(
+    paths: Option<&GamePaths>,
+    data_dir: &Path,
+    version: &str,
+    launch_args: &[String],
+) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let _ = writeln!(out, "DeadTune {version} diagnostic report");
+    let _ = writeln!(
+        out,
+        "generated: {}  os: {}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        std::env::consts::OS
+    );
+    let _ = writeln!(out, "data dir: {}", data_dir.display());
+    let Some(paths) = paths else {
+        out.push_str("game: not found\n");
+        return out;
+    };
+    let _ = writeln!(out, "game root: {}", paths.game_root.display());
+    let build = paths
+        .appmanifest
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|acf| parse_buildid(&acf));
+    let _ = writeln!(out, "build id: {}", build.as_deref().unwrap_or("unknown"));
+    let _ = writeln!(out, "last launch args: {}", launch_args.join(" "));
+    let _ = writeln!(
+        out,
+        "game running now: {}",
+        if launch::is_game_running() {
+            "yes"
+        } else {
+            "no"
+        }
+    );
+
+    section(&mut out, "gameinfo.gi SearchPaths");
+    match std::fs::read_to_string(&paths.gameinfo) {
+        Ok(text) => {
+            match searchpaths::block_text(&text) {
+                Ok(block) => out.push_str(block.trim_end_matches(['\r', '\n'])),
+                Err(e) => {
+                    let _ = write!(out, "unreadable: {e}");
+                }
+            }
+            out.push('\n');
+            let convars = gi::read_convars(&text).map(|c| c.len());
+            let _ = writeln!(
+                out,
+                "ConVars lines: {}",
+                convars.map_or_else(|e| e.to_string(), |n| n.to_string())
+            );
+        }
+        Err(e) => {
+            let _ = writeln!(out, "unreadable: {e}");
+        }
+    }
+
+    section(&mut out, "game/citadel/addons");
+    out.push_str(&addons_listing(paths, data_dir));
+
+    for (title, file) in [
+        (
+            "addons record (addons.toml)",
+            crate::addons::install::RECORD_FILE,
+        ),
+        ("HUD record (hud.toml)", install::RECORD_FILE),
+        (
+            "launch guard (guard.toml)",
+            crate::addons::guard::RECORD_FILE,
+        ),
+    ] {
+        section(&mut out, title);
+        match std::fs::read_to_string(data_dir.join(file)) {
+            Ok(text) if text.trim().is_empty() => out.push_str("(empty)\n"),
+            Ok(text) => {
+                out.push_str(text.trim_end());
+                out.push('\n');
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => out.push_str("(none)\n"),
+            Err(e) => {
+                let _ = writeln!(out, "unreadable: {e}");
+            }
+        }
+    }
+
+    section(&mut out, "installed pak read-back");
+    let reports = crate::addons::verify::verify_installed(paths, data_dir);
+    if reports.is_empty() {
+        out.push_str("no DeadTune paks installed\n");
+    }
+    for r in reports {
+        let _ = writeln!(out, "{r}");
+    }
+
+    section(
+        &mut out,
+        &format!("console.log, last {REPORT_LOG_LINES} lines"),
+    );
+    match crate::bridge::conlog::candidates(paths)
+        .into_iter()
+        .find(|p| p.is_file())
+    {
+        Some(log) => {
+            let _ = writeln!(out, "file: {}", log.display());
+            match std::fs::read(&log) {
+                Ok(bytes) => {
+                    let text = String::from_utf8_lossy(&bytes);
+                    let lines: Vec<&str> = text.lines().collect();
+                    let from = lines.len().saturating_sub(REPORT_LOG_LINES);
+                    for line in &lines[from..] {
+                        out.push_str(line);
+                        out.push('\n');
+                    }
+                }
+                Err(e) => {
+                    let _ = writeln!(out, "unreadable: {e}");
+                }
+            }
+        }
+        None => out.push_str("no console.log found (launch with -condebug)\n"),
+    }
+    out
+}
+
+fn section(out: &mut String, title: &str) {
+    out.push_str("\n== ");
+    out.push_str(title);
+    out.push_str(" ==\n");
+}
+
+/// Every file in the addons folder with its size and whether DeadTune's records own it.
+fn addons_listing(paths: &GamePaths, data_dir: &Path) -> String {
+    use crate::addons::{self, InstalledState as Addon};
+    let dir = install::addons_dir(paths);
+    let mut ours: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    if let Ok(states) = addons::install::installed_state(paths, data_dir) {
+        for (id, state) in states {
+            let name = addons::info(id).name;
+            match state {
+                Addon::Current(r) | Addon::Stale(r) => {
+                    ours.insert(r.file.clone(), format!("DeadTune: {name}"));
+                    for chunk in r.chunks {
+                        ours.insert(chunk, format!("DeadTune: {name} (chunk)"));
+                    }
+                }
+                Addon::Foreign(file) => {
+                    ours.insert(
+                        file,
+                        format!("was DeadTune's {name}, replaced by another program"),
+                    );
+                }
+                Addon::None => {}
+            }
+        }
+    }
+    match install::installed_state(paths, data_dir) {
+        Ok(InstalledState::Current(_) | InstalledState::Stale(_)) => {
+            ours.insert(ADDON_FILE.into(), "DeadTune: HUD layout".into());
+        }
+        Ok(InstalledState::Foreign) => {
+            ours.insert(
+                ADDON_FILE.into(),
+                "another mod in DeadTune's HUD slot".into(),
+            );
+        }
+        _ => {}
+    }
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return format!("{} does not exist\n", dir.display());
+    };
+    let mut rows: Vec<(String, u64)> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let len = e.metadata().ok()?.len();
+            Some((e.file_name().to_string_lossy().into_owned(), len))
+        })
+        .collect();
+    rows.sort();
+    if rows.is_empty() {
+        return "(empty)\n".into();
+    }
+    rows.iter()
+        .map(|(name, len)| {
+            let owner = ours.get(name).map_or("not DeadTune's", String::as_str);
+            format!("{name:<20} {len:>12} bytes  {owner}\n")
+        })
+        .collect()
+}
+
 /// Writes and deletes a scratch file in `dir`, creating `dir` first (only ever our data dir;
 /// the cfg dir is checked for existence before this runs).
 fn probe_writable(dir: &Path) -> std::io::Result<()> {
@@ -378,4 +576,68 @@ fn probe_writable(dir: &Path) -> std::io::Result<()> {
     let probe = dir.join(".deadtune_doctor.tmp");
     std::fs::write(&probe, b"deadtune")?;
     std::fs::remove_file(&probe)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::addons::install::{self as addons_install, tests::fake_install};
+    use crate::addons::{AddonId, AddonsConfig, sources};
+
+    #[test]
+    fn report_quotes_the_search_paths_records_paks_and_the_log_tail() {
+        let (steam, paths) = fake_install("4242");
+        let data = steam.path().join("data");
+        let args = ["+exec".to_string(), "deadtune_boot".to_string()];
+        let text = report(Some(&paths), &data, "9.9.9", &args);
+        assert!(
+            text.starts_with("DeadTune 9.9.9 diagnostic report\n"),
+            "{text}"
+        );
+        assert!(text.contains("build id: 4242"));
+        assert!(text.contains("last launch args: +exec deadtune_boot"));
+        assert!(text.contains("SearchPaths"));
+        assert!(text.contains("Game \"citadel\""), "{text}");
+        assert!(text.contains("ConVars lines: "));
+        assert!(text.contains("no DeadTune paks installed"));
+        assert!(text.contains("== launch guard (guard.toml) ==\n(none)"));
+        assert!(text.contains("no console.log found"));
+
+        sources::import(
+            &sources::cache_dir(&data),
+            &sources::tests::research("Sinner Light Fix Mod", "pak26_dir.vpk"),
+        )
+        .unwrap();
+        let config = AddonsConfig {
+            enabled: [AddonId::SinnerLightFix].into_iter().collect(),
+            ..Default::default()
+        };
+        let plan = addons_install::plan(&paths, &config, &data).unwrap();
+        addons_install::execute(&plan, &paths, &data).unwrap();
+        let addons = install::addons_dir(&paths);
+        std::fs::write(addons.join("pak05_dir.vpk"), b"theirs").unwrap();
+        let log: String = (0..100).map(|i| format!("line {i}\n")).collect();
+        std::fs::write(paths.citadel_dir.join("console.log"), log).unwrap();
+
+        let text = report(Some(&paths), &data, "9.9.9", &args);
+        assert!(text.contains("pak73_dir.vpk"), "{text}");
+        assert!(
+            text.contains("DeadTune: Sinner's Sacrifice light fix"),
+            "{text}"
+        );
+        assert!(text.contains("pak05_dir.vpk"), "{text}");
+        assert!(text.contains("not DeadTune's"), "{text}");
+        assert!(
+            text.contains("[installed.sinner_light_fix]"),
+            "record quoted: {text}"
+        );
+        assert!(
+            text.contains("Sinner's Sacrifice light fix (pak73_dir.vpk): ok:"),
+            "{text}"
+        );
+        assert!(!text.contains("line 19\n"), "only the last 80 lines");
+        assert!(text.contains("line 20\n"));
+        assert!(text.ends_with("line 99\n"));
+        assert_eq!(report(None, &data, "1.0.0", &[]).lines().count(), 4);
+    }
 }

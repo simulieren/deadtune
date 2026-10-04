@@ -28,34 +28,39 @@ pub struct Check {
     pub detail: String,
     /// A plain-English next step for a player; set whenever the status is not `Pass`.
     pub fix: Option<String>,
+    /// A Windows Settings page (`ms-settings:` URI) where the player can make the change.
+    pub link: Option<&'static str>,
 }
 
 const VERIFY_FILES: &str = "In Steam, right-click Deadlock > Properties > Installed Files > Verify integrity of game files.";
 
-fn pass(name: &'static str, detail: impl Into<String>) -> Check {
+pub(crate) fn pass(name: &'static str, detail: impl Into<String>) -> Check {
     Check {
         name,
         status: CheckStatus::Pass,
         detail: detail.into(),
         fix: None,
+        link: None,
     }
 }
 
-fn warn(name: &'static str, detail: impl Into<String>, fix: &str) -> Check {
+pub(crate) fn warn(name: &'static str, detail: impl Into<String>, fix: &str) -> Check {
     Check {
         name,
         status: CheckStatus::Warn,
         detail: detail.into(),
         fix: Some(fix.to_string()),
+        link: None,
     }
 }
 
-fn fail(name: &'static str, detail: impl Into<String>, fix: &str) -> Check {
+pub(crate) fn fail(name: &'static str, detail: impl Into<String>, fix: &str) -> Check {
     Check {
         name,
         status: CheckStatus::Fail,
         detail: detail.into(),
         fix: Some(fix.to_string()),
+        link: None,
     }
 }
 
@@ -116,6 +121,7 @@ pub fn run(paths: Option<&GamePaths>, data_dir: &Path) -> Vec<Check> {
             "no"
         },
     ));
+    checks.extend(crate::winfps::checks(paths));
     checks
 }
 

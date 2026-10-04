@@ -398,3 +398,71 @@ fn hud_apply_status_remove() {
             .contains("nothing to do")
     );
 }
+
+#[test]
+fn watch_reports_overwrites_and_game_updates() {
+    use std::io::{BufRead, BufReader};
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    let fake = Fake::new();
+    fs::write(fake.file("hud.toml"), "[elements.chat]\nopacity_pct = 50\n").unwrap();
+    fake.ok(&["hud", "apply", "--layout", "hud.toml", "--yes"]);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_deadtune-cli"))
+        .arg("--game-dir")
+        .arg(&fake.game)
+        .arg("--data-dir")
+        .arg(fake.data())
+        .arg("watch")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (tx, rx) = mpsc::channel();
+    let stdout = child.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            if tx.send(line.unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    // Pokes repeat because the watcher may not be armed yet when the first write lands.
+    let wait_for = |needle: &str, poke: &dyn Fn()| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut next_poke = Instant::now();
+        while Instant::now() < deadline {
+            if Instant::now() >= next_poke {
+                poke();
+                next_poke = Instant::now() + Duration::from_millis(500);
+            }
+            if let Ok(line) = rx.recv_timeout(Duration::from_millis(100))
+                && line.contains(needle)
+            {
+                return true;
+            }
+        }
+        false
+    };
+    let gameinfo = fake.gameinfo();
+    let saw_overwrite = wait_for("gameinfo.gi changed", &|| {
+        fs::write(&gameinfo, read(&gameinfo) + "\n").unwrap();
+    });
+    let manifest = fake.tmp.path().join("steamapps/appmanifest_1422450.acf");
+    let saw_update = wait_for("game updated: build 20261004 -> 20261005", &|| {
+        fs::write(
+            &manifest,
+            "\"AppState\"\n{\n\t\"buildid\"\t\t\"20261005\"\n}\n",
+        )
+        .unwrap();
+    });
+    let saw_stale = wait_for("HUD addon was built for the old build", &|| {});
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(saw_overwrite, "watch reports a gameinfo overwrite");
+    assert!(saw_update, "watch reports a buildid change");
+    assert!(
+        saw_stale,
+        "watch flags the HUD addon as stale after an update"
+    );
+}

@@ -2,6 +2,7 @@
 
 use std::sync::mpsc;
 
+use dt_core::hud::install::{self, InstalledState};
 use dt_core::launch::{self, LaunchOptions};
 use dt_core::watch::{self, Change};
 
@@ -18,11 +19,21 @@ pub fn watch(env: &Env, args: &Args) -> CliResult {
     for changes in rx {
         for change in changes {
             match change {
-                Change::GameUpdated { from, to } => println!(
-                    "game updated: build {} -> {}; re-apply your profile",
-                    from.as_deref().unwrap_or("?"),
-                    to.as_deref().unwrap_or("?")
-                ),
+                Change::GameUpdated { from, to } => {
+                    println!(
+                        "game updated: build {} -> {}; re-apply your profile",
+                        from.as_deref().unwrap_or("?"),
+                        to.as_deref().unwrap_or("?")
+                    );
+                    let store = env.store()?;
+                    if let Ok(InstalledState::Stale(_)) =
+                        install::installed_state(&paths, &store.root)
+                    {
+                        println!(
+                            "HUD addon was built for the old build; run `deadtune-cli hud apply`"
+                        );
+                    }
+                }
                 Change::GameInfoChanged => println!("gameinfo.gi changed"),
                 Change::VideoChanged => println!("video.txt changed"),
             }

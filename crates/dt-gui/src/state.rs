@@ -158,6 +158,88 @@ impl Tab {
     }
 }
 
+/// Simple-view navigation: one rail entry each, Overview first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Section {
+    #[default]
+    Overview,
+    Display,
+    Shadows,
+    Effects,
+    World,
+    Performance,
+    Hud,
+    Safety,
+}
+
+impl Section {
+    pub const ALL: [Section; 8] = [
+        Section::Overview,
+        Section::Display,
+        Section::Shadows,
+        Section::Effects,
+        Section::World,
+        Section::Performance,
+        Section::Hud,
+        Section::Safety,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Section::Overview => "Overview",
+            Section::Display => "Display",
+            Section::Shadows => "Shadows",
+            Section::Effects => "Lighting & effects",
+            Section::World => "World detail",
+            Section::Performance => "Performance",
+            Section::Hud => "HUD",
+            Section::Safety => "Safety & setup",
+        }
+    }
+
+    pub fn subtitle(self) -> &'static str {
+        match self {
+            Section::Overview => "Pick a preset, nudge the big ones, press Apply.",
+            Section::Display => "Resolution, upscaling and texture detail.",
+            Section::Shadows => "Shadows are the most expensive thing the game draws.",
+            Section::Effects => "Ambient occlusion, glow, fog and ability effects.",
+            Section::World => "How far and how detailed the world is drawn.",
+            Section::Performance => "Frame rate caps, menus and CPU.",
+            Section::Hud => "Move and resize parts of the in-game HUD.",
+            Section::Safety => "Undo, restore, ranked-safe mode and instant changes.",
+        }
+    }
+}
+
+/// When pending changes reach the game, for the action bar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Timing {
+    Nothing,
+    NextLaunch,
+    /// Live changes the running game picks up from the console (key bind or netcon).
+    Instant,
+    Mixed {
+        now: usize,
+        later: usize,
+    },
+}
+
+impl Timing {
+    pub fn of(plan: &ApplyPlan, game_running: bool) -> Timing {
+        let now = if game_running { plan.live.len() } else { 0 };
+        let later = plan.restart.len()
+            + plan.queued_cheat.len()
+            + plan.video_changes.len()
+            + (plan.live.len() - now);
+        match (now, later) {
+            (0, 0) if plan.is_empty() => Timing::Nothing,
+            (0, _) => Timing::NextLaunch,
+            (_, 0) => Timing::Instant,
+            (now, later) => Timing::Mixed { now, later },
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum Scope {
     #[default]
@@ -177,6 +259,7 @@ pub struct UiState {
     pub overrides_path: String,
     pub new_profile_name: String,
     pub hud_selected: Option<ElementId>,
+    pub section: Section,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -553,15 +636,54 @@ impl AppState {
     }
 
     pub fn revert_convar(&mut self, name: &str) {
-        self.profile.convars.set.remove(name);
-        self.profile.convars.comment.retain(|c| c != name);
-        self.refresh_preview();
+        self.reset_convars([name]);
     }
 
     pub fn revert_all(&mut self) {
         self.profile = self.saved.clone().unwrap_or_else(default_profile);
         self.base = Base::resolve(&self.profile);
         self.refresh_preview();
+    }
+
+    /// Whether the profile moves `name` away from the preset.
+    pub fn is_changed(&self, name: &str) -> bool {
+        matches!(
+            self.setting(name),
+            Setting::Override(_) | Setting::CommentedOut
+        )
+    }
+
+    pub fn changed_count<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> usize {
+        names.into_iter().filter(|n| self.is_changed(n)).count()
+    }
+
+    /// What the preset gives `name`, falling back to the game default.
+    pub fn preset_value(&self, name: &str) -> Option<String> {
+        self.base_value(name)
+            .map(str::to_string)
+            .or_else(|| self.catalog.get(name).and_then(|e| e.default.clone()))
+    }
+
+    pub fn reset_convars<'a>(&mut self, names: impl IntoIterator<Item = &'a str>) {
+        let edits = &mut self.profile.convars;
+        for name in names {
+            edits.set.remove(name);
+            edits.comment.retain(|c| c != name);
+        }
+        self.refresh_preview();
+    }
+
+    /// Drops every convar edit so the profile is the preset again; HUD and video edits stay.
+    pub fn reset_to_preset(&mut self) {
+        self.profile.convars = ConVarEdits::default();
+        self.refresh_preview();
+    }
+
+    pub fn timing(&self) -> Timing {
+        match &self.preview {
+            Ok(plan) => Timing::of(plan, self.ctx.game_running),
+            Err(_) => Timing::Nothing,
+        }
     }
 
     pub fn set_video(&mut self, key: &str, value: String) {
@@ -1390,5 +1512,56 @@ mod tests {
         assert_eq!(fmt_num(0.55, false), "0.55");
         assert_eq!(fmt_num(2.0, false), "2");
         assert_eq!(fmt_num(-0.00001, false), "0");
+    }
+
+    #[test]
+    fn changed_detection_follows_the_preset() {
+        let (_dir, mut state) = state();
+        assert_eq!(state.changed_count(["fps_max", RESTART]), 0);
+        state.set_convar(LIVE, "144".into()).unwrap();
+        assert!(state.is_changed(LIVE));
+        assert_eq!(state.preset_value(LIVE).as_deref(), Some("400"));
+        state.set_base(BaseRef::Preset(PresetId::KaizMinspec));
+        assert_eq!(state.preset_value(LIVE).as_deref(), Some("0"));
+        assert!(state.is_changed(LIVE), "edits survive a preset switch");
+        state.set_convar(LIVE, "0".into()).unwrap();
+        assert!(
+            !state.is_changed(LIVE),
+            "picking the preset value is not a change"
+        );
+        state.comment_convar("r_ssao").unwrap();
+        assert!(
+            state.is_changed("r_ssao"),
+            "commented out counts as changed"
+        );
+    }
+
+    #[test]
+    fn reset_one_section_or_everything_to_the_preset() {
+        let (_dir, mut state) = state();
+        state.set_convar(LIVE, "144".into()).unwrap();
+        state.set_convar(RESTART, "true".into()).unwrap();
+        state.set_convar("r_ssao", "false".into()).unwrap();
+        state.reset_convars(["r_ssao"]);
+        assert!(!state.is_changed("r_ssao"));
+        assert_eq!(state.changed_count([LIVE, RESTART]), 2);
+        state.reset_to_preset();
+        assert_eq!(state.changed_count([LIVE, RESTART, "r_ssao"]), 0);
+        assert!(
+            plan(&state).is_empty(),
+            "back to the preset, nothing to write"
+        );
+    }
+
+    #[test]
+    fn timing_says_when_changes_land() {
+        let (_dir, mut state) = state();
+        assert_eq!(state.timing(), Timing::Nothing);
+        state.set_convar(LIVE, "144".into()).unwrap();
+        assert_eq!(state.timing(), Timing::NextLaunch, "game closed");
+        state.observe_game(true, None);
+        assert_eq!(state.timing(), Timing::Instant);
+        state.set_convar(RESTART, "true".into()).unwrap();
+        assert_eq!(state.timing(), Timing::Mixed { now: 1, later: 1 });
     }
 }

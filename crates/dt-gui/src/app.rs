@@ -13,7 +13,7 @@ use eframe::egui::{self, Color32, RichText, ViewportCommand, WindowLevel};
 use crate::live::PushOutcome;
 use crate::relaunch::{self, Relaunch};
 use crate::settings::{Settings, TargetSource, View};
-use crate::state::{AppState, Mode, Status, Tab};
+use crate::state::{AppState, Mode, Section, Status, Tab};
 use crate::{Args, profiles, simple, views};
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
@@ -104,6 +104,7 @@ impl App {
 
     /// Called once the window exists, for things that need the egui context.
     pub fn started(mut self, ctx: &egui::Context) -> App {
+        crate::theme::install(ctx);
         self.game_poll = Some(spawn_game_poll(ctx.clone()));
         self
     }
@@ -121,6 +122,14 @@ impl App {
                 }
                 if self.args.compact {
                     state.ui.mode = Mode::Compact;
+                }
+                // Screenshot lever: `DEADTUNE_SECTION=shadows` opens that simple-view section.
+                if let Ok(name) = std::env::var("DEADTUNE_SECTION")
+                    && let Some(section) = Section::ALL
+                        .into_iter()
+                        .find(|s| s.label().to_lowercase().starts_with(&name.to_lowercase()))
+                {
+                    state.ui.section = section;
                 }
                 self.startup_profile(&mut state);
                 self.screen = Screen::Main(Box::new(state));

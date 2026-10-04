@@ -1,8 +1,13 @@
 //! Ways to get console commands into a running game.
 
+pub mod ack;
+pub mod boot;
 pub mod clipboard;
+pub mod conlog;
 pub mod execfile;
 pub mod netcon;
+
+pub use ack::Receipt;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConsoleCmd {
@@ -51,7 +56,22 @@ pub enum BridgeError {
 
 pub trait Bridge {
     fn name(&self) -> &'static str;
-    fn push(&mut self, cmds: &[ConsoleCmd]) -> Result<(), BridgeError>;
+    /// Delivers console lines to the game, in order, as one unit.
+    fn send(&mut self, lines: &[String]) -> Result<(), BridgeError>;
+
+    /// The batch plus the ack trailer `ack::script` adds, so the console log can confirm it.
+    fn push(&mut self, cmds: &[ConsoleCmd]) -> Result<Receipt, BridgeError> {
+        let receipt = Receipt::for_batch(cmds);
+        self.send(&ack::script(&receipt)?)?;
+        Ok(receipt)
+    }
+
+    /// A batch that changes nothing and only queries `name`, to prove the pipeline works.
+    fn probe(&mut self, name: &str) -> Result<Receipt, BridgeError> {
+        let receipt = Receipt::for_probe(name);
+        self.send(&ack::script(&receipt)?)?;
+        Ok(receipt)
+    }
 }
 
 /// All lines or the first error, so a bridge never sends half a batch.

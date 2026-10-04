@@ -101,11 +101,18 @@ impl Bridge for RecordingBridge {
         "recording"
     }
 
-    fn push(&mut self, cmds: &[ConsoleCmd]) -> Result<(), BridgeError> {
+    /// Records the `name "value"` lines and skips the log redirect and ack trailer.
+    fn send(&mut self, lines: &[String]) -> Result<(), BridgeError> {
         if self.fail {
             return Err(BridgeError::Io(std::io::Error::other("netcon refused")));
         }
-        self.pushed.extend_from_slice(cmds);
+        self.pushed.extend(lines.iter().filter_map(|line| {
+            let (name, value) = line.split_once(" \"")?;
+            Some(ConsoleCmd {
+                name: name.to_string(),
+                value: value.trim_end_matches('"').to_string(),
+            })
+        }));
         Ok(())
     }
 }
@@ -439,6 +446,7 @@ fn execute_writes_backs_up_snapshots_and_pushes_then_reapply_is_a_no_op() {
             pushed_live: plan.live.len(),
             needs_restart: true,
             bridge_error: None,
+            receipt: report.receipt.clone(),
             hud_changed: false,
             addons_changed: false,
         }

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::addons::install::{self as addons_install, AddonsPlan};
 use crate::addons::{AddonError, AddonsConfig};
 use crate::backup::{BackupStore, FileKind, atomic_write};
-use crate::bridge::{Bridge, BridgeError, ConsoleCmd};
+use crate::bridge::{Bridge, BridgeError, ConsoleCmd, Receipt};
 use crate::catalog::{ApplyClass, Catalog};
 use crate::gi::{self, GiError, Overrides};
 use crate::hud::install::{self as hud_install, HudAction, HudError, HudPlan, InstalledState};
@@ -118,6 +118,8 @@ pub struct ApplyReport {
     /// Set when the files were written but the bridge push failed. The writes stand, so this
     /// is a report field rather than an `Err`; the live changes take effect next launch.
     pub bridge_error: Option<String>,
+    /// What the bridge sent, for the ack tracker to confirm against the console log.
+    pub receipt: Option<Receipt>,
     /// The HUD addon was written or removed.
     pub hud_changed: bool,
     /// A performance addon pak was written or removed.
@@ -385,7 +387,10 @@ pub fn execute(
     };
     if let (Some(bridge), false) = (bridge, plan.live.is_empty()) {
         match bridge.push(&plan.live) {
-            Ok(()) => report.pushed_live = plan.live.len(),
+            Ok(receipt) => {
+                report.pushed_live = plan.live.len();
+                report.receipt = Some(receipt);
+            }
             Err(e) => report.bridge_error = Some(format!("{}: {e}", bridge.name())),
         }
     }

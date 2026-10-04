@@ -55,6 +55,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         install::installed_state(&paths, &state_dir)
             .map_or_else(|e| e.to_string(), |s| format!("{s:?}"))
     );
+    if !layout.minimap_colors.is_empty() {
+        println!("experimental: minimap colours are untested in game");
+    }
     match &plan.action {
         HudAction::Write(bytes) => println!("action:  write {} bytes", bytes.len()),
         HudAction::Remove => println!("action:  remove (layout is vanilla)"),

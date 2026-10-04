@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 use dt_core::hud::install::{self, ADDON_FILE, GAME_PAK, HudAction, HudError, InstalledState};
 use dt_core::hud::resource::{Resource, style_text};
 use dt_core::hud::vpk::{self, VpkDir, VpkError};
-use dt_core::hud::{ElementEdit, ElementId, HudLayout, StylePatch, layout};
+use dt_core::hud::{Color, ElementEdit, ElementId, HudLayout, IconId, StylePatch, layout};
 use dt_core::locate::{self, GamePaths};
 
 const HUD: &str = "panorama/styles/hud.vcss_c";
+const MINIMAP: &str = "panorama/styles/hud_minimap.vcss_c";
 const CSS: &str = "#TopBar{opacity:0.5;}";
 
 fn repo_file(rel: &str) -> PathBuf {
@@ -48,6 +49,8 @@ impl Fake {
         if pak {
             let mut files = BTreeMap::new();
             files.insert(HUD.to_string(), vanilla_hud());
+            // Any compiled stylesheet works as the minimap template.
+            files.insert(MINIMAP.to_string(), vanilla_hud());
             files.insert("scripts/unrelated.txt".to_string(), b"unrelated".to_vec());
             fs::write(citadel.join(GAME_PAK), vpk::write(&files)).unwrap();
         }
@@ -318,4 +321,22 @@ fn layout_compiles_installs_and_vanilla_removes() {
     assert_eq!(plan.action, HudAction::Remove);
     install::execute(&plan, &fake.paths, &fake.state).unwrap();
     assert!(!fake.addon().exists());
+}
+
+#[test]
+fn minimap_colors_patch_only_the_minimap_stylesheet() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    hud.minimap_colors
+        .insert(IconId::EnemyHero, Color([0, 0xD5, 0xFF, 255]));
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    assert!(matches!(plan.action, HudAction::Write(_)));
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+
+    let addon = VpkDir::open(&fake.addon()).unwrap();
+    assert!(!addon.contains(HUD), "hud.vcss_c untouched");
+    let res = Resource::parse(&addon.read(MINIMAP).unwrap()).unwrap();
+    assert!(style_text(&res).unwrap().ends_with(
+        "#hud_minimap .map_button.player.enemy #BackgroundImage{background-color:#00D5FF;}"
+    ));
 }

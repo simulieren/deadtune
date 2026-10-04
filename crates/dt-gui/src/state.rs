@@ -395,7 +395,7 @@ impl HudPreset {
         };
         HudLayout {
             elements: elements.into_iter().collect(),
-            extra_css: BTreeMap::new(),
+            ..HudLayout::default()
         }
     }
 }

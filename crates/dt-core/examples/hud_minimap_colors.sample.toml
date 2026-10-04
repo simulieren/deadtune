@@ -1,0 +1,16 @@
+# Experimental: minimap icon colours, untested in game.
+# Keys: enemy_hero, ally_hero, local_hero, enemy_hero_arrow, ally_hero_arrow,
+# enemy_objective, ally_objective, enemy_urn_return, ally_urn_return, urn_spawn,
+# carried_urn, small_camp, medium_camp, large_camp, vault, mid_boss, weapon_powerup,
+# souls_powerup, health_powerup, spirit_powerup, movement_powerup, powerup_spawn,
+# unsecured_souls, rejuv_crystal, shop, broker, teleporter, stairs.
+# Values: "#RRGGBB" or "#RRGGBBAA" (alpha sets how strongly the tint blends).
+[minimap_colors]
+enemy_hero = "#00D5FF"
+enemy_hero_arrow = "#00D5FF"
+enemy_objective = "#00D5FF"
+enemy_urn_return = "#00D5FF"
+ally_hero = "#7CFF6B"
+vault = "#FFD24A"
+large_camp = "#FF8A3D"
+urn_spawn = "#B388FF"

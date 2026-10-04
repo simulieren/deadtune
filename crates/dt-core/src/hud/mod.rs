@@ -3,6 +3,7 @@
 //!   profile/apply pipeline; `convars` only supplies their catalog entries.
 //! - Layout edits (move, scale, hide, fade) compile to CSS that is appended to the
 //!   game's own compiled `hud.vcss_c` and shipped as one DeadTune-owned addon VPK.
+//!   Experimental minimap icon colours take the same path into `hud_minimap.vcss_c`.
 //!
 //! Pipeline: `HudLayout` -> `layout::compile` -> `StylePatch` -> `install::plan`
 //! (reads the game's pak01, patches each style file via `resource`, packs via `vpk`)
@@ -14,9 +15,11 @@ pub mod css;
 pub mod elements;
 pub mod install;
 pub mod layout;
+pub mod minimap_colors;
 pub mod resource;
 pub mod searchpaths;
 pub mod vpk;
 
 pub use elements::{ElementId, ElementSpec};
 pub use layout::{ElementEdit, HudLayout, StylePatch};
+pub use minimap_colors::{Color, IconId};

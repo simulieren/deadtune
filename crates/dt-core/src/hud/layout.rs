@@ -6,6 +6,7 @@ use super::css::CssError;
 use super::elements::{
     self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
 };
+use super::minimap_colors::{self, Color, IconId, MINIMAP_STYLE};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -51,6 +52,8 @@ pub const SCALE_RANGE: std::ops::RangeInclusive<u16> = 25..=300;
 #[serde(default)]
 pub struct HudLayout {
     pub elements: BTreeMap<ElementId, ElementEdit>,
+    /// Experimental, untested in game: minimap icon colours (`hud::minimap_colors`).
+    pub minimap_colors: BTreeMap<IconId, Color>,
     /// Advanced: raw CSS appended after the generated rules, keyed by style file path
     /// (`panorama/styles/hud.vcss_c`). Must parse with balanced braces.
     pub extra_css: BTreeMap<String, String>,
@@ -83,12 +86,14 @@ pub enum LayoutError {
 impl HudLayout {
     pub fn is_vanilla(&self) -> bool {
         self.elements.values().all(|e| *e == ElementEdit::default())
+            && self.minimap_colors.is_empty()
             && self.extra_css.values().all(|c| c.trim().is_empty())
     }
 }
 
 /// Validates and emits one rule per non-identity element (sorted by `ElementId`),
-/// then the minified extra CSS. Deterministic.
+/// one rule per minimap colour (sorted by `IconId`), then the minified extra CSS.
+/// Deterministic.
 pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
     let mut files: BTreeMap<String, String> = BTreeMap::new();
     for (&id, edit) in &layout.elements {
@@ -107,6 +112,14 @@ pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
             rule.push(';');
         }
         rule.push('}');
+    }
+    for (&id, color) in &layout.minimap_colors {
+        let spec = minimap_colors::spec(id);
+        let rule = super::css::emit_rule(spec.selector, &[(spec.property, color.to_string())]);
+        files
+            .entry(MINIMAP_STYLE.to_string())
+            .or_default()
+            .push_str(&rule);
     }
     for (path, css) in &layout.extra_css {
         let css = super::css::parse_rules(css)
@@ -259,7 +272,7 @@ mod tests {
     fn layout(edits: &[(ElementId, ElementEdit)]) -> HudLayout {
         HudLayout {
             elements: edits.iter().cloned().collect(),
-            extra_css: BTreeMap::new(),
+            ..HudLayout::default()
         }
     }
 
@@ -692,5 +705,55 @@ mod tests {
                 ..edit()
             }
         );
+    }
+
+    #[test]
+    fn minimap_colors_go_to_the_minimap_stylesheet() {
+        let mut l = layout(&[(
+            ElementId::Chat,
+            ElementEdit {
+                opacity_pct: 50,
+                ..edit()
+            },
+        )]);
+        l.minimap_colors
+            .insert(IconId::EnemyObjective, Color([0, 0xD5, 0xFF, 255]));
+        l.minimap_colors
+            .insert(IconId::EnemyHero, Color([0, 0xD5, 0xFF, 0x80]));
+        l.extra_css.insert(
+            MINIMAP_STYLE.to_string(),
+            "#hud_minimap{opacity:0.9;}".to_string(),
+        );
+        assert!(!l.is_vanilla());
+        let patch = compile(&l).expect("valid");
+        assert_eq!(patch.files[HUD_STYLE], "#Chat{opacity:0.5;}");
+        assert_eq!(
+            patch.files[MINIMAP_STYLE],
+            "#hud_minimap .map_button.player.enemy #BackgroundImage{background-color:#00D5FF80;}\
+             #hud_minimap .map_button.enemy.boss .boss_image{wash-color:#00D5FF;}\
+             #hud_minimap{opacity:0.9;}"
+        );
+    }
+
+    #[test]
+    fn minimap_colors_toml() {
+        let l: HudLayout = toml::from_str(
+            "[minimap_colors]\nally_hero = \"#7cff6b\"\nenemy_hero_arrow = \"#00D5FF80\"\n",
+        )
+        .expect("parse");
+        assert_eq!(
+            l.minimap_colors[&IconId::AllyHero],
+            Color([0x7C, 0xFF, 0x6B, 255])
+        );
+        assert_eq!(
+            l.minimap_colors[&IconId::EnemyHeroArrow],
+            Color([0, 0xD5, 0xFF, 0x80])
+        );
+        let text = toml::to_string(&l).expect("serialize");
+        assert!(text.contains("ally_hero = \"#7CFF6B\""), "{text}");
+        assert_eq!(toml::from_str::<HudLayout>(&text).expect("parse"), l);
+        let err =
+            toml::from_str::<HudLayout>("[minimap_colors]\nenemy_hero = \"red\"\n").unwrap_err();
+        assert!(err.to_string().contains("not #RRGGBB"), "{err}");
     }
 }

@@ -72,6 +72,7 @@ CSS emitted per edit: `transform:translateX(..px) translateY(..px)`, `ui-scale` 
 | `css` | minify, parse rules, read vanilla declarations, emit rules |
 | `elements` | the element table |
 | `layout` | `HudLayout`, validation, `compile`, `preview` rects |
+| `minimap_colors` | Experimental. Minimap icon colour table, rules go to `hud_minimap.vcss_c` (research/hud/minimap-icon-colors.md) |
 | `searchpaths` | ensure `Game citadel/addons` in gameinfo SearchPaths (pure text) |
 | `install` | plan/execute/uninstall of `addons/pak77_dir.vpk`, install record, conflict scan |
 | `convars` | embedded `catalog/hud.toml` |
@@ -107,6 +108,7 @@ Use `cargo run -p dt-core --example hud_build -- <game root> <layout.toml>` to p
 7. Do rules in `hud.vcss_c` reach `#ammo_panel`? It lives in `element_gun.xml` under `#crosshair` and may need `element_gun.vcss_c`.
 8. Minimap scale: vanilla animates `pre-transform-scale2d` (`.InHideout` sets 0.9). Check that our value holds in matches. State rules with higher specificity (`.InHideout`, `.deathReplayActive`, `.gDetailView`) will win over ours by design.
 9. The preview boxes for the top bar, ability, item, ammo, kill feed and chat panels are estimates (`notes` in `hud::elements`). Take a screenshot with the HUD in vanilla and correct the table rows.
+10. Experimental minimap colours: run `hud_build` with `examples/hud_minimap_colors.sample.toml` and work through the tests in research/hud/minimap-icon-colors.md section 7.
 
 ### Phase H1: core (this branch)
 

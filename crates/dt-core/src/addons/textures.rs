@@ -1,306 +1,114 @@
-//! The low-VRAM texture downscaler, generated from the player's own game files rather
-//! than imported from Sqooky's 689 MB GameBanana archive. The config and the build
-//! contract live here; the mip-stripping itself is `dt_core::texture`, plugged in
-//! through [`TextureBuilder`] so this module compiles before it lands.
+//! The low-VRAM texture downscaler as an addon. The work is `crate::texture`: it reads
+//! the game's own `.vtex_c` files, drops their largest mips and streams the copies into
+//! our pak (chunked past 256 MiB). This module only names what the install record and
+//! the UI need: a fingerprint for the config, friendly labels, and an owned progress.
 
-use std::collections::BTreeSet;
-use std::path::Path;
+use crate::texture::{Category, Stats, TextureDownscale};
 
-use crate::locate::GamePaths;
-
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum TextureCategory {
-    World,
-    Heroes,
-    Particles,
-    Ui,
-    Other,
+pub fn is_default(cfg: &TextureDownscale) -> bool {
+    *cfg == TextureDownscale::default()
 }
 
-impl TextureCategory {
-    pub const ALL: [TextureCategory; 5] = [
-        TextureCategory::World,
-        TextureCategory::Heroes,
-        TextureCategory::Particles,
-        TextureCategory::Ui,
-        TextureCategory::Other,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            TextureCategory::World => "World and props",
-            TextureCategory::Heroes => "Heroes",
-            TextureCategory::Particles => "Particles",
-            TextureCategory::Ui => "UI and HUD",
-            TextureCategory::Other => "Everything else (weapons, NPCs, items)",
-        }
-    }
-
-    pub fn key(self) -> &'static str {
-        match self {
-            TextureCategory::World => "world",
-            TextureCategory::Heroes => "heroes",
-            TextureCategory::Particles => "particles",
-            TextureCategory::Ui => "ui",
-            TextureCategory::Other => "other",
-        }
-    }
-
-    /// Which category a game texture path falls in. Lighting data (lightmaps, cubemaps,
-    /// irradiance under `maps/`) is not a category: it is governed by
-    /// [`TextureDownscale::exclude_lighting`] and never offered as a checkbox.
-    pub fn of(path: &str) -> Option<TextureCategory> {
-        if is_lighting(path) {
-            return None;
-        }
-        let p = path.to_ascii_lowercase();
-        let cat = if p.starts_with("panorama/") || p.starts_with("materials/ui") {
-            TextureCategory::Ui
-        } else if p.starts_with("particles/") || p.starts_with("materials/particle") {
-            TextureCategory::Particles
-        } else if p.starts_with("materials/models/heroes/") || p.starts_with("models/heroes/") {
-            TextureCategory::Heroes
-        } else if WORLD_PREFIXES.iter().any(|w| p.starts_with(w)) {
-            TextureCategory::World
+/// Stable text for the install record's input fingerprint.
+pub fn fingerprint(cfg: &TextureDownscale) -> String {
+    let cats: Vec<&str> = cfg.categories.iter().map(|c| c.label()).collect();
+    format!(
+        "factor={:?};categories={};lighting={}",
+        cfg.factor,
+        cats.join(","),
+        if cfg.exclude_lighting {
+            "sharp"
         } else {
-            TextureCategory::Other
-        };
-        Some(cat)
-    }
-}
-
-const WORLD_PREFIXES: &[&str] = &[
-    "materials/models/props",
-    "materials/models/world",
-    "materials/world",
-    "materials/environment",
-    "materials/nature",
-    "materials/structures",
-    "materials/props",
-    "materials/decals",
-    "materials/skybox",
-    "materials/terrain",
-    "models/props",
-    "models/world",
-];
-
-/// Lightmaps and probes: downscaling these is what makes the map look bright and flat.
-pub fn is_lighting(path: &str) -> bool {
-    let p = path.to_ascii_lowercase();
-    p.starts_with("maps/")
-        || p.contains("lightmap")
-        || p.contains("cubemap")
-        || p.contains("irradiance")
-        || p.contains("envmap")
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Factor {
-    Half,
-    #[default]
-    Quarter,
-}
-
-impl Factor {
-    pub const ALL: [Factor; 2] = [Factor::Half, Factor::Quarter];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Factor::Half => "1/2",
-            Factor::Quarter => "1/4",
+            "downscaled"
         }
-    }
-
-    /// Mip levels dropped from the top of each texture.
-    pub fn mips_dropped(self) -> u8 {
-        match self {
-            Factor::Half => 1,
-            Factor::Quarter => 2,
-        }
-    }
+    )
 }
 
-/// What the player asked the downscaler to do.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct TextureDownscale {
-    #[serde(default)]
-    pub factor: Factor,
-    #[serde(default = "all_categories")]
-    pub categories: BTreeSet<TextureCategory>,
-    /// Leave lightmaps and probes alone (recommended; see the upstream readme).
-    #[serde(default = "yes")]
-    pub exclude_lighting: bool,
-}
-
-fn yes() -> bool {
-    true
-}
-
-fn all_categories() -> BTreeSet<TextureCategory> {
-    TextureCategory::ALL.into_iter().collect()
-}
-
-impl Default for TextureDownscale {
-    fn default() -> TextureDownscale {
-        TextureDownscale {
-            factor: Factor::Quarter,
-            categories: all_categories(),
-            exclude_lighting: true,
-        }
+pub fn category_label(cat: Category) -> &'static str {
+    match cat {
+        Category::World => "World and props",
+        Category::Heroes => "Heroes",
+        Category::Particles => "Particles",
+        Category::Ui => "UI and HUD",
+        Category::Other => "Everything else",
     }
 }
 
-impl TextureDownscale {
-    pub fn is_default(&self) -> bool {
-        *self == TextureDownscale::default()
-    }
-
-    /// Whether the build should touch this game texture.
-    pub fn includes(&self, path: &str) -> bool {
-        match TextureCategory::of(path) {
-            None => !self.exclude_lighting,
-            Some(cat) => self.categories.contains(&cat),
-        }
-    }
-
-    /// Stable text for the install record's input fingerprint.
-    pub fn fingerprint(&self) -> String {
-        let cats: Vec<&str> = self.categories.iter().map(|c| c.key()).collect();
-        format!(
-            "factor={:?};categories={};lighting={}",
-            self.factor,
-            cats.join(","),
-            if self.exclude_lighting {
-                "sharp"
-            } else {
-                "downscaled"
-            }
-        )
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+/// `texture::Progress` without the borrows, for a channel between threads.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Progress {
     pub done: usize,
     pub total: usize,
-    /// The texture being worked on.
+    /// VPK path of the texture just processed.
     pub current: String,
+    pub stats: Stats,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct BuildStats {
-    pub textures: usize,
-    pub bytes_before: u64,
-    pub bytes_after: u64,
-}
-
-/// Writes the downscaled-texture addon VPK to `out` from the game's own archives.
-/// Implemented by `dt_core::texture`; [`Unavailable`] stands in until it lands.
-pub trait TextureBuilder: Sync {
-    fn build(
-        &self,
-        paths: &GamePaths,
-        cfg: &TextureDownscale,
-        out: &Path,
-        progress: &mut dyn FnMut(Progress),
-    ) -> Result<BuildStats, String>;
-}
-
-/// The builder the GUI and CLI use. `dt_core::texture` replaces the body with its own
-/// implementation when it lands; nothing else needs to change.
-pub fn builder() -> &'static dyn TextureBuilder {
-    &Unavailable
-}
-
-pub struct Unavailable;
-
-impl TextureBuilder for Unavailable {
-    fn build(
-        &self,
-        _paths: &GamePaths,
-        _cfg: &TextureDownscale,
-        _out: &Path,
-        _progress: &mut dyn FnMut(Progress),
-    ) -> Result<BuildStats, String> {
-        Err("Texture downscaling is not available in this build of DeadTune yet.".into())
+impl From<crate::texture::Progress<'_>> for Progress {
+    fn from(p: crate::texture::Progress<'_>) -> Progress {
+        Progress {
+            done: p.done,
+            total: p.total,
+            current: p.path.to_string(),
+            stats: p.stats.clone(),
+        }
     }
+}
+
+/// One line for the status bar and the CLI: what a build did.
+pub fn summary(stats: &Stats) -> String {
+    let skipped: usize = stats.skipped.values().sum();
+    let mb = |b: u64| (b as f64 / (1024.0 * 1024.0)).round() as u64;
+    format!(
+        "{} of {} textures reduced ({} skipped), {} MB down to {} MB",
+        stats.reduced,
+        stats.textures,
+        skipped,
+        mb(stats.bytes_before),
+        mb(stats.bytes_after)
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::texture::Factor;
 
     #[test]
-    fn categorises_by_path_prefix_and_keeps_lighting_apart() {
-        let of = TextureCategory::of;
-        assert_eq!(
-            of("materials/models/heroes/haze/haze_color.vtex_c"),
-            Some(TextureCategory::Heroes)
-        );
-        assert_eq!(
-            of("materials/models/props/crate_color.vtex_c"),
-            Some(TextureCategory::World)
-        );
-        assert_eq!(
-            of("materials/world/street/asphalt.vtex_c"),
-            Some(TextureCategory::World)
-        );
-        assert_eq!(
-            of("panorama/images/hud/x.vtex_c"),
-            Some(TextureCategory::Ui)
-        );
-        assert_eq!(
-            of("materials/particle/smoke.vtex_c"),
-            Some(TextureCategory::Particles)
-        );
-        assert_eq!(
-            of("materials/models/weapons/gun.vtex_c"),
-            Some(TextureCategory::Other)
-        );
-        assert_eq!(of("maps/street_test/irradiance.vtex_c"), None);
-        assert_eq!(of("materials/lightmaps/a.vtex_c"), None);
-        assert!(is_lighting("materials/skybox/sky_cubemap.vtex_c"));
+    fn fingerprint_follows_every_field() {
+        let base = TextureDownscale::default();
+        assert!(is_default(&base));
+        let mut f = base.clone();
+        f.factor = Factor::Quarter;
+        let mut c = base.clone();
+        c.categories.insert(Category::Ui);
+        let mut l = base.clone();
+        l.exclude_lighting = false;
+        let prints = [
+            fingerprint(&base),
+            fingerprint(&f),
+            fingerprint(&c),
+            fingerprint(&l),
+        ];
+        for (i, a) in prints.iter().enumerate() {
+            for (j, b) in prints.iter().enumerate() {
+                assert_eq!(a == b, i == j, "{a} vs {b}");
+            }
+        }
     }
 
     #[test]
-    fn includes_follows_categories_and_the_lighting_switch() {
-        let mut cfg = TextureDownscale::default();
-        assert!(cfg.includes("materials/models/heroes/haze/haze_color.vtex_c"));
-        assert!(!cfg.includes("maps/street_test/irradiance.vtex_c"));
-        cfg.categories.remove(&TextureCategory::Heroes);
-        assert!(!cfg.includes("materials/models/heroes/haze/haze_color.vtex_c"));
-        cfg.exclude_lighting = false;
-        assert!(cfg.includes("maps/street_test/irradiance.vtex_c"));
-        assert_ne!(cfg.fingerprint(), TextureDownscale::default().fingerprint());
-    }
-
-    #[test]
-    fn config_round_trips_and_defaults_fill_in() {
-        let cfg: TextureDownscale = toml::from_str("factor = \"half\"").unwrap();
-        assert_eq!(cfg.factor, Factor::Half);
-        assert_eq!(cfg.factor.mips_dropped(), 1);
-        assert!(cfg.exclude_lighting);
-        assert_eq!(cfg.categories.len(), TextureCategory::ALL.len());
-        let text = toml::to_string(&cfg).unwrap();
-        assert_eq!(toml::from_str::<TextureDownscale>(&text).unwrap(), cfg);
-        assert!(TextureDownscale::default().is_default());
-    }
-
-    #[test]
-    fn placeholder_builder_refuses_with_a_plain_message() {
-        let (_dir, paths) = crate::addons::install::tests::fake_install("1");
-        let err = Unavailable
-            .build(
-                &paths,
-                &TextureDownscale::default(),
-                Path::new("x"),
-                &mut |_| {},
-            )
-            .unwrap_err();
-        assert!(err.contains("not available"));
+    fn summary_reads_in_megabytes() {
+        let stats = Stats {
+            textures: 10,
+            reduced: 4,
+            bytes_before: 3 << 20,
+            bytes_after: 1 << 20,
+            skipped: [(crate::texture::SkipReason::Lighting, 6)].into(),
+        };
+        assert_eq!(
+            summary(&stats),
+            "4 of 10 textures reduced (6 skipped), 3 MB down to 1 MB"
+        );
     }
 }

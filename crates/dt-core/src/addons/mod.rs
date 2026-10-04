@@ -19,8 +19,10 @@ pub mod particles;
 pub mod sources;
 pub mod textures;
 
+pub use crate::texture::{
+    Category as TextureCategory, Factor, Stats as TextureStats, TextureDownscale,
+};
 pub use install::{Action, AddonPlan, AddonsPlan, Blocker, Build, Conflict, InstalledState};
-pub use textures::{Factor, TextureBuilder, TextureCategory, TextureDownscale};
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
@@ -70,8 +72,8 @@ pub enum Kind {
     ParticleGroups,
     /// Our pak holds a stylesheet rebuilt from the installed game's own file.
     GeneratedCss,
-    /// Our pak holds the game's own textures with their top mip levels dropped. Built
-    /// on demand (minutes, gigabytes read) through [`TextureBuilder`], not by Apply.
+    /// Our pak holds the game's own textures with their top mip levels dropped
+    /// (`crate::texture`). Built on demand (minutes, gigabytes read), not by Apply.
     Textures,
 }
 
@@ -256,7 +258,7 @@ pub struct AddonsConfig {
     pub keep_particles: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BlurOptions::is_default")]
     pub blur: BlurOptions,
-    #[serde(default, skip_serializing_if = "TextureDownscale::is_default")]
+    #[serde(default, skip_serializing_if = "textures::is_default")]
     pub textures: TextureDownscale,
 }
 
@@ -297,7 +299,7 @@ pub enum AddonError {
     #[error("{0} is not a known addon file")]
     NotRecognised(PathBuf),
     #[error("texture build: {0}")]
-    TextureBuild(String),
+    TextureBuild(#[from] crate::texture::AddonError),
     #[error("{file} does not match the pinned upstream file (sha256 {expected}, got {got})")]
     ShaMismatch {
         file: String,
@@ -366,15 +368,15 @@ mod tests {
         config.set_enabled(AddonId::BlurDisabler, true);
         config.blur.menu = false;
         config.keep_particles.insert("low_health".into());
-        config.textures.factor = Factor::Half;
+        config.textures.factor = Factor::Quarter;
         let text = toml::to_string(&config).unwrap();
         assert!(text.contains("enabled = [\"blur_disabler\"]"), "{text}");
-        assert!(text.contains("factor = \"half\""), "{text}");
+        assert!(text.contains("factor = \"quarter\""), "{text}");
         let back: AddonsConfig = toml::from_str(&text).unwrap();
         assert_eq!(back, config);
         let partial: AddonsConfig = toml::from_str("enabled = [\"soul_container\"]").unwrap();
         assert!(partial.is_enabled(AddonId::SoulContainer));
-        assert!(partial.textures.is_default());
+        assert!(textures::is_default(&partial.textures));
         assert!(partial.blur.is_default());
     }
 }

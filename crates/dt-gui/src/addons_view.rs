@@ -6,8 +6,9 @@
 use std::path::PathBuf;
 
 use dt_core::addons::install::{Action, Blocker, InstalledState};
-use dt_core::addons::textures::{Factor, TextureCategory, TextureDownscale};
+use dt_core::addons::textures::{category_label, summary};
 use dt_core::addons::{self, AddonId, AddonInfo, Kind, Source, particles};
+use dt_core::addons::{Factor, TextureCategory, TextureDownscale};
 use eframe::egui::{self, Align, Color32, Layout, RichText, Ui, vec2};
 
 use crate::simple::{caption, card_title, switch};
@@ -320,12 +321,8 @@ fn texture_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     let cfg = &state.profile.addons.textures;
     ui.horizontal(|ui| {
         caption(ui, "Texture size");
-        for factor in Factor::ALL {
-            if ui
-                .selectable_label(cfg.factor == factor, factor.label())
-                .clicked()
-                && cfg.factor != factor
-            {
+        for (factor, label) in [(Factor::Half, "1/2"), (Factor::Quarter, "1/4")] {
+            if ui.selectable_label(cfg.factor == factor, label).clicked() && cfg.factor != factor {
                 edits.push(Edit::Textures(TextureDownscale {
                     factor,
                     ..cfg.clone()
@@ -337,7 +334,7 @@ fn texture_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     ui.horizontal_wrapped(|ui| {
         for cat in TextureCategory::ALL {
             let mut on = cfg.categories.contains(&cat);
-            if ui.checkbox(&mut on, cat.label()).changed() {
+            if ui.checkbox(&mut on, category_label(cat)).changed() {
                 let mut next = cfg.clone();
                 if on {
                     next.categories.insert(cat);
@@ -379,7 +376,14 @@ fn texture_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
                         .desired_width(220.0)
                         .text(format!("{}/{}", p.done, p.total)),
                 );
-                ui.label(RichText::new(&p.current).small().color(WEAK));
+                if ui.small_button("Cancel").clicked() {
+                    build.cancel();
+                }
+                ui.label(
+                    RichText::new(format!("{} reduced; {}", p.stats.reduced, p.current))
+                        .small()
+                        .color(WEAK),
+                );
             }
             None => {
                 if ui
@@ -397,6 +401,27 @@ fn texture_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
             }
         }
     });
+    match &state.last_texture_build {
+        Some(Ok(stats)) => {
+            let skipped: Vec<String> = stats
+                .skipped
+                .iter()
+                .map(|(reason, n)| format!("{n} {reason:?}"))
+                .collect();
+            ui.label(RichText::new(format!("Last build: {}.", summary(stats))).color(GOOD));
+            if !skipped.is_empty() {
+                ui.label(
+                    RichText::new(format!("Skipped: {}.", skipped.join(", ")))
+                        .small()
+                        .color(WEAK),
+                );
+            }
+        }
+        Some(Err(e)) => {
+            ui.colored_label(BAD, format!("Last build failed: {e}"));
+        }
+        None => {}
+    }
     ui.label(
         RichText::new(
             "Originals are never modified: DeadTune writes its own pak with the smaller copies. \

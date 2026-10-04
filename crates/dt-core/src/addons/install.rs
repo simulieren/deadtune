@@ -8,18 +8,20 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use sha2::{Digest, Sha256};
 
-use super::textures::{BuildStats, Progress, TextureBuilder};
+use super::textures::{self, Progress};
 use super::{AddonError, AddonId, AddonsConfig, Kind, Source, blur, info, particles, sources};
 use crate::backup::{atomic_write, sha256_hex};
 use crate::hud::install::{ADDON_FILE as HUD_ADDON_FILE, GAME_PAK, addons_dir};
 use crate::hud::searchpaths;
 use crate::hud::vpk::{self, VpkDir};
 use crate::locate::{self, GamePaths};
+use crate::texture::{self as texture_build, Stats};
 
 pub const RECORD_FILE: &str = "addons.toml";
 const FIRST_SLOT: u8 = 70;
@@ -42,6 +44,9 @@ pub struct Installed {
     /// Fingerprint of everything the pak was built from; a change means rebuild.
     pub input: String,
     pub build_id: Option<String>,
+    /// `pakNN_000.vpk` and on, when the payload needed chunks. Removed with the dir file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chunks: Vec<String>,
 }
 
 /// Why an enabled addon cannot be installed right now.
@@ -183,7 +188,30 @@ fn stamp(
         mtime,
         input,
         build_id,
+        chunks: Vec::new(),
     })
+}
+
+/// `pakNN_NNN.vpk` siblings of a `pakNN_dir.vpk`, sorted.
+fn chunks_of(dir: &Path, file: &str) -> Vec<String> {
+    let Some(stem) = file.strip_suffix("_dir.vpk") else {
+        return Vec::new();
+    };
+    let prefix = format!("{stem}_");
+    let mut out: Vec<String> = std::fs::read_dir(dir)
+        .map(|d| {
+            d.filter_map(|e| e.ok())
+                .filter_map(|e| e.file_name().to_str().map(str::to_string))
+                .filter(|n| {
+                    n.strip_prefix(&prefix)
+                        .and_then(|rest| rest.strip_suffix(".vpk"))
+                        .is_some_and(|n| n.len() == 3 && n.bytes().all(|b| b.is_ascii_digit()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
 }
 
 /// Size and mtime first (free); the hash only when they moved.
@@ -215,11 +243,15 @@ fn owned<'a>(dir: &Path, rec: Option<&'a Installed>) -> Result<Option<&'a Instal
 }
 
 /// First free `pakNN_dir.vpk`: the addon's own number, then 70 upwards, skipping the
-/// HUD addon, names already claimed in this pass, and any file on disk.
+/// HUD addon, names already claimed in this pass, and any dir file or chunk on disk.
 fn allocate(id: AddonId, dir: &Path, taken: &mut BTreeSet<String>) -> Result<String, AddonError> {
     for n in std::iter::once(info(id).slot).chain(FIRST_SLOT..=LAST_SLOT) {
         let name = format!("pak{n:02}_dir.vpk");
-        if name == HUD_ADDON_FILE || taken.contains(&name) || dir.join(&name).exists() {
+        if name == HUD_ADDON_FILE
+            || taken.contains(&name)
+            || dir.join(&name).exists()
+            || !chunks_of(dir, &name).is_empty()
+        {
             continue;
         }
         taken.insert(name.clone());
@@ -316,7 +348,7 @@ fn inputs(
         Kind::Textures => Inputs {
             input: fingerprint(&[
                 "textures",
-                &config.textures.fingerprint(),
+                &textures::fingerprint(&config.textures),
                 build_id.unwrap_or(""),
             ]),
             ships: Vec::new(),
@@ -531,9 +563,16 @@ pub fn execute(plan: &AddonsPlan, paths: &GamePaths, state_dir: &Path) -> Result
             }
             Action::Remove => {
                 ensure_writable(&a.path, record.installed.get(key), None)?;
-                match std::fs::remove_file(&a.path) {
-                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-                    _ => {}
+                let chunks = record
+                    .installed
+                    .get(key)
+                    .map(|r| r.chunks.clone())
+                    .unwrap_or_default();
+                for file in std::iter::once(&file).chain(&chunks) {
+                    match std::fs::remove_file(dir.join(file)) {
+                        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+                        _ => {}
+                    }
                 }
                 record.installed.remove(key);
                 write_record(state_dir, &record)?;
@@ -551,20 +590,40 @@ pub fn execute(plan: &AddonsPlan, paths: &GamePaths, state_dir: &Path) -> Result
     Ok(changed)
 }
 
-/// Runs the texture builder into our slot and records the result. Long: the caller
-/// runs it off the UI thread and shows `progress`.
+/// The game archives textures are read from: every `pakNN_dir.vpk` beside gameinfo.gi.
+pub fn game_vpks(paths: &GamePaths) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = std::fs::read_dir(&paths.citadel_dir)
+        .map(|d| {
+            d.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.starts_with("pak") && n.ends_with("_dir.vpk"))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
+}
+
+/// Builds the texture downscaler pak straight into our slot (the builder removes its
+/// own partial output on error or cancel) and records the result with its chunks.
+/// Long: the caller runs it off the UI thread and shows `progress`; returning
+/// `ControlFlow::Break` cancels.
 pub fn build_textures(
     paths: &GamePaths,
     config: &AddonsConfig,
     state_dir: &Path,
-    builder: &dyn TextureBuilder,
-    progress: &mut dyn FnMut(Progress),
-) -> Result<BuildStats, AddonError> {
+    progress: &mut dyn FnMut(Progress) -> ControlFlow<()>,
+) -> Result<Stats, AddonError> {
     let id = AddonId::TextureDownscaler;
     let dir = addons_dir(paths);
     let mut record = read_record(state_dir)?;
     let build = build_id(paths)?;
-    let file = match owned(&dir, record.installed.get(id.key()))? {
+    let previous = owned(&dir, record.installed.get(id.key()))?.cloned();
+    let file = match &previous {
         Some(r) => r.file.clone(),
         None => {
             let mut taken = record.installed.values().map(|i| i.file.clone()).collect();
@@ -574,28 +633,30 @@ pub fn build_textures(
     let path = dir.join(&file);
     ensure_writable(&path, record.installed.get(id.key()), None)?;
     std::fs::create_dir_all(&dir)?;
-    let tmp = dir.join(format!(".{file}.part"));
-    let built = builder
-        .build(paths, &config.textures, &tmp, progress)
-        .map_err(AddonError::TextureBuild);
-    let stats = match built {
-        Ok(stats) => stats,
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(e);
+    // Our previous build goes first: the writer must start from an empty slot.
+    if let Some(r) = &previous {
+        for old in std::iter::once(&r.file).chain(&r.chunks) {
+            match std::fs::remove_file(dir.join(old)) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+                _ => {}
+            }
         }
-    };
-    let sha256 = sha256_file(&tmp)?;
-    std::fs::rename(&tmp, &path)?;
+        record.installed.remove(id.key());
+        write_record(state_dir, &record)?;
+    }
+    let stats =
+        texture_build::build_texture_addon(&game_vpks(paths), &config.textures, &path, &mut |p| {
+            progress(p.into())
+        })?;
+    let sha256 = sha256_file(&path)?;
     let input = fingerprint(&[
         "textures",
-        &config.textures.fingerprint(),
+        &textures::fingerprint(&config.textures),
         build.as_deref().unwrap_or(""),
     ]);
-    record.installed.insert(
-        id.key().to_string(),
-        stamp(&path, file, sha256, input, build)?,
-    );
+    let mut installed = stamp(&path, file.clone(), sha256, input, build)?;
+    installed.chunks = chunks_of(&dir, &file);
+    record.installed.insert(id.key().to_string(), installed);
     write_record(state_dir, &record)?;
     Ok(stats)
 }
@@ -633,7 +694,7 @@ pub(crate) mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::addons::textures::{Factor, TextureDownscale};
+    use crate::addons::TextureCategory;
     use crate::hud::vpk;
 
     const CLEAN_GAMEINFO: &str = include_str!(concat!(
@@ -1017,70 +1078,50 @@ pub(crate) mod tests {
         assert!(!plan(&paths, &config, &state).unwrap().needs_search_path);
     }
 
-    struct FakeBuilder;
-
-    impl TextureBuilder for FakeBuilder {
-        fn build(
-            &self,
-            _paths: &GamePaths,
-            cfg: &TextureDownscale,
-            out: &Path,
-            progress: &mut dyn FnMut(Progress),
-        ) -> Result<BuildStats, String> {
-            let files = BTreeMap::from([(
-                "materials/models/heroes/haze/haze_color.vtex_c".to_string(),
-                format!("{:?}", cfg.factor).into_bytes(),
-            )]);
-            progress(Progress {
-                done: 1,
-                total: 1,
-                current: "haze_color".into(),
-            });
-            std::fs::write(out, vpk::write(&files)).map_err(|e| e.to_string())?;
-            Ok(BuildStats {
-                textures: 1,
-                bytes_before: 100,
-                bytes_after: 25,
-            })
-        }
+    fn game_with_textures(paths: &GamePaths) {
+        use crate::texture::vtex::tests::{COLOR, MASK};
+        let files = BTreeMap::from([
+            ("models/props/a/color.vtex_c".to_string(), COLOR.to_vec()),
+            ("models/heroes/h/mask.vtex_c".to_string(), MASK.to_vec()),
+            ("panorama/images/x.vtex_c".to_string(), MASK.to_vec()),
+        ]);
+        std::fs::write(paths.citadel_dir.join("pak02_dir.vpk"), vpk::write(&files)).unwrap();
     }
 
     #[test]
     fn textures_are_built_on_demand_and_rebuilt_when_the_config_changes() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
+        game_with_textures(&paths);
         let mut config = enabled(&[AddonId::TextureDownscaler]);
         let first = plan(&paths, &config, &state).unwrap();
         assert_eq!(action(&first, AddonId::TextureDownscaler), &Action::Build);
         assert!(first.is_empty(), "Apply never builds textures itself");
         assert!(!execute(&first, &paths, &state).unwrap());
-        assert!(!addons_dir(&paths).join("pak76_dir.vpk").exists());
+        let ours = addons_dir(&paths).join("pak76_dir.vpk");
+        assert!(!ours.exists());
 
-        let err = build_textures(
-            &paths,
-            &config,
-            &state,
-            &crate::addons::textures::Unavailable,
-            &mut |_| {},
-        )
-        .unwrap_err();
-        assert!(matches!(err, AddonError::TextureBuild(_)));
+        let cancelled =
+            build_textures(&paths, &config, &state, &mut |_| ControlFlow::Break(())).unwrap_err();
+        assert!(matches!(
+            cancelled,
+            AddonError::TextureBuild(crate::texture::AddonError::Cancelled)
+        ));
         assert!(read_record(&state).unwrap().installed.is_empty());
-        assert_eq!(files(&addons_dir(&paths)), Vec::<String>::new());
+        assert!(!ours.exists());
 
         let mut seen = Vec::new();
-        let stats =
-            build_textures(&paths, &config, &state, &FakeBuilder, &mut |p| seen.push(p)).unwrap();
-        assert_eq!(stats.textures, 1);
-        assert_eq!(seen.len(), 1);
-        let ours = addons_dir(&paths).join("pak76_dir.vpk");
-        assert_eq!(
-            VpkDir::open(&ours)
-                .unwrap()
-                .read("materials/models/heroes/haze/haze_color.vtex_c")
-                .unwrap(),
-            b"Quarter"
-        );
+        let stats = build_textures(&paths, &config, &state, &mut |p| {
+            seen.push(p);
+            ControlFlow::Continue(())
+        })
+        .unwrap();
+        assert_eq!(stats.reduced, 2, "{stats:?}");
+        assert_eq!(seen.len(), 3);
+        assert_eq!(seen.last().unwrap().stats, stats);
+        let addon = VpkDir::open(&ours).unwrap();
+        assert_eq!(addon.entries.len(), 2);
+        assert!(addon.contains("models/props/a/color.vtex_c"));
         assert_eq!(
             action(
                 &plan(&paths, &config, &state).unwrap(),
@@ -1088,8 +1129,12 @@ pub(crate) mod tests {
             ),
             &Action::Keep
         );
+        assert_eq!(
+            read_record(&state).unwrap().installed["texture_downscaler"].chunks,
+            Vec::<String>::new()
+        );
 
-        config.textures.factor = Factor::Half;
+        config.textures.categories.insert(TextureCategory::Ui);
         assert_eq!(
             action(
                 &plan(&paths, &config, &state).unwrap(),
@@ -1097,20 +1142,51 @@ pub(crate) mod tests {
             ),
             &Action::Build
         );
-        build_textures(&paths, &config, &state, &FakeBuilder, &mut |_| {}).unwrap();
-        assert_eq!(
-            VpkDir::open(&ours)
-                .unwrap()
-                .read("materials/models/heroes/haze/haze_color.vtex_c")
-                .unwrap(),
-            b"Half"
-        );
+        let stats =
+            build_textures(&paths, &config, &state, &mut |_| ControlFlow::Continue(())).unwrap();
+        assert_eq!(stats.reduced, 3);
+        assert_eq!(VpkDir::open(&ours).unwrap().entries.len(), 3);
         assert_eq!(files(&addons_dir(&paths)), ["pak76_dir.vpk"]);
 
         let off = plan(&paths, &AddonsConfig::default(), &state).unwrap();
         assert_eq!(action(&off, AddonId::TextureDownscaler), &Action::Remove);
         execute(&off, &paths, &state).unwrap();
         assert!(!ours.exists());
+    }
+
+    #[test]
+    fn chunk_files_are_recorded_removed_and_block_a_slot() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        let dir = addons_dir(&paths);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("pak73_000.vpk"), b"someone's chunk").unwrap();
+        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
+        let plan = plan(&paths, &enabled(&[AddonId::SinnerLightFix]), &state).unwrap();
+        assert_eq!(
+            plan.get(AddonId::SinnerLightFix).unwrap().path,
+            dir.join("pak70_dir.vpk")
+        );
+
+        let mut record = read_record(&state).unwrap();
+        std::fs::write(dir.join("pak76_dir.vpk"), b"dir").unwrap();
+        std::fs::write(dir.join("pak76_000.vpk"), b"chunk").unwrap();
+        let mut rec = stamp(
+            &dir.join("pak76_dir.vpk"),
+            "pak76_dir.vpk".into(),
+            sha256_hex(b"dir"),
+            "x".into(),
+            None,
+        )
+        .unwrap();
+        rec.chunks = chunks_of(&dir, "pak76_dir.vpk");
+        assert_eq!(rec.chunks, ["pak76_000.vpk"]);
+        record.installed.insert("texture_downscaler".into(), rec);
+        write_record(&state, &record).unwrap();
+        let off = super::plan(&paths, &AddonsConfig::default(), &state).unwrap();
+        assert_eq!(action(&off, AddonId::TextureDownscaler), &Action::Remove);
+        execute(&off, &paths, &state).unwrap();
+        assert_eq!(files(&dir), ["pak73_000.vpk"]);
     }
 
     #[test]

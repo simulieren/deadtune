@@ -160,22 +160,17 @@ pub fn build(env: &Env, args: &Args) -> CliResult {
     let profile = env::load_profile(&args.path("profile")?)?;
     let paths = env.paths()?;
     let mut last = 0;
-    let stats = install::build_textures(
-        &paths,
-        &profile.addons,
-        &env.data_dir,
-        textures::builder(),
-        &mut |p| {
-            if p.done * 20 / p.total.max(1) != last {
-                last = p.done * 20 / p.total.max(1);
-                println!("{}/{} {}", p.done, p.total, p.current);
-            }
-        },
-    )?;
-    println!(
-        "built {} textures: {} -> {} bytes",
-        stats.textures, stats.bytes_before, stats.bytes_after
-    );
+    let stats = install::build_textures(&paths, &profile.addons, &env.data_dir, &mut |p| {
+        if p.done * 20 / p.total.max(1) != last {
+            last = p.done * 20 / p.total.max(1);
+            println!("{}/{} {}", p.done, p.total, p.current);
+        }
+        std::ops::ControlFlow::Continue(())
+    })?;
+    println!("{}", textures::summary(&stats));
+    for (reason, n) in &stats.skipped {
+        println!("    skipped {n}: {reason:?}");
+    }
     Ok(())
 }
 

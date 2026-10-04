@@ -7,8 +7,9 @@ use std::sync::mpsc::{Receiver, channel};
 use std::time::{Instant, SystemTime};
 
 use dt_core::addons::install::{Action, AddonsPlan, InstalledState};
-use dt_core::addons::textures::{BuildStats, Progress, TextureDownscale};
+use dt_core::addons::textures::Progress;
 use dt_core::addons::{self, AddonId, AddonsConfig};
+use dt_core::addons::{TextureDownscale, TextureStats};
 use dt_core::apply::{
     self, ApplyContext, ApplyError, ApplyPlan, ApplyReport, BaseTexts, FileWrite,
 };
@@ -422,12 +423,21 @@ pub enum Status {
 
 enum BuildMsg {
     Progress(Progress),
-    Done(Result<BuildStats, String>),
+    Done(Result<TextureStats, String>),
 }
 
 pub struct TextureBuild {
     rx: Receiver<BuildMsg>,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub progress: Progress,
+}
+
+impl TextureBuild {
+    /// The build thread stops after the texture it is on and removes its output.
+    pub fn cancel(&self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// Result of an Apply click, for the caller to finish what needs a window.
@@ -470,6 +480,8 @@ pub struct AppState {
     addons_cache: Option<(AddonsConfig, Result<Option<AddonsPlan>, String>)>,
     /// A texture downscaler build running on its own thread.
     pub texture_build: Option<TextureBuild>,
+    /// What the last finished build did, for the card.
+    pub last_texture_build: Option<Result<TextureStats, String>>,
     /// Creation time of the backup the last Undo restored; cleared by Apply.
     pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
@@ -563,6 +575,7 @@ impl AppState {
             hud_cache: None,
             addons_cache: None,
             texture_build: None,
+            last_texture_build: None,
             undo_cursor: None,
             checks: None,
             #[cfg(feature = "remote")]
@@ -1091,22 +1104,25 @@ impl AppState {
         let paths = self.paths.clone();
         let config = self.profile.addons.clone();
         let state_dir = self.store.root.clone();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop = cancel.clone();
         std::thread::spawn(move || {
             let progress_tx = tx.clone();
-            let result = addons::install::build_textures(
-                &paths,
-                &config,
-                &state_dir,
-                addons::textures::builder(),
-                &mut |p| {
-                    let _ = progress_tx.send(BuildMsg::Progress(p));
-                },
-            )
+            let result = addons::install::build_textures(&paths, &config, &state_dir, &mut |p| {
+                let _ = progress_tx.send(BuildMsg::Progress(p));
+                if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::ops::ControlFlow::Break(())
+                } else {
+                    std::ops::ControlFlow::Continue(())
+                }
+            })
             .map_err(|e| e.to_string());
             let _ = tx.send(BuildMsg::Done(result));
         });
+        self.last_texture_build = None;
         self.texture_build = Some(TextureBuild {
             rx,
+            cancel,
             progress: Progress::default(),
         });
     }
@@ -1127,15 +1143,14 @@ impl AppState {
             return;
         };
         self.texture_build = None;
-        self.status = Some(match result {
+        self.status = Some(match &result {
             Ok(stats) => Status::Info(format!(
-                "Texture pak built: {} textures, {} MB down to {} MB. Takes effect next time you start Deadlock.",
-                stats.textures,
-                stats.bytes_before >> 20,
-                stats.bytes_after >> 20
+                "Texture pak built: {}. Takes effect next time you start Deadlock.",
+                addons::textures::summary(stats)
             )),
             Err(e) => Status::Error(format!("texture build: {e}")),
         });
+        self.last_texture_build = Some(result);
         self.addons_cache = None;
         self.refresh_preview();
     }

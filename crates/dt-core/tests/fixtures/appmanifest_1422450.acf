@@ -1,0 +1,41 @@
+"AppState"
+{
+	"appid"		"1422450"
+	"universe"		"1"
+	"LauncherPath"		"C:\\Program Files (x86)\\Steam\\steam.exe"
+	"name"		"Deadlock"
+	"StateFlags"		"4"
+	"installdir"		"Deadlock"
+	"LastUpdated"		"1759500000"
+	"LastPlayed"		"1759510000"
+	"SizeOnDisk"		"24830511104"
+	"StagingSize"		"0"
+	"buildid"		"20419345"
+	"LastOwner"		"76561198000000000"
+	"DownloadType"		"1"
+	"UpdateResult"		"0"
+	"BytesToDownload"		"0"
+	"BytesDownloaded"		"0"
+	"BytesToStage"		"0"
+	"BytesStaged"		"0"
+	"TargetBuildID"		"0"
+	"AutoUpdateBehavior"		"0"
+	"AllowOtherDownloadsWhileRunning"		"0"
+	"ScheduledAutoUpdate"		"0"
+	"InstalledDepots"
+	{
+		"1422456"
+		{
+			"manifest"		"4473417224463185391"
+			"size"		"24830511104"
+		}
+	}
+	"UserConfig"
+	{
+		"language"		"english"
+	}
+	"MountedConfig"
+	{
+		"language"		"english"
+	}
+}

@@ -586,9 +586,13 @@ name = "dt-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dt-core",
  "eframe",
+ "serde",
+ "tempfile",
  "tiny_http",
+ "toml",
 ]
 
 [[package]]

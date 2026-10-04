@@ -81,8 +81,17 @@ Work through this on the gaming PC, top to bottom. Each item is something we cou
 - [ ] Undo last change and Restore original game files both bring the files back byte for byte.
 
 ### 3. Live changes while playing
-- [ ] **P0-1**: Safety & setup > key bind: paste `bind F8 "exec deadtune_live"` in the console (F7). Change the FPS limit in DeadTune (or the mini window's **Send now (F8)**), press F8 in game: the value changes and the console shows `DeadTune: applied N`. Also check that `autoexec.cfg` runs.
-- [ ] The Copy button's text pastes into the F7 console.
+
+How it works now: DeadTune writes `cfg\deadtune_boot.cfg` (binds F8, sets the profile's live convars, prints `DEADTUNE_BOOT`) and starts the game with `+exec deadtune_boot -condebug`. Every push writes `cfg\deadtune_live.cfg` ending in `echo DEADTUNE_ACK <nonce> <n>`, one bare convar name per changed setting (the console prints its value) and `echo DEADTUNE_END <nonce>`. DeadTune tails the game's console log and ticks each setting off. The log location is the big unknown; DeadTune watches `game\citadel\console.log` and `game\citadel\deadtune_console.log` plus the same names one and two folders up.
+
+- [ ] **P0-1a**: Close Deadlock. In DeadTune press **Launch Deadlock** (sidebar). Steam may ask to confirm the launch options; accept. Once in the main menu, open the console (F7): is there a line `DEADTUNE_BOOT 0.1.0`? Does Safety & setup > Instant changes show step 1 ticked? If not, note whether `game\citadel\console.log` exists at all (that is `-condebug`) and whether `con_logfile` printed `Unknown command` in the console.
+- [ ] **P0-1b**: Safety & setup > **Send test**, then press F8 in game with the console closed. The card should go from "Waiting for Deadlock: press F8 in game (Ns)" to a green "Deadlock applied 1 of 1 at HH:MM" and step 2 ticks. Hover the green line: it lists `fps_max = <value>` and the raw console lines. Copy those raw lines into your notes; they tell us the real output format for a bare convar query.
+- [ ] **P0-1c**: Change the FPS limit (Performance), press F8 in game: the value changes, and the action bar shows "Deadlock applied 1 of 1". Then set a Restart-class convar in Advanced (e.g. `ai_foot_sweep_enable`), **Push live**, press F8: the pending panel should say "0 applied, 1 needs a restart (...)" and the hover text shows what the console said (we expect `Unknown command`; write down the exact wording).
+- [ ] **P0-1d**: Press F8 without a push in flight, and with the console open: no crash, status unchanged.
+- [ ] Timeout: close Deadlock, change the FPS limit, wait 10 s: "No reply from Deadlock after 10 s" with the checklist.
+- [ ] From Steam instead: quit Deadlock, copy the Launch Options text from Safety & setup (`+exec deadtune_boot -condebug`), paste it into Steam > Deadlock > Properties > General > Launch Options, start the game from Steam. Step 1 should tick again.
+- [ ] CLI: `deadtune-cli push fps_max=120 --wait 15`, press F8 in game: it prints `fps_max = 120` and `Deadlock applied 1 of 1.`
+- [ ] The Copy buttons' text pastes into the F7 console / Steam.
 - [ ] Writing `deadtune_live.cfg` while the game has it open works (or fails with a clear message).
 - [ ] **P0-2**: launch with `-netconport 2121` (no `-tools`). Advanced > Settings > netcon **Probe**: does it connect? Does a push arrive? Repeat with `-tools`.
 - [ ] **P0-4**: in Hideout, tick Sandbox and push 3 or 4 "Cheat" convars. Which apply live? Do "Restart" ones get rejected?

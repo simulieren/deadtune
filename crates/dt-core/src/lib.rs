@@ -19,3 +19,20 @@ pub mod texture;
 pub mod video;
 pub mod watch;
 pub mod winfps;
+
+#[cfg(test)]
+mod version_policy {
+    /// Minor-only releases for now: every version is 0.Y.0 (scripts/release-local.sh minor).
+    #[test]
+    fn version_is_minor_only() {
+        let parts: Vec<u64> = env!("CARGO_PKG_VERSION")
+            .split('.')
+            .map(|p| p.parse().expect("plain numeric semver, no pre-release suffix"))
+            .collect();
+        assert!(
+            matches!(parts[..], [0, _, 0]),
+            "version {} must be 0.Y.0",
+            env!("CARGO_PKG_VERSION")
+        );
+    }
+}

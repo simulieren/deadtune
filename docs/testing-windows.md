@@ -30,7 +30,14 @@ powershell -ExecutionPolicy Bypass -File scripts\get-testing.ps1        # opens 
 powershell -ExecutionPolicy Bypass -File scripts\get-testing.ps1 -Run   # starts deadtune.exe
 ```
 
-Each build lands in `%USERPROFILE%\DeadTune-testing\<commit>`, so older builds stay for comparison. The script checks the SHA-256 and unblocks the files.
+Versioned releases (`v0.1.0`, `v0.2.0`, ...) are stable checkpoints; the `testing` build is whatever is newest in between:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\get-testing.ps1 -Tag latest -Run   # newest version
+powershell -ExecutionPolicy Bypass -File scripts\get-testing.ps1 -Tag v0.1.0 -Run   # a specific one
+```
+
+Each build lands in `%USERPROFILE%\DeadTune-testing\<tag or commit>`, so older builds stay for comparison. The script checks the SHA-256 and unblocks the files.
 
 ## What is in the zip
 
@@ -48,9 +55,10 @@ Each build lands in `%USERPROFILE%\DeadTune-testing\<commit>`, so older builds s
 ```sh
 scripts/release-local.sh              # build committed HEAD, replace the testing prerelease
 scripts/release-local.sh --no-upload  # build the zip in target/release-local only
+scripts/release-local.sh minor        # bump 0.Y.0 -> 0.(Y+1).0, tag, publish a versioned release
 ```
 
-It cross-compiles with MinGW (`brew install mingw-w64`) and uses no GitHub Actions minutes. HEAD must be pushed. A tag `v*` makes a normal release through `.github/workflows/release.yml` when Actions is enabled.
+It cross-compiles with MinGW (`brew install mingw-w64`) and uses no GitHub Actions minutes. HEAD must be pushed. Versioning is semver, minor-only for now: every release is `0.Y.0`, and a test fails the build otherwise. A tag `v*` also makes a release through `.github/workflows/release.yml` when Actions is enabled; it checks the tag matches `Cargo.toml`.
 
 ## Developer: HUD test without the GUI (phase H0 in docs/plan-hud.md)
 

@@ -164,3 +164,78 @@ fn canvas(ui: &mut egui::Ui, state: &mut AppState, changes: &mut Vec<(ElementId,
         Color32::GRAY,
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(CANVAS_MAX_WIDTH, 600.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            let mut changes = Vec::new();
+            canvas(ui, state, &mut changes);
+            for (id, edit) in changes {
+                state.set_hud_element(id, edit);
+            }
+        });
+        output.textures_delta.clear();
+    }
+
+    fn button(pos: Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn dragging_an_element_on_the_preview_moves_it_in_reference_pixels() {
+        let (_dir, mut state) = crate::state::testutil::state();
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut state, vec![]);
+        let canvas = [CANVAS_MAX_WIDTH, CANVAS_MAX_WIDTH * 9.0 / 16.0];
+        let minimap = layout::preview(&state.profile.hud, canvas)
+            .into_iter()
+            .find(|r| r.id == ElementId::Minimap)
+            .unwrap();
+        let [x, y, w, h] = minimap.rect;
+        let start = Pos2::new(x + w / 2.0, y + h / 2.0);
+        let step = egui::vec2(18.0, 0.0);
+        frame(
+            &ctx,
+            &mut state,
+            vec![egui::Event::PointerMoved(start), button(start, true)],
+        );
+        let mut pos = start;
+        for _ in 0..4 {
+            pos += step;
+            frame(&ctx, &mut state, vec![egui::Event::PointerMoved(pos)]);
+        }
+        frame(&ctx, &mut state, vec![button(pos, false)]);
+        assert_eq!(state.ui.hud_selected, Some(ElementId::Minimap));
+        let edit = state
+            .profile
+            .hud
+            .elements
+            .get(&ElementId::Minimap)
+            .expect("moved");
+        let k = canvas[1] / 1080.0;
+        let expected = (pos.x - start.x) / k;
+        assert!(
+            (edit.offset_x as f32 - expected).abs() <= 8.0,
+            "offset {} vs {expected} (drag threshold may eat a few px)",
+            edit.offset_x
+        );
+        assert_eq!(edit.offset_y, 0);
+        assert!(state.is_dirty());
+    }
+}

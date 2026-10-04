@@ -141,7 +141,7 @@ pub fn plan_patch(
     // Checked for Nothing too: a game update can restore a stock gameinfo.gi while
     // our addon stays in place, unmounted.
     let gameinfo = std::fs::read_to_string(&paths.gameinfo)?;
-    let needs_search_path = !searchpaths::has_addons(&gameinfo)?;
+    let needs_search_path = !searchpaths::addons_ready(&gameinfo)?;
     let conflicts = conflicts(&addons_dir(paths), &patch);
     Ok(HudPlan {
         addon_path,

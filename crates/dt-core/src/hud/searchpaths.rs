@@ -2,6 +2,11 @@
 //! Pure text edits; the apply pipeline decides when to write. Touches nothing but
 //! the `SearchPaths` block, preserving EOL style and indentation. The line goes
 //! right before the first plain `Game` entry, so language paths stay mounted first.
+//!
+//! Stock gameinfo.gi has no `Mod` entry, so the engine takes the first `Game` path as MOD,
+//! and `LegacyUserSettingsPathID "MOD"` reads cfg/user_keys_default from it. With the addons
+//! path first that is citadel/addons, and Deadlock dies with "Unable to read default keybinding
+//! configuration". So `Mod`/`Write` are pinned to citadel and core, as Deadlock Mod Manager does.
 
 pub const ADDONS_LINE_VALUE: &str = "citadel/addons";
 
@@ -36,11 +41,63 @@ pub fn has_addons(gameinfo: &str) -> Result<bool, SearchPathsError> {
     Ok(find_addons(&parse_block(gameinfo)?))
 }
 
+/// True when addons are mounted safely: the addons line and the `Mod`/`Write` pins are all
+/// present, so [`ensure_addons`] would change nothing.
+pub fn addons_ready(gameinfo: &str) -> Result<bool, SearchPathsError> {
+    Ok(ensure_addons(gameinfo)? == gameinfo)
+}
+
 /// Inserts `Game citadel/addons` immediately before the first plain `Game` entry, after
 /// the language, low-violence, `Mod` and `Write` entries (the layout DMM and community
 /// presets use), so addons win over `Game citadel`. With no plain `Game` entry it goes
 /// before the closing brace. Returns the input unchanged if already present.
 pub fn ensure_addons(gameinfo: &str) -> Result<String, SearchPathsError> {
+    let mut out = insert_addons_line(gameinfo)?;
+    for base in ["citadel", "core"] {
+        for key in ["Mod", "Write"] {
+            out = pin(&out, key, base)?;
+        }
+    }
+    Ok(out)
+}
+
+/// `key base` right before `Game base`, unless some `key base` entry already exists.
+/// Bases without a `Game` entry are left alone.
+fn pin(gameinfo: &str, key: &str, base: &str) -> Result<String, SearchPathsError> {
+    let block = parse_block(gameinfo)?;
+    let is =
+        |e: &Entry, k: &str| e.key.eq_ignore_ascii_case(k) && e.value.eq_ignore_ascii_case(base);
+    if block.entries.iter().any(|e| is(e, key)) {
+        return Ok(gameinfo.to_owned());
+    }
+    let Some(game) = block.entries.iter().find(|e| is(e, "Game")) else {
+        return Ok(gameinfo.to_owned());
+    };
+    let gap = if game.gap.contains('\t') {
+        game.gap.to_owned()
+    } else {
+        " ".repeat(
+            ("Game".len() + game.gap.len())
+                .saturating_sub(key.len())
+                .max(1),
+        )
+    };
+    let line = format!("{}{key}{gap}{base}{}", game.indent, eol(gameinfo));
+    let mut out = String::with_capacity(gameinfo.len() + line.len());
+    out.push_str(&gameinfo[..game.start]);
+    out.push_str(&line);
+    out.push_str(&gameinfo[game.start..]);
+    Ok(out)
+}
+
+fn eol(text: &str) -> &'static str {
+    match crate::gi::detect_eol(text) {
+        crate::gi::Eol::CrLf => "\r\n",
+        crate::gi::Eol::Lf => "\n",
+    }
+}
+
+fn insert_addons_line(gameinfo: &str) -> Result<String, SearchPathsError> {
     let block = parse_block(gameinfo)?;
     if find_addons(&block) {
         return Ok(gameinfo.to_owned());
@@ -241,7 +298,7 @@ mod tests {
         assert_eq!(has_addons(&out), Ok(true));
         assert_only_block_changed(VANILLA, &out);
         assert!(!out.contains('\r'));
-        assert_eq!(out.lines().count(), VANILLA.lines().count() + 1);
+        assert_eq!(out.lines().count(), VANILLA.lines().count() + 5);
         let added = out.lines().find(|l| l.contains(ADDONS_LINE_VALUE)).unwrap();
         assert_eq!(added, "            Game citadel/addons");
         crate::gi::validate_braces(&out).expect("balanced braces");
@@ -267,13 +324,64 @@ mod tests {
             .unwrap();
         assert!(lines[i - 2].contains("Game_LowViolence"));
         assert!(lines[i - 1].trim().is_empty());
-        assert_eq!(lines[i + 1].trim(), "Game \"citadel\"");
+        assert_eq!(lines[i + 1].trim(), "Mod  citadel");
+        assert_eq!(lines[i + 2].trim(), "Write citadel");
+        assert_eq!(lines[i + 3].trim(), "Game \"citadel\"");
     }
 
     #[test]
-    fn preset_with_addons_is_noop() {
+    fn preset_with_addons_is_noop_once_pinned() {
         assert_eq!(has_addons(PRESET), Ok(true));
-        assert_eq!(ensure_addons(PRESET).unwrap(), PRESET);
+        let pinned = ensure_addons(PRESET).unwrap();
+        assert_eq!(ensure_addons(&pinned).unwrap(), pinned);
+    }
+
+    const LIVE: &str = include_str!("../../tests/fixtures/gameinfo_live_2026-09-29.gi");
+
+    fn search_paths(text: &str) -> Vec<String> {
+        let block = parse_block(text).unwrap();
+        block
+            .entries
+            .iter()
+            .filter(|e| !e.key.starts_with("Game_"))
+            .map(|e| format!("{} {}", e.key, e.value))
+            .collect()
+    }
+
+    /// The layout Deadlock Mod Manager writes; with addons first and no Mod pin the game
+    /// can't find cfg/user_keys_default and refuses to start.
+    #[test]
+    fn live_gameinfo_gets_addons_with_mod_and_write_pinned() {
+        assert_eq!(search_paths(LIVE), ["Game citadel", "Game core"]);
+        let out = ensure_addons(LIVE).unwrap();
+        assert_eq!(
+            search_paths(&out),
+            [
+                "Game citadel/addons",
+                "Mod citadel",
+                "Write citadel",
+                "Game citadel",
+                "Mod core",
+                "Write core",
+                "Game core"
+            ]
+        );
+        assert_only_block_changed(LIVE, &out);
+        assert!(out.contains("\t\t\tMod\t\t\t\tcitadel\n"), "tab style kept");
+        assert_eq!(ensure_addons(&out).unwrap(), out, "idempotent");
+    }
+
+    /// DeadTune 0.3.0 wrote the addons line without the pins; the next apply repairs it.
+    #[test]
+    fn existing_addons_line_without_pins_gets_repaired() {
+        let broken = LIVE.replacen(
+            "\t\t\tGame\t\t\t\tcitadel\n",
+            "\t\t\tGame\t\t\t\tcitadel/addons\n\t\t\tGame\t\t\t\tcitadel\n",
+            1,
+        );
+        assert_eq!(has_addons(&broken), Ok(true));
+        let fixed = ensure_addons(&broken).unwrap();
+        assert_eq!(search_paths(&fixed)[1..3], ["Mod citadel", "Write citadel"]);
     }
 
     #[test]
@@ -283,7 +391,7 @@ mod tests {
         let out = ensure_addons(src).unwrap();
         assert_eq!(
             out,
-            "FileSystem\n{\n\tSearchPaths\n\t{\n\t\t// Game citadel/addons\n\t\tMod\t\tcitadel\n\t\tGame\t\t\t\tcitadel/addons\n\t\tGame\t\tcitadel\n\t}\n}\n"
+            "FileSystem\n{\n\tSearchPaths\n\t{\n\t\t// Game citadel/addons\n\t\tMod\t\tcitadel\n\t\tGame\t\t\t\tcitadel/addons\n\t\tWrite\t\tcitadel\n\t\tGame\t\tcitadel\n\t}\n}\n"
         );
     }
 

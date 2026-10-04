@@ -465,7 +465,7 @@ pub fn plan(
     // addons stay in place, unmounted.
     let needs_search_path = active && {
         let gameinfo = std::fs::read_to_string(&paths.gameinfo)?;
-        !searchpaths::has_addons(&gameinfo)?
+        !searchpaths::addons_ready(&gameinfo)?
     };
     let conflicts = conflicts(&dir, &addons, &taken);
     Ok(AddonsPlan {

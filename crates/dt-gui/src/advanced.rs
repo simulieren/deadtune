@@ -74,6 +74,11 @@ pub fn full_ui(ui: &mut Ui, state: &mut AppState, reopen: &mut Option<Settings>)
             )
             .show(ui, |ui| banner(ui, state));
     }
+    if crate::update_view::wants_banner(state) {
+        egui::Panel::top("adv_update_banner")
+            .frame(crate::update_view::banner_frame(Margin::symmetric(12, 8)))
+            .show(ui, |ui| crate::update_view::banner(ui, state));
+    }
     egui::Panel::bottom("adv_footer")
         .frame(
             egui::Frame::new()

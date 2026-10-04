@@ -103,7 +103,8 @@ pub fn run_apply_relaunch(ctx: &egui::Context, state: &mut AppState) {
     };
 }
 
-pub fn open_folder(path: &Path) -> std::io::Result<()> {
+/// Opens a folder or URL with the system's default handler.
+pub fn open_external(target: impl AsRef<std::ffi::OsStr>) -> std::io::Result<()> {
     #[cfg(windows)]
     let program = "explorer";
     #[cfg(target_os = "macos")]
@@ -111,7 +112,7 @@ pub fn open_folder(path: &Path) -> std::io::Result<()> {
     #[cfg(not(any(windows, target_os = "macos")))]
     let program = "xdg-open";
     std::process::Command::new(program)
-        .arg(path)
+        .arg(target)
         .spawn()
         .map(|_| ())
 }
@@ -606,7 +607,7 @@ pub fn backups(ui: &mut egui::Ui, state: &mut AppState) {
         });
     }
     if ui.button("Open backups folder").clicked() {
-        let _ = open_folder(&state.store.root);
+        let _ = open_external(&state.store.root);
     }
     if let Some(entry) = restore {
         state.status = Some(match state.restore(&entry) {
@@ -740,7 +741,7 @@ pub fn bench(ui: &mut egui::Ui, state: &mut AppState) {
                     .on_hover_text(dir.display().to_string())
                     .clicked()
                 {
-                    let _ = open_folder(dir);
+                    let _ = open_external(dir);
                 }
             }
         });
@@ -956,13 +957,16 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
             ui.horizontal(|ui| {
                 path(ui, &state.data_dir);
                 if ui.small_button("Open").clicked() {
-                    let _ = open_folder(&state.data_dir);
+                    let _ = open_external(&state.data_dir);
                 }
             });
             ui.end_row();
         });
     });
     widgets::card(ui, |ui| crate::simple::check_setup(ui, state, false));
+    widgets::section(ui, "Updates", |ui| {
+        crate::update_view::settings(ui, state, false)
+    });
     widgets::section(ui, "Credits", |ui| {
         ui.label(
             "DeadTune is free software under the GNU GPL-3.0. Presets belong to their authors:",

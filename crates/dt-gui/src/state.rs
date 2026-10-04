@@ -35,6 +35,7 @@ use crate::live::{BridgeTarget, LivePush, PushOutcome};
 use crate::profiles;
 use crate::relaunch::Relaunch;
 use crate::settings::{Settings, TargetSource};
+use crate::update::{self, Release, Updater};
 use dt_core::doctor::Check;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -562,6 +563,7 @@ pub struct AppState {
     pub checks: Option<Vec<Check>>,
     /// Doctor runs off the UI thread: on Windows it shells out to PowerShell for RAM info.
     checks_rx: Option<Receiver<Vec<Check>>>,
+    pub update: Updater,
     #[cfg(feature = "remote")]
     pub remote: Option<crate::remote::Remote>,
     watch: Option<(Watcher, Receiver<Vec<Change>>)>,
@@ -660,6 +662,7 @@ impl AppState {
             undo_cursor: None,
             checks: None,
             checks_rx: None,
+            update: Updater::default(),
             #[cfg(feature = "remote")]
             remote: None,
             watch: None,
@@ -736,6 +739,34 @@ impl AppState {
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
             Err(std::sync::mpsc::TryRecvError::Disconnected) => self.checks_rx = None,
         }
+    }
+
+    /// `manual` ("Check now") also reports a version the user skipped.
+    pub fn check_update(&mut self, manual: bool) {
+        let settings = &self.settings.update;
+        let skipped = if manual { None } else { settings.skipped };
+        self.update.check(settings.channel, skipped);
+    }
+
+    pub fn install_update(&mut self, release: Release) {
+        self.update.install(release);
+    }
+
+    pub fn skip_update(&mut self, release: &Release) {
+        self.settings.update.skipped = Some(release.version);
+        self.update.state = update::UpdateState::Idle;
+    }
+
+    /// Returns `true` when the new version is installed and the window should restart.
+    pub fn poll_update(&mut self) -> bool {
+        let mut restart = false;
+        for action in self.update.poll() {
+            match action {
+                update::Action::Checked(at) => self.settings.update.last_check = Some(at),
+                update::Action::Restart => restart = true,
+            }
+        }
+        restart
     }
 
     /// Restores the newest gameinfo.gi backup older than the last one undone (and different

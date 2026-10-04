@@ -14,6 +14,7 @@ use crate::live::PushOutcome;
 use crate::relaunch::{self, Relaunch};
 use crate::settings::{Settings, View};
 use crate::state::{AppState, HudPage, MinimapPreset, Mode, Section, Status, Tab};
+use crate::update::{self, UpdateState};
 use crate::{Args, advanced, compact, profiles, simple, views};
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
@@ -107,6 +108,20 @@ impl App {
     pub fn started(mut self, ctx: &egui::Context) -> App {
         crate::theme::install(ctx);
         self.game_poll = Some(spawn_game_poll(ctx.clone()));
+        if let Ok(exe) = update::exe() {
+            dt_core::update::cleanup(exe);
+        }
+        if let Screen::Main(state) = &mut self.screen
+            && update::AVAILABLE
+            && state.update.state == UpdateState::Idle
+            && update::should_check(
+                &state.settings.update,
+                chrono::Utc::now(),
+                dt_core::update::Current::this_build().as_ref(),
+            )
+        {
+            state.check_update(false);
+        }
         self
     }
 
@@ -182,6 +197,13 @@ impl App {
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_PUSH") {
                     fake_push(&mut state, &kind);
                 }
+                // `DEADTUNE_FAKE_UPDATE=0.9.0` offers that version instead of checking.
+                if let Some(version) = std::env::var("DEADTUNE_FAKE_UPDATE")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                {
+                    state.update.state = UpdateState::Available(update::fake_release(version));
+                }
                 if std::env::var_os("DEADTUNE_FAKE_BOOT").is_some_and(|v| v == "1") {
                     state.ack.boot = Some(dt_core::bridge::ack::Boot {
                         version: env!("CARGO_PKG_VERSION").into(),
@@ -251,6 +273,12 @@ impl App {
         state.poll_watch();
         state.poll_checks();
         state.poll_build();
+        if state.poll_update() {
+            crate::update_view::restart(ctx, state);
+        }
+        if state.update.state.busy() {
+            ctx.request_repaint_after(Duration::from_millis(200));
+        }
         if state.texture_build.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
         }

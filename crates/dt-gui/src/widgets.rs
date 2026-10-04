@@ -1,8 +1,8 @@
 //! Small painted widgets for the advanced view, in the simple view's design language.
 
 use eframe::egui::{
-    self, Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, Response, RichText, Sense,
-    Stroke, StrokeKind, Ui, vec2,
+    self, Align2, Color32, CornerRadius, FontId, Rect, Response, RichText, Sense, Stroke,
+    StrokeKind, Ui, vec2,
 };
 
 use crate::theme::{ACCENT, BORDER, CARD, CARD_HOVER, ON_ACCENT, RAIL, TEXT, WEAK};
@@ -54,57 +54,6 @@ pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         .inner;
     ui.add_space(10.0);
     inner
-}
-
-/// Text box with the simple view's look and a clear button once it has text.
-pub fn search_box(ui: &mut Ui, query: &mut String, hint: &str) {
-    let height = 26.0;
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
-    ui.painter().rect(
-        rect,
-        CornerRadius::same(4),
-        CARD,
-        Stroke::new(1.0, BORDER),
-        StrokeKind::Inside,
-    );
-    let clear = rect.right_center() - vec2(13.0, 0.0);
-    let text_rect = Rect::from_min_max(
-        rect.left_top() + vec2(9.0, 0.0),
-        egui::pos2(clear.x - 10.0, rect.bottom()),
-    );
-    ui.scope_builder(
-        egui::UiBuilder::new()
-            .max_rect(text_rect)
-            .layout(Layout::left_to_right(Align::Center)),
-        |ui| {
-            ui.add(
-                egui::TextEdit::singleline(query)
-                    .hint_text(hint)
-                    .desired_width(f32::INFINITY)
-                    .frame(egui::Frame::NONE),
-            );
-        },
-    );
-    if query.is_empty() {
-        return;
-    }
-    let response = ui
-        .interact(
-            Rect::from_center_size(clear, vec2(18.0, 18.0)),
-            ui.id().with("clear_search"),
-            Sense::click(),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text("Clear");
-    let color = if response.hovered() { TEXT } else { WEAK };
-    let r = 3.5;
-    let painter = ui.painter();
-    for (a, b) in [(vec2(-r, -r), vec2(r, r)), (vec2(-r, r), vec2(r, -r))] {
-        painter.line_segment([clear + a, clear + b], Stroke::new(1.5, color));
-    }
-    if response.clicked() {
-        query.clear();
-    }
 }
 
 /// One rail entry: label left, weak count right, and an amber badge with the changed count.

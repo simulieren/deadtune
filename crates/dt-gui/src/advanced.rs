@@ -12,14 +12,13 @@ use eframe::egui::{
     Ui, vec2,
 };
 
-use crate::app::set_mode;
 use crate::friendly;
 use crate::live::BridgeKind;
 use crate::profiles;
 use crate::relaunch::Relaunch;
 use crate::settings::{Settings, TargetSource, View};
 use crate::state::{
-    AppState, Mode, PlanSummary, Scope, Setting, Status, Tab, bool_text, fmt_num, parse_bool,
+    AppState, PlanSummary, Scope, Setting, Status, Tab, bool_text, fmt_num, parse_bool,
 };
 use crate::theme::{ACCENT, BAD, BG, BORDER, CARD_HOVER, GOOD, RAIL, TEXT, WARN, WEAK};
 use crate::views::{self, Edit};
@@ -159,7 +158,7 @@ fn header(ui: &mut Ui, state: &mut AppState) {
                 .on_hover_text("Small always-on-top window with favourites")
                 .clicked()
             {
-                set_mode(ui.ctx(), state, Mode::Compact);
+                crate::compact::enter(ui.ctx(), state);
             }
             if widgets::segmented(ui, &["Simple", "Advanced"], 1) == Some(0) {
                 state.settings.view = View::Simple;
@@ -377,7 +376,7 @@ fn footer(ui: &mut Ui, state: &AppState) {
 }
 
 fn categories(ui: &mut Ui, state: &mut AppState) {
-    widgets::search_box(ui, &mut state.ui.search, "Search convars");
+    crate::simple::search_box(ui, &mut state.ui.search);
     ui.add_space(8.0);
     let counts = state.rail_counts();
     let scope = &mut state.ui.scope;

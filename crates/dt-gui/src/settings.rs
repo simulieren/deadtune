@@ -64,7 +64,10 @@ pub struct Settings {
     pub bind_key: String,
     pub netcon_port: u16,
     pub source: TargetSource,
+    /// Advanced-view stars; the mini window lists them when opened from there.
     pub favourites: BTreeSet<String>,
+    /// Simple-view pins; the mini window lists them under the key settings.
+    pub pinned: BTreeSet<String>,
     pub launch: LaunchOptions,
     pub power: PowerProfiles,
 }
@@ -82,6 +85,7 @@ impl Default for Settings {
             netcon_port: dt_core::bridge::netcon::DEFAULT_PORT,
             source: TargetSource::default(),
             favourites: BTreeSet::new(),
+            pinned: BTreeSet::new(),
             launch: LaunchOptions {
                 args: vec!["-novid".into()],
             },
@@ -116,6 +120,7 @@ mod tests {
         let settings = Settings {
             game_dir: Some(PathBuf::from("/games/Deadlock")),
             favourites: BTreeSet::from(["r_farz".to_string()]),
+            pinned: BTreeSet::from(["r_shadows".to_string()]),
             bridge: BridgeKind::Netcon,
             power: PowerProfiles {
                 enabled: true,

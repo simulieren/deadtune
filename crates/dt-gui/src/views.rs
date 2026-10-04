@@ -6,12 +6,12 @@ use std::time::Instant;
 use dt_core::backup::FileKind;
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::bridge::netcon::NetconBridge;
-use dt_core::catalog::{ApplyClass, CatalogEntry, Kind};
+use dt_core::catalog::{CatalogEntry, Kind};
 use dt_core::launch;
 use dt_core::preset::{self, PresetId};
 use dt_core::profile::{BaseRef, ConVarEdits, Profile, builtin_suggestions};
 use dt_core::video;
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 
 use crate::advanced::RESTART;
 use crate::live::BridgeKind;
@@ -116,24 +116,6 @@ pub fn open_folder(path: &Path) -> std::io::Result<()> {
         .map(|_| ())
 }
 
-fn class_badge(ui: &mut egui::Ui, class: ApplyClass) {
-    let (text, color, hint) = match class {
-        ApplyClass::Live => (
-            "live",
-            Color32::from_rgb(90, 190, 110),
-            "Console-settable anywhere",
-        ),
-        ApplyClass::LiveCheat => (
-            "cheat",
-            Color32::from_rgb(230, 160, 60),
-            "Console-settable in hideout/sandbox",
-        ),
-        ApplyClass::Restart => ("restart", Color32::GRAY, "Read from gameinfo.gi at launch"),
-    };
-    ui.label(RichText::new(text).small().color(color))
-        .on_hover_text(hint);
-}
-
 pub fn entry_hover(ui: &mut egui::Ui, name: &str, entry: Option<&CatalogEntry>) {
     ui.strong(name);
     let Some(entry) = entry else {
@@ -224,26 +206,6 @@ pub fn control(
                 .changed()
                 .then_some(edit)
         }
-    }
-}
-
-pub fn compact_row(ui: &mut egui::Ui, state: &mut AppState, name: &str) {
-    let entry = state.catalog.get(name);
-    let value = state.current_value(name);
-    let denied = state.catalog.is_denied(name);
-    let mut edit = None;
-    ui.label(RichText::new(name).monospace().small())
-        .on_hover_ui(|ui| entry_hover(ui, name, entry));
-    ui.horizontal(|ui| {
-        ui.add_enabled_ui(!denied, |ui| {
-            if let Some(v) = control(ui, name, entry, value.as_deref()) {
-                edit = Some(Edit::Set(v));
-            }
-        });
-        class_badge(ui, state.catalog.apply_class(name));
-    });
-    if let Some(edit) = edit {
-        apply_edit(state, name, edit);
     }
 }
 

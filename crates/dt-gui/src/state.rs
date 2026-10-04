@@ -332,6 +332,8 @@ pub struct UiState {
     pub focus: Option<&'static str>,
     /// Simple-view search; non-empty shows the Results page instead of the section.
     pub query: String,
+    /// Narrows the mini window's list.
+    pub mini_filter: String,
 }
 
 /// Starting layouts on the HUD tab. Each is plain `HudLayout` values, so a user
@@ -1182,12 +1184,19 @@ impl AppState {
         }
     }
 
-    /// Rows for the center list (full mode) or the compact list.
-    pub fn visible_rows(&self) -> Vec<String> {
-        match self.ui.mode {
-            Mode::Compact => self.rows_in(&Scope::Favourites),
-            Mode::Full => self.rows_in(&self.ui.scope),
+    pub fn toggle_pin(&mut self, name: &str) {
+        if !self.settings.pinned.remove(name) {
+            self.settings.pinned.insert(name.to_string());
         }
+    }
+
+    pub fn is_pinned(&self, name: &str) -> bool {
+        self.settings.pinned.contains(name)
+    }
+
+    /// Rows for the advanced view's center list.
+    pub fn visible_rows(&self) -> Vec<String> {
+        self.rows_in(&self.ui.scope)
     }
 
     pub fn rail_counts(&self) -> RailCounts {
@@ -1571,7 +1580,7 @@ mod tests {
     }
 
     #[test]
-    fn rows_follow_search_scope_and_mode() {
+    fn rows_follow_search_and_scope() {
         let (_dir, mut state) = state();
         state.ui.search = "farz".into();
         assert!(state.visible_rows().contains(&CHEAT.to_string()));
@@ -1581,13 +1590,9 @@ mod tests {
         state.ui.scope = Scope::Changed;
         state.set_convar(LIVE, "77".into()).unwrap();
         assert_eq!(state.visible_rows(), vec![LIVE.to_string()]);
+        state.ui.scope = Scope::Favourites;
         state.toggle_favourite(CHEAT);
-        state.ui.mode = Mode::Compact;
-        assert_eq!(
-            state.visible_rows(),
-            vec![CHEAT.to_string()],
-            "compact shows favourites"
-        );
+        assert_eq!(state.visible_rows(), vec![CHEAT.to_string()]);
         state.toggle_favourite(CHEAT);
         assert!(state.visible_rows().is_empty());
     }
@@ -1658,6 +1663,17 @@ mod tests {
             ..ApplyPlan::default()
         };
         assert_eq!(PlanSummary::of(&refused, false).refused, 1);
+    }
+
+    #[test]
+    fn pins_toggle_and_stay_apart_from_favourites() {
+        let (_dir, mut state) = state();
+        assert!(!state.is_pinned(LIVE));
+        state.toggle_pin(LIVE);
+        assert!(state.is_pinned(LIVE));
+        assert!(!state.settings.favourites.contains(LIVE));
+        state.toggle_pin(LIVE);
+        assert!(!state.is_pinned(LIVE));
     }
 
     #[test]

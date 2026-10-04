@@ -1,4 +1,4 @@
-//! The eframe shell: screens, per-frame polling, top bar, banner, footer and compact mode.
+//! The eframe shell: screens, per-frame polling, top bar, banner and footer.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
@@ -7,16 +7,15 @@ use std::time::{Duration, Instant, SystemTime};
 use dt_core::launch;
 use dt_core::locate::{self, GamePaths};
 use dt_core::profile::Profile;
-use eframe::egui::{self, Color32, ViewportCommand, WindowLevel};
+use eframe::egui::{self, ViewportCommand};
 
 use crate::live::PushOutcome;
 use crate::relaunch::{self, Relaunch};
 use crate::settings::{Settings, View};
 use crate::state::{AppState, Mode, Section, Status, Tab};
-use crate::{Args, advanced, profiles, simple, views};
+use crate::{Args, advanced, compact, profiles, simple, views};
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
-pub const COMPACT_SIZE: [f32; 2] = [320.0, 560.0];
 const GAME_POLL: Duration = Duration::from_secs(2);
 
 pub enum Screen {
@@ -54,9 +53,11 @@ fn resolve_paths(game_dir: Option<&Path>) -> Result<GamePaths, String> {
 
 fn spawn_game_poll(ctx: egui::Context) -> Receiver<(bool, Option<SystemTime>)> {
     let (tx, rx) = channel();
+    // Screenshot lever: `DEADTUNE_FAKE_GAME=1` reports the game as running.
+    let fake = std::env::var_os("DEADTUNE_FAKE_GAME").is_some_and(|v| v == "1");
     std::thread::spawn(move || {
         loop {
-            let running = launch::is_game_running();
+            let running = fake || launch::is_game_running();
             let started = if running {
                 launch::game_started_at()
             } else {
@@ -151,6 +152,14 @@ impl App {
                         .map(|s| s.id);
                 }
                 self.startup_profile(&mut state);
+                // Screenshot lever: `DEADTUNE_SET=fps_max=144,r_shadows=true` edits after loading.
+                if let Ok(list) = std::env::var("DEADTUNE_SET") {
+                    for (name, value) in list.split(',').filter_map(|kv| kv.split_once('=')) {
+                        if let Err(e) = state.set_convar(name.trim(), value.trim().to_string()) {
+                            state.status = Some(Status::Error(e.to_string()));
+                        }
+                    }
+                }
                 self.screen = Screen::Main(Box::new(state));
             }
             Err(error) => {
@@ -295,16 +304,6 @@ pub fn report_push(ctx: &egui::Context, state: &mut AppState, result: Result<Pus
     });
 }
 
-pub fn set_mode(ctx: &egui::Context, state: &mut AppState, mode: Mode) {
-    state.ui.mode = mode;
-    let (level, size) = match mode {
-        Mode::Compact => (WindowLevel::AlwaysOnTop, COMPACT_SIZE),
-        Mode::Full => (WindowLevel::Normal, FULL_SIZE),
-    };
-    ctx.send_viewport_cmd(ViewportCommand::WindowLevel(level));
-    ctx.send_viewport_cmd(ViewportCommand::InnerSize(size.into()));
-}
-
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
@@ -327,7 +326,7 @@ impl eframe::App for App {
             }
             Screen::Main(state) if state.welcome.is_some() => simple::welcome(ui, state),
             Screen::Main(state) => match (state.ui.mode, state.settings.view) {
-                (Mode::Compact, _) => compact_ui(ui, state),
+                (Mode::Compact, _) => compact::ui(ui, state),
                 (Mode::Full, View::Simple) => simple::simple(ui, state),
                 (Mode::Full, View::Advanced) => advanced::full_ui(ui, state, &mut reopen),
             },
@@ -337,56 +336,4 @@ impl eframe::App for App {
         }
         self.screenshot(&ctx);
     }
-}
-
-fn compact_ui(ui: &mut egui::Ui, state: &mut AppState) {
-    egui::Panel::bottom("compact_footer").show(ui, |ui| {
-        ui.horizontal(|ui| {
-            if ui
-                .button("Push")
-                .on_hover_text("Send live changes through the active bridge")
-                .clicked()
-            {
-                let result = state.push_now();
-                report_push(ui.ctx(), state, result);
-            }
-            let can_apply = state.preview.as_ref().is_ok_and(|p| !p.is_empty());
-            if ui
-                .add_enabled(can_apply, egui::Button::new("Apply"))
-                .clicked()
-            {
-                views::run_apply(ui.ctx(), state);
-            }
-            if ui.button("Full").clicked() {
-                set_mode(ui.ctx(), state, Mode::Full);
-            }
-        });
-        if let Some(status) = &state.status {
-            match status {
-                Status::Info(m) => ui.small(m),
-                Status::Error(m) => ui.colored_label(Color32::LIGHT_RED, m),
-            };
-        }
-    });
-    egui::CentralPanel::default().show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.strong(&state.profile.name);
-            if state.is_dirty() {
-                ui.weak("(edited)");
-            }
-            if state.ctx.game_running {
-                ui.colored_label(Color32::LIGHT_GREEN, "running");
-            }
-        });
-        ui.add(egui::TextEdit::singleline(&mut state.ui.search).hint_text("Filter favourites"));
-        let rows = state.visible_rows();
-        if rows.is_empty() {
-            ui.weak("No favourites yet. Star convars in the full view.");
-        }
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for name in rows {
-                views::compact_row(ui, state, &name);
-            }
-        });
-    });
 }

@@ -237,7 +237,9 @@ enum Edit {
     Base(PresetId),
     Go(Section),
     Focus(&'static str),
+    Pin(&'static str),
     Advanced,
+    Mini,
 }
 
 const RAIL_WIDTH: f32 = 224.0;
@@ -359,7 +361,9 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
                 state.ui.query.clear();
             }
             Edit::Focus(name) => state.ui.focus = Some(name),
+            Edit::Pin(name) => state.toggle_pin(name),
             Edit::Advanced => state.settings.view = View::Advanced,
+            Edit::Mini => crate::compact::enter(ui.ctx(), state),
         }
     }
 }
@@ -374,7 +378,7 @@ fn section_changes(state: &AppState, section: Section) -> usize {
 }
 
 /// Small uppercase caption above a group of rows or a fact.
-fn caption(ui: &mut Ui, text: &str) {
+pub(crate) fn caption(ui: &mut Ui, text: &str) {
     ui.label(
         RichText::new(text.to_uppercase())
             .size(11.5)
@@ -432,6 +436,13 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
         {
             edits.push(Edit::Advanced);
         }
+        if ui
+            .add(egui::Button::new(RichText::new("Mini window").color(WEAK)).frame(false))
+            .on_hover_text("A small always-on-top window for tweaking while you play")
+            .clicked()
+        {
+            edits.push(Edit::Mini);
+        }
         ui.add_space(4.0);
         if state.settings.source == TargetSource::RankedSafe {
             dot_label(ui, WARN, "Ranked-safe mode on");
@@ -445,7 +456,7 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
 }
 
 /// Full-width text box styled like the other inputs, with a clear button once it has text.
-fn search_box(ui: &mut Ui, query: &mut String) {
+pub(crate) fn search_box(ui: &mut Ui, query: &mut String) {
     let height = 28.0;
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
     ui.painter().rect(
@@ -994,6 +1005,14 @@ fn setting_row(
                         edits.push(Edit::Reset(vec![name]));
                     }
                 }
+                let pinned = state.is_pinned(name);
+                let quick = friendly::KEY_SETTINGS.contains(&name);
+                if !quick
+                    && (pinned || state.ui.focus == Some(name))
+                    && crate::compact::pin_button(ui, pinned).clicked()
+                {
+                    edits.push(Edit::Pin(name));
+                }
             });
             if inline_help {
                 ui.label(RichText::new(row.help).small().color(WEAK));
@@ -1037,7 +1056,7 @@ fn setting_row(
     }
 }
 
-fn control(
+pub(crate) fn control(
     ui: &mut Ui,
     control: Control,
     entry: &CatalogEntry,

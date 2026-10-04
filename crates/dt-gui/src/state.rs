@@ -293,6 +293,70 @@ pub struct UiState {
     pub query: String,
 }
 
+/// Starting layouts on the HUD tab. Each is plain `HudLayout` values, so a user
+/// can pick one and keep editing from there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HudPreset {
+    Vanilla,
+    Clean,
+    Competitive,
+}
+
+impl HudPreset {
+    pub const ALL: [HudPreset; 3] = [HudPreset::Vanilla, HudPreset::Clean, HudPreset::Competitive];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            HudPreset::Vanilla => "Vanilla",
+            HudPreset::Clean => "Clean",
+            HudPreset::Competitive => "Competitive",
+        }
+    }
+
+    pub fn blurb(self) -> &'static str {
+        match self {
+            HudPreset::Vanilla => "The game's own layout.",
+            HudPreset::Clean => "Hides the kill feed, chat and the souls panel.",
+            HudPreset::Competitive => "Bigger minimap, smaller kill feed, quieter chat.",
+        }
+    }
+
+    pub fn layout(self) -> HudLayout {
+        use dt_core::hud::layout::Visibility;
+        let hidden = ElementEdit {
+            visibility: Visibility::Hidden,
+            ..ElementEdit::default()
+        };
+        let scaled = |scale_pct| ElementEdit {
+            scale_pct,
+            ..ElementEdit::default()
+        };
+        let elements: Vec<(ElementId, ElementEdit)> = match self {
+            HudPreset::Vanilla => vec![],
+            HudPreset::Clean => vec![
+                (ElementId::KillFeed, hidden.clone()),
+                (ElementId::Chat, hidden.clone()),
+                (ElementId::PlayerStats, hidden),
+            ],
+            HudPreset::Competitive => vec![
+                (ElementId::Minimap, scaled(125)),
+                (ElementId::KillFeed, scaled(80)),
+                (
+                    ElementId::Chat,
+                    ElementEdit {
+                        opacity_pct: 70,
+                        ..ElementEdit::default()
+                    },
+                ),
+            ],
+        };
+        HudLayout {
+            elements: elements.into_iter().collect(),
+            extra_css: BTreeMap::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
     Info(String),
@@ -868,6 +932,32 @@ impl AppState {
     pub fn reset_hud(&mut self) {
         self.profile.hud = HudLayout::default();
         self.refresh_preview();
+    }
+
+    pub fn hud_edit(&self, id: ElementId) -> ElementEdit {
+        self.profile
+            .hud
+            .elements
+            .get(&id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Elements that differ from vanilla (identity edits are never stored).
+    pub fn hud_changed_count(&self) -> usize {
+        self.profile.hud.elements.len()
+    }
+
+    pub fn apply_hud_preset(&mut self, preset: HudPreset) {
+        self.profile.hud = preset.layout();
+        self.refresh_preview();
+    }
+
+    /// The toolbar preset the current layout equals, if any.
+    pub fn hud_preset(&self) -> Option<HudPreset> {
+        HudPreset::ALL
+            .into_iter()
+            .find(|p| p.layout() == self.profile.hud)
     }
 
     pub fn bridge_target(&self) -> BridgeTarget<'_> {
@@ -1572,6 +1662,42 @@ mod tests {
         );
         assert_eq!(state.hud_error(), None);
         state.revert_convar(LIVE);
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn hud_presets_are_valid_layouts_the_state_can_tell_apart() {
+        let (_dir, mut state) = state();
+        assert_eq!(state.hud_preset(), Some(HudPreset::Vanilla));
+        assert_eq!(state.hud_changed_count(), 0);
+        for preset in HudPreset::ALL {
+            assert!(
+                dt_core::hud::layout::compile(&preset.layout()).is_ok(),
+                "{preset:?}"
+            );
+            state.apply_hud_preset(preset);
+            assert_eq!(state.hud_preset(), Some(preset));
+            assert_eq!(
+                state.hud_changed_count(),
+                preset.layout().elements.len(),
+                "{preset:?}"
+            );
+        }
+        assert_eq!(state.hud_edit(ElementId::Minimap).scale_pct, 125);
+        assert!(state.is_dirty());
+        state.set_hud_element(
+            ElementId::TopBar,
+            ElementEdit {
+                offset_y: 12,
+                ..ElementEdit::default()
+            },
+        );
+        assert_eq!(state.hud_preset(), None, "an edit leaves the preset");
+        assert_eq!(state.hud_changed_count(), 4);
+        state.set_hud_element(ElementId::TopBar, ElementEdit::default());
+        assert_eq!(state.hud_preset(), Some(HudPreset::Competitive));
+        state.reset_hud();
+        assert_eq!(state.hud_preset(), Some(HudPreset::Vanilla));
         assert!(!state.is_dirty());
     }
 

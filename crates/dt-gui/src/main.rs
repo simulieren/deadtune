@@ -6,6 +6,7 @@ mod png;
 mod profiles;
 mod relaunch;
 mod settings;
+mod state;
 
 fn main() -> anyhow::Result<()> {
     Ok(())

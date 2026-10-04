@@ -3,6 +3,8 @@
 mod app;
 mod bench;
 mod chart;
+mod doctor;
+mod friendly;
 mod live;
 mod png;
 mod profiles;
@@ -10,6 +12,7 @@ mod relaunch;
 #[cfg(feature = "remote")]
 mod remote;
 mod settings;
+mod simple;
 mod state;
 mod views;
 

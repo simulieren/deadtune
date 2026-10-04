@@ -20,6 +20,15 @@ pub enum TargetSource {
     RankedSafe,
 }
 
+/// Simple shows a few plain-language settings; Advanced shows every tab and every ConVar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum View {
+    #[default]
+    Simple,
+    Advanced,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct PowerProfiles {
@@ -45,6 +54,10 @@ impl PowerProfiles {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// False until the welcome flow finished once.
+    pub onboarded: bool,
+    pub view: View,
+    pub bind_helper_dismissed: bool,
     pub game_dir: Option<PathBuf>,
     pub last_profile: Option<String>,
     pub bridge: BridgeKind,
@@ -59,6 +72,9 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Settings {
         Settings {
+            onboarded: false,
+            view: View::default(),
+            bind_helper_dismissed: false,
             game_dir: None,
             last_profile: None,
             bridge: BridgeKind::default(),

@@ -12,16 +12,16 @@ use eframe::egui::{self, Color32, RichText, ViewportCommand, WindowLevel};
 
 use crate::live::PushOutcome;
 use crate::relaunch::{self, Relaunch};
-use crate::settings::{Settings, TargetSource};
+use crate::settings::{Settings, TargetSource, View};
 use crate::state::{AppState, Mode, Status, Tab};
-use crate::{Args, profiles, views};
+use crate::{Args, profiles, simple, views};
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
 pub const COMPACT_SIZE: [f32; 2] = [320.0, 560.0];
 const GAME_POLL: Duration = Duration::from_secs(2);
 
 pub enum Screen {
-    Setup {
+    FindGame {
         input: String,
         error: Option<String>,
         settings: Box<Settings>,
@@ -82,7 +82,7 @@ impl App {
     ) -> App {
         let saved_settings = Settings::load(&data_dir);
         let mut app = App {
-            screen: Screen::Setup {
+            screen: Screen::FindGame {
                 input: String::new(),
                 error: None,
                 settings: Box::new(settings.clone()),
@@ -126,7 +126,7 @@ impl App {
                 self.screen = Screen::Main(Box::new(state));
             }
             Err(error) => {
-                self.screen = Screen::Setup {
+                self.screen = Screen::FindGame {
                     input: game_dir
                         .map(|d| d.display().to_string())
                         .unwrap_or_default(),
@@ -278,22 +278,25 @@ impl eframe::App for App {
         self.poll(&ctx);
         let mut reopen = None;
         match &mut self.screen {
-            Screen::Setup {
+            Screen::FindGame {
                 input,
                 error,
                 settings,
             } => {
                 egui::CentralPanel::default().show(ui, |ui| {
-                    if setup_ui(ui, input, error.as_deref()) {
+                    if simple::find_game(ui, input, error.as_deref()) {
                         let mut settings = (**settings).clone();
-                        settings.game_dir = Some(PathBuf::from(input.trim()));
+                        let dir = input.trim();
+                        settings.game_dir = (!dir.is_empty()).then(|| PathBuf::from(dir));
                         reopen = Some(settings);
                     }
                 });
             }
-            Screen::Main(state) => match state.ui.mode {
-                Mode::Full => full_ui(ui, state, &mut reopen),
-                Mode::Compact => compact_ui(ui, state),
+            Screen::Main(state) if state.welcome.is_some() => simple::welcome(ui, state),
+            Screen::Main(state) => match (state.ui.mode, state.settings.view) {
+                (Mode::Compact, _) => compact_ui(ui, state),
+                (Mode::Full, View::Simple) => simple::simple(ui, state),
+                (Mode::Full, View::Advanced) => full_ui(ui, state, &mut reopen),
             },
         }
         if let Some(settings) = reopen {
@@ -301,21 +304,6 @@ impl eframe::App for App {
         }
         self.screenshot(&ctx);
     }
-}
-
-fn setup_ui(ui: &mut egui::Ui, input: &mut String, error: Option<&str>) -> bool {
-    ui.heading("DeadTune");
-    ui.label("Deadlock was not found automatically. Enter the path of the Deadlock folder (.../steamapps/common/Deadlock).");
-    if let Some(error) = error {
-        ui.colored_label(Color32::LIGHT_RED, error);
-    }
-    let response = ui.add(
-        egui::TextEdit::singleline(input)
-            .desired_width(520.0)
-            .hint_text("C:\\Program Files (x86)\\Steam\\steamapps\\common\\Deadlock"),
-    );
-    let submit = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    ui.button("Use this folder").clicked() || submit
 }
 
 fn full_ui(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Settings>) {
@@ -404,6 +392,9 @@ fn top_bar(ui: &mut egui::Ui, state: &mut AppState) {
             ui.colored_label(Color32::LIGHT_RED, format!("Relaunch failed: {e}"));
         }
         ui.separator();
+        if ui.button("Simple view").clicked() {
+            state.settings.view = View::Simple;
+        }
         if ui.button("Compact").on_hover_text("Small always-on-top window with favourites").clicked() {
             set_mode(ui.ctx(), state, Mode::Compact);
         }

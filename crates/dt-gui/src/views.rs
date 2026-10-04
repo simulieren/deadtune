@@ -166,7 +166,7 @@ fn entry_hover(ui: &mut egui::Ui, name: &str, entry: Option<&CatalogEntry>) {
 }
 
 /// The value control for one convar; `None` when untouched.
-fn control(
+pub fn control(
     ui: &mut egui::Ui,
     name: &str,
     entry: Option<&CatalogEntry>,
@@ -1109,6 +1109,9 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
             let _ = open_folder(&state.data_dir);
         }
     });
+
+    ui.separator();
+    crate::simple::check_setup(ui, state, false);
 
     ui.separator();
     ui.heading("Credits");

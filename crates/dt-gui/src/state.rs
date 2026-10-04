@@ -17,6 +17,7 @@ use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 use dt_core::watch::{self, Change, Watcher};
 
 use crate::bench::{self, BenchState};
+use crate::doctor::Check;
 use crate::live::{BridgeTarget, LivePush, PushOutcome};
 use crate::profiles;
 use crate::relaunch::Relaunch;
@@ -87,6 +88,21 @@ pub struct Banner {
 pub struct PendingRestart {
     pub names: Vec<String>,
     pub since: SystemTime,
+}
+
+/// What the player starts from in the welcome flow.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StartChoice {
+    Preset(PresetId),
+    /// The files as they are now become the base; nothing is written.
+    KeepCurrent,
+}
+
+/// First-run flow once the game is found (finding it is `app::Screen::FindGame`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Welcome {
+    PickStart { choice: Option<StartChoice> },
+    Done { needs_restart: bool },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -192,6 +208,9 @@ pub struct AppState {
     pub bench: BenchState,
     pub ui: UiState,
     pub status: Option<Status>,
+    pub welcome: Option<Welcome>,
+    /// Last "Check setup" run; `None` until the panel is opened.
+    pub checks: Option<Vec<Check>>,
     #[cfg(feature = "remote")]
     pub remote: Option<crate::remote::Remote>,
     watch: Option<(Watcher, Receiver<Vec<Change>>)>,
@@ -271,13 +290,99 @@ impl AppState {
             bench: BenchState::default(),
             ui: UiState::default(),
             status: None,
+            welcome: None,
+            checks: None,
             #[cfg(feature = "remote")]
             remote: None,
             watch: None,
         };
+        if !state.settings.onboarded {
+            state.welcome = Some(Welcome::PickStart { choice: None });
+        }
         state.refresh_preview();
         state.reload_bench();
         Ok(state)
+    }
+
+    pub fn choose_start(&mut self, choice: StartChoice) -> io::Result<()> {
+        let base = match &choice {
+            StartChoice::Preset(id) => BaseRef::Preset(*id),
+            StartChoice::KeepCurrent => {
+                let path = self.data_dir.join("bases").join("kept-gameinfo.gi");
+                std::fs::create_dir_all(path.parent().expect("has parent"))?;
+                dt_core::backup::atomic_write(&path, self.live.gameinfo.as_bytes())?;
+                BaseRef::File(path)
+            }
+        };
+        self.switch_profile(
+            Profile {
+                name: "My settings".into(),
+                base,
+                ..default_profile()
+            },
+            false,
+        );
+        self.welcome = Some(Welcome::PickStart {
+            choice: Some(choice),
+        });
+        Ok(())
+    }
+
+    /// The welcome flow's Apply: write the starting point, save it as the profile, finish onboarding.
+    pub fn welcome_apply(&mut self) -> Result<(), String> {
+        let needs_restart = match &self.preview {
+            Ok(plan) if !plan.is_empty() => self.apply()?.report.needs_restart,
+            Ok(_) => false,
+            Err(e) => return Err(e.clone()),
+        };
+        self.save_profile().map_err(|e| e.to_string())?;
+        self.settings.onboarded = true;
+        self.welcome = Some(Welcome::Done { needs_restart });
+        Ok(())
+    }
+
+    pub fn finish_welcome(&mut self) {
+        self.welcome = None;
+    }
+
+    pub fn run_checks(&mut self) {
+        self.checks = Some(crate::doctor::run(&self.paths));
+    }
+
+    /// Restores the newest gameinfo.gi backup that differs from the live file, so repeated
+    /// clicks walk further back. A video.txt backup from the same apply is restored with it.
+    pub fn undo_last(&mut self) -> Result<(), String> {
+        let live_sha = sha256_hex(self.live.gameinfo.as_bytes());
+        let gameinfo = self
+            .backups(FileKind::GameInfo)
+            .into_iter()
+            .find(|b| b.sha256 != live_sha)
+            .ok_or("There is nothing to undo yet.")?;
+        let video_sha = self.live.video.as_deref().map(|v| sha256_hex(v.as_bytes()));
+        let video = self.backups(FileKind::Video).into_iter().find(|b| {
+            (b.created - gameinfo.created).num_seconds().abs() <= 10
+                && Some(&b.sha256) != video_sha.as_ref()
+        });
+        self.restore(&gameinfo).map_err(|e| e.to_string())?;
+        if let Some(video) = video {
+            self.restore(&video).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// Puts back the files exactly as they were before DeadTune first wrote them.
+    pub fn restore_original_files(&mut self) -> Result<(), String> {
+        let originals: Vec<BackupEntry> = [FileKind::GameInfo, FileKind::Video]
+            .into_iter()
+            .filter_map(|k| self.store.original(k))
+            .collect();
+        if originals.is_empty() {
+            return Err("DeadTune has not changed any game files yet.".into());
+        }
+        for entry in &originals {
+            self.restore(entry).map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -766,7 +871,19 @@ pub mod testutil {
         (dir, paths)
     }
 
+    /// An onboarded user, so tests start on the main screen.
     pub fn state() -> (tempfile::TempDir, AppState) {
+        let (dir, paths) = fake_install();
+        let data = dir.path().join("data");
+        let settings = Settings {
+            onboarded: true,
+            ..Settings::default()
+        };
+        let state = AppState::open(paths, data, settings).unwrap();
+        (dir, state)
+    }
+
+    pub fn first_run() -> (tempfile::TempDir, AppState) {
         let (dir, paths) = fake_install();
         let data = dir.path().join("data");
         let state = AppState::open(paths, data, Settings::default()).unwrap();
@@ -1061,6 +1178,89 @@ mod tests {
         let (_d2, mut other) = super::testutil::state();
         other.import_overrides(&text).unwrap();
         assert_eq!(other.profile.overrides(), state.profile.overrides());
+    }
+
+    #[test]
+    fn first_run_picks_a_preset_applies_and_finishes() {
+        let (_dir, mut state) = super::testutil::first_run();
+        assert_eq!(state.welcome, Some(Welcome::PickStart { choice: None }));
+        state
+            .choose_start(StartChoice::Preset(PresetId::KaizMinspec))
+            .unwrap();
+        assert_eq!(state.profile.base, BaseRef::Preset(PresetId::KaizMinspec));
+        assert!(!plan(&state).is_empty());
+        state.welcome_apply().unwrap();
+        assert_eq!(
+            state.welcome,
+            Some(Welcome::Done {
+                needs_restart: true
+            })
+        );
+        assert!(state.settings.onboarded);
+        assert!(!state.is_dirty(), "starting point saved as the profile");
+        assert_eq!(state.settings.last_profile.as_deref(), Some("My settings"));
+        let on_disk = std::fs::read_to_string(&state.paths.gameinfo).unwrap();
+        assert_eq!(on_disk, state.live.gameinfo);
+        assert!(plan(&state).is_empty(), "files match the preset");
+        state.finish_welcome();
+        assert_eq!(state.welcome, None);
+    }
+
+    #[test]
+    fn first_run_keep_current_writes_nothing() {
+        let (_dir, mut state) = super::testutil::first_run();
+        let before = std::fs::read(&state.paths.gameinfo).unwrap();
+        state.choose_start(StartChoice::KeepCurrent).unwrap();
+        assert!(plan(&state).is_empty(), "{:?}", plan(&state));
+        state.welcome_apply().unwrap();
+        assert_eq!(
+            state.welcome,
+            Some(Welcome::Done {
+                needs_restart: false
+            })
+        );
+        assert_eq!(std::fs::read(&state.paths.gameinfo).unwrap(), before);
+        assert!(state.settings.onboarded);
+    }
+
+    #[test]
+    fn onboarded_users_skip_the_welcome() {
+        let (_dir, state) = state();
+        assert_eq!(state.welcome, None);
+    }
+
+    #[test]
+    fn undo_walks_back_through_backups_and_restore_original_resets() {
+        let (_dir, mut state) = state();
+        let original = state.live.gameinfo.clone();
+        state.set_convar(RESTART, "true".into()).unwrap();
+        state.apply().unwrap();
+        let first = state.live.gameinfo.clone();
+        state.set_convar(LIVE, "90".into()).unwrap();
+        state.apply().unwrap();
+        state.undo_last().unwrap();
+        assert_eq!(state.live.gameinfo, first, "one step back");
+        state.undo_last().unwrap();
+        assert_eq!(state.live.gameinfo, original, "two steps back");
+        assert!(state.undo_last().is_err(), "nothing older");
+        state.apply().unwrap();
+        state.restore_original_files().unwrap();
+        assert_eq!(state.live.gameinfo, original);
+        assert_eq!(
+            std::fs::read_to_string(&state.paths.gameinfo).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn restore_original_before_any_write_explains() {
+        let (_dir, mut state) = state();
+        assert!(
+            state
+                .restore_original_files()
+                .unwrap_err()
+                .contains("not changed")
+        );
     }
 
     #[test]

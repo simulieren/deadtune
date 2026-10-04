@@ -1,5 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod advanced;
 mod app;
 mod bench;
 mod chart;
@@ -16,6 +17,7 @@ mod simple;
 mod state;
 mod theme;
 mod views;
+mod widgets;
 
 use std::path::PathBuf;
 

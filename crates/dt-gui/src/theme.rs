@@ -29,29 +29,29 @@ pub fn install(ctx: &egui::Context) {
         style.text_styles = [
             (
                 TextStyle::Small,
-                FontId::new(12.0, FontFamily::Proportional),
+                FontId::new(11.5, FontFamily::Proportional),
             ),
-            (TextStyle::Body, FontId::new(14.5, FontFamily::Proportional)),
+            (TextStyle::Body, FontId::new(13.5, FontFamily::Proportional)),
             (
                 TextStyle::Button,
-                FontId::new(14.5, FontFamily::Proportional),
+                FontId::new(13.5, FontFamily::Proportional),
             ),
             (
                 TextStyle::Heading,
-                FontId::new(19.0, FontFamily::Proportional),
+                FontId::new(16.5, FontFamily::Proportional),
             ),
             (
                 TextStyle::Monospace,
-                FontId::new(13.5, FontFamily::Monospace),
+                FontId::new(12.5, FontFamily::Monospace),
             ),
-            (title(), FontId::new(26.0, FontFamily::Proportional)),
+            (title(), FontId::new(22.0, FontFamily::Proportional)),
         ]
         .into();
         let s = &mut style.spacing;
-        s.item_spacing = egui::vec2(8.0, 8.0);
-        s.button_padding = egui::vec2(12.0, 6.0);
-        s.interact_size.y = 28.0;
-        s.slider_rail_height = 6.0;
+        s.item_spacing = egui::vec2(6.0, 6.0);
+        s.button_padding = egui::vec2(10.0, 4.0);
+        s.interact_size.y = 24.0;
+        s.slider_rail_height = 5.0;
         s.combo_height = 300.0;
         style.visuals = visuals();
     });
@@ -112,5 +112,5 @@ pub fn card() -> egui::Frame {
         .fill(CARD)
         .stroke(Stroke::new(1.0, BORDER))
         .corner_radius(CornerRadius::same(RADIUS))
-        .inner_margin(egui::Margin::same(16))
+        .inner_margin(egui::Margin::symmetric(14, 12))
 }

@@ -237,7 +237,9 @@ enum Edit {
     Base(PresetId),
     Go(Section),
     Focus(&'static str),
+    Pin(&'static str),
     Advanced,
+    Mini,
 }
 
 const RAIL_WIDTH: f32 = 224.0;
@@ -359,7 +361,9 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
                 state.ui.query.clear();
             }
             Edit::Focus(name) => state.ui.focus = Some(name),
+            Edit::Pin(name) => state.toggle_pin(name),
             Edit::Advanced => state.settings.view = View::Advanced,
+            Edit::Mini => crate::compact::enter(ui.ctx(), state),
         }
     }
 }
@@ -431,6 +435,13 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
             .clicked()
         {
             edits.push(Edit::Advanced);
+        }
+        if ui
+            .add(egui::Button::new(RichText::new("Mini window").color(WEAK)).frame(false))
+            .on_hover_text("A small always-on-top window for tweaking while you play")
+            .clicked()
+        {
+            edits.push(Edit::Mini);
         }
         ui.add_space(4.0);
         if state.settings.source == TargetSource::RankedSafe {
@@ -993,6 +1004,14 @@ fn setting_row(
                     {
                         edits.push(Edit::Reset(vec![name]));
                     }
+                }
+                let pinned = state.is_pinned(name);
+                let quick = friendly::KEY_SETTINGS.contains(&name);
+                if !quick
+                    && (pinned || state.ui.focus == Some(name))
+                    && crate::compact::pin_button(ui, pinned).clicked()
+                {
+                    edits.push(Edit::Pin(name));
                 }
             });
             if inline_help {

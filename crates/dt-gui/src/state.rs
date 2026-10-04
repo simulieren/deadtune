@@ -1149,6 +1149,10 @@ impl AppState {
         }
     }
 
+    pub fn is_pinned(&self, name: &str) -> bool {
+        self.settings.pinned.contains(name)
+    }
+
     /// Rows for the advanced view's center list.
     pub fn visible_rows(&self) -> Vec<String> {
         let scope = &self.ui.scope;
@@ -1527,12 +1531,12 @@ mod tests {
     #[test]
     fn pins_toggle_and_stay_apart_from_favourites() {
         let (_dir, mut state) = state();
-        assert!(!state.settings.pinned.contains(LIVE));
+        assert!(!state.is_pinned(LIVE));
         state.toggle_pin(LIVE);
-        assert!(state.settings.pinned.contains(LIVE));
+        assert!(state.is_pinned(LIVE));
         assert!(!state.settings.favourites.contains(LIVE));
         state.toggle_pin(LIVE);
-        assert!(!state.settings.pinned.contains(LIVE));
+        assert!(!state.is_pinned(LIVE));
     }
 
     #[test]

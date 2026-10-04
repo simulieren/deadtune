@@ -364,7 +364,7 @@ fn footer(ui: &mut Ui, state: &AppState) {
             authors.dedup();
             ui.label(
                 RichText::new(format!(
-                    "DeadTune {} · GPL-3.0 · Presets by {} · Inter font (OFL-1.1)",
+                    "DeadTune {} · GPL-3.0 · Presets by {} · Inter (OFL-1.1) and Hack (MIT) fonts",
                     env!("CARGO_PKG_VERSION"),
                     authors.join(", ")
                 ))

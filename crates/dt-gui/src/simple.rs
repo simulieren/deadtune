@@ -1507,7 +1507,7 @@ fn safety(ui: &mut Ui, state: &mut AppState) {
     });
     ui.add_space(10.0);
     ui.label(
-        RichText::new("DeadTune is free software (GPL-3.0). Presets by their authors, credited in Advanced view > Settings. Inter font under the SIL OFL 1.1.")
+        RichText::new("DeadTune is free software (GPL-3.0). Presets by their authors, credited in Advanced view > Settings. Inter font under the SIL OFL 1.1, Hack font under the MIT licence.")
             .small()
             .color(WEAK),
     );

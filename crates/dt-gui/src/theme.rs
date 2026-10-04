@@ -33,28 +33,42 @@ pub fn semibold() -> FontFamily {
 
 /// Inter (subset by `scripts/subset-inter.sh`) ahead of egui's defaults, which stay as
 /// fallbacks for scripts and emoji the subset lacks; Hack stays the monospace font.
+/// Only our own subsets ship (eframe's `default_fonts` is off): Inter for UI text, Hack for
+/// monospace, each falling back to the other.
 pub fn fonts() -> FontDefinitions {
-    let mut fonts = FontDefinitions::default();
-    let fallbacks = fonts.families[&FontFamily::Proportional].clone();
-    for (name, family, bytes) in [
+    let mut fonts = FontDefinitions::empty();
+    for (name, bytes) in [
         (
             "Inter-Regular",
-            FontFamily::Proportional,
             &include_bytes!("../assets/fonts/Inter-Regular.ttf")[..],
         ),
         (
             "Inter-SemiBold",
-            semibold(),
             &include_bytes!("../assets/fonts/Inter-SemiBold.ttf")[..],
+        ),
+        (
+            "Hack-Regular",
+            &include_bytes!("../assets/fonts/Hack-Regular.ttf")[..],
         ),
     ] {
         fonts
             .font_data
             .insert(name.into(), Arc::new(FontData::from_static(bytes)));
-        let list = std::iter::once(name.to_string())
-            .chain(fallbacks.iter().cloned())
-            .collect();
-        fonts.families.insert(family, list);
+    }
+    for (family, list) in [
+        (
+            FontFamily::Proportional,
+            &["Inter-Regular", "Hack-Regular"][..],
+        ),
+        (
+            semibold(),
+            &["Inter-SemiBold", "Inter-Regular", "Hack-Regular"],
+        ),
+        (FontFamily::Monospace, &["Hack-Regular", "Inter-Regular"]),
+    ] {
+        fonts
+            .families
+            .insert(family, list.iter().map(|n| n.to_string()).collect());
     }
     fonts
 }

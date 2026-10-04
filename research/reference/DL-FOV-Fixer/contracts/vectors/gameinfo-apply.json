@@ -1,0 +1,545 @@
+{
+  "about": "Applying the FOV value and the stored tweaks to a whole gameinfo.gi. previousFov is the value read before applying. Text fields are arrays of lines joined with LF. Unless a case says otherwise, every case with text input also runs with each LF replaced by CRLF in both input and expected output, and every case runs a second time on its own output, which must change nothing.",
+  "cases": [
+    {
+      "name": "an existing value is updated",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tgame \t\"citadel\"",
+        "",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"min\"\t\t\"98304\"",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t\t\"fps_max\"\t\"400\"",
+        "\t}",
+        "",
+        "\tMemory",
+        "\t{",
+        "\t\t\"Foo\" \"1\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "fov": "2",
+      "convars": [],
+      "scenesystem": [],
+      "applyTweaks": true,
+      "expected": {
+        "changed": true,
+        "previousFov": "2.3",
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tgame \t\"citadel\"",
+          "",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\" \"2\"",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"min\"\t\t\"98304\"",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t\t\"fps_max\"\t\"400\"",
+          "\t}",
+          "",
+          "\tMemory",
+          "\t{",
+          "\t\t\"Foo\" \"1\"",
+          "\t}",
+          "}",
+          ""
+        ],
+        "convars": [
+          [
+            "r_aspectratio",
+            "updated"
+          ]
+        ],
+        "scenesystem": []
+      }
+    },
+    {
+      "name": "a correct value is not written",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tgame \t\"citadel\"",
+        "",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"min\"\t\t\"98304\"",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t\t\"fps_max\"\t\"400\"",
+        "\t}",
+        "",
+        "\tMemory",
+        "\t{",
+        "\t\t\"Foo\" \"1\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "fov": "2.3",
+      "convars": [],
+      "scenesystem": [],
+      "applyTweaks": true,
+      "expected": {
+        "changed": false,
+        "previousFov": "2.3",
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tgame \t\"citadel\"",
+          "",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\" \"2.3\"",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"min\"\t\t\"98304\"",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t\t\"fps_max\"\t\"400\"",
+          "\t}",
+          "",
+          "\tMemory",
+          "\t{",
+          "\t\t\"Foo\" \"1\"",
+          "\t}",
+          "}",
+          ""
+        ],
+        "convars": [
+          [
+            "r_aspectratio",
+            "updated"
+          ]
+        ],
+        "scenesystem": []
+      }
+    },
+    {
+      "name": "a missing value is added at the top of ConVars",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tgame \t\"citadel\"",
+        "",
+        "\tConVars",
+        "\t{",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"min\"\t\t\"98304\"",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t\t\"fps_max\"\t\"400\"",
+        "\t}",
+        "",
+        "\tMemory",
+        "\t{",
+        "\t\t\"Foo\" \"1\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "fov": "2.15",
+      "convars": [],
+      "scenesystem": [],
+      "applyTweaks": true,
+      "expected": {
+        "changed": true,
+        "previousFov": null,
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tgame \t\"citadel\"",
+          "",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\"\t\"2.15\"",
+          "",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"min\"\t\t\"98304\"",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t\t\"fps_max\"\t\"400\"",
+          "\t}",
+          "",
+          "\tMemory",
+          "\t{",
+          "\t\t\"Foo\" \"1\"",
+          "\t}",
+          "}",
+          ""
+        ],
+        "convars": [
+          [
+            "r_aspectratio",
+            "added"
+          ]
+        ],
+        "scenesystem": []
+      }
+    },
+    {
+      "name": "a missing ConVars block is created",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tgame \t\"citadel\"",
+        "",
+        "\tMemory",
+        "\t{",
+        "\t\t\"Foo\" \"1\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "fov": "2.49",
+      "convars": [],
+      "scenesystem": [],
+      "applyTweaks": true,
+      "expected": {
+        "changed": true,
+        "previousFov": null,
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tgame \t\"citadel\"",
+          "",
+          "\tMemory",
+          "\t{",
+          "\t\t\"Foo\" \"1\"",
+          "\t}",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\"\t\"2.49\"",
+          "\t}",
+          "\t}",
+          ""
+        ],
+        "convars": [
+          [
+            "r_aspectratio",
+            "added"
+          ]
+        ],
+        "scenesystem": []
+      }
+    },
+    {
+      "name": "tweaks are merged with the value",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"r_directlighting\" \"1\"                 // keep this comment",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t}",
+        "",
+        "\tSceneSystem",
+        "\t{",
+        "\t\tGpuLightBinner 1",
+        "\t\tCSMCascadeResolution 2048",
+        "\t}",
+        "}",
+        ""
+      ],
+      "fov": "2.83",
+      "convars": [
+        [
+          "r_directlighting",
+          "0"
+        ],
+        [
+          "cl_new",
+          "1"
+        ]
+      ],
+      "scenesystem": [
+        [
+          "VolumetricFog",
+          "0"
+        ]
+      ],
+      "applyTweaks": true,
+      "expected": {
+        "changed": true,
+        "previousFov": "2.3",
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tConVars",
+          "\t{",
+          "\t\t\"cl_new\"\t\"1\"",
+          "",
+          "\t\t\"r_aspectratio\" \"2.83\"",
+          "\t\t\"r_directlighting\" \"0\"                 // keep this comment",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t}",
+          "",
+          "\tSceneSystem",
+          "\t{",
+          "\t\tVolumetricFog\t0",
+          "",
+          "\t\tGpuLightBinner 1",
+          "\t\tCSMCascadeResolution 2048",
+          "\t}",
+          "}",
+          ""
+        ],
+        "convars": [
+          [
+            "r_aspectratio",
+            "updated"
+          ],
+          [
+            "r_directlighting",
+            "updated"
+          ],
+          [
+            "cl_new",
+            "added"
+          ]
+        ],
+        "scenesystem": [
+          [
+            "VolumetricFog",
+            "added"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "tweaks are ignored when turned off",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"r_directlighting\" \"1\"                 // keep this comment",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t}",
+        "",
+        "\tSceneSystem",
+        "\t{",
+        "\t\tGpuLightBinner 1",
+        "\t\tCSMCascadeResolution 2048",
+        "\t}",
+        "}",
+        ""
+      ],
+      "fov": "2.83",
+      "convars": [
+        [
+          "cl_new",
+          "1"
+        ]
+      ],
+      "scenesystem": [
+        [
+          "VolumetricFog",
+          "0"
+        ]
+      ],
+      "applyTweaks": false,
+      "expected": {
+        "changed": true,
+        "previousFov": "2.3",
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\" \"2.83\"",
+          "\t\t\"r_directlighting\" \"1\"                 // keep this comment",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t}",
+          "",
+          "\tSceneSystem",
+          "\t{",
+          "\t\tGpuLightBinner 1",
+          "\t\tCSMCascadeResolution 2048",
+          "\t}",
+          "}",
+          ""
+        ],
+        "convars": [
+          [
+            "r_aspectratio",
+            "updated"
+          ]
+        ],
+        "scenesystem": []
+      }
+    },
+    {
+      "name": "an invalid value falls back to the default",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tgame \t\"citadel\"",
+        "",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"min\"\t\t\"98304\"",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t\t\"fps_max\"\t\"400\"",
+        "\t}",
+        "",
+        "\tMemory",
+        "\t{",
+        "\t\t\"Foo\" \"1\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "fov": "abc",
+      "convars": [],
+      "scenesystem": [],
+      "applyTweaks": true,
+      "expected": {
+        "changed": true,
+        "previousFov": "2.3",
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tgame \t\"citadel\"",
+          "",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\" \"2\"",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"min\"\t\t\"98304\"",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t\t\"fps_max\"\t\"400\"",
+          "\t}",
+          "",
+          "\tMemory",
+          "\t{",
+          "\t\t\"Foo\" \"1\"",
+          "\t}",
+          "}",
+          ""
+        ],
+        "convars": [
+          [
+            "r_aspectratio",
+            "updated"
+          ]
+        ],
+        "scenesystem": []
+      }
+    },
+    {
+      "name": "a pasted r_aspectratio does not override the chosen value",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tgame \t\"citadel\"",
+        "",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"min\"\t\t\"98304\"",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t\t\"fps_max\"\t\"400\"",
+        "\t}",
+        "",
+        "\tMemory",
+        "\t{",
+        "\t\t\"Foo\" \"1\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "fov": "2.49",
+      "convars": [
+        [
+          "r_aspectratio",
+          "3.00"
+        ],
+        [
+          "fps_max",
+          "0"
+        ]
+      ],
+      "scenesystem": [],
+      "applyTweaks": true,
+      "expected": {
+        "changed": true,
+        "previousFov": "2.3",
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tgame \t\"citadel\"",
+          "",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\" \"2.49\"",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"min\"\t\t\"98304\"",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t\t\"fps_max\"\t\"0\"",
+          "\t}",
+          "",
+          "\tMemory",
+          "\t{",
+          "\t\t\"Foo\" \"1\"",
+          "\t}",
+          "}",
+          ""
+        ],
+        "convars": [
+          [
+            "r_aspectratio",
+            "updated"
+          ],
+          [
+            "fps_max",
+            "updated"
+          ]
+        ],
+        "scenesystem": []
+      }
+    }
+  ]
+}

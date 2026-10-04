@@ -1,0 +1,216 @@
+{
+  "about": "Parsing a pasted config into ConVars, SceneSystem and video entries, and merging stored lists. Text fields are arrays of lines joined with LF.",
+  "cases": [
+    {
+      "name": "a messy pasted config is routed by key shape",
+      "input": [
+        "",
+        "============ SOMEONE'S CONFIG ============",
+        "----- VIDEO.CFG -----",
+        "12.  \"setting.defaultres\" \"2560\"     // your res",
+        "13.  \"setting.fps_max\" \"0\"",
+        "----- CONVARS -----",
+        "r_aspectratio 2                       // FOV",
+        "r_directlighting 0                    // lighting",
+        "rate 786432                           // bandwidth",
+        "threadpool_thread_limit 0",
+        "----- SCENESYSTEM -----",
+        "   GpuLightBinner 1",
+        "   CSMCascadeResolution 0",
+        "   SunLightShadowRenderMode Depth",
+        "   WellKnownLightCookies",
+        "   {",
+        ""
+      ],
+      "expected": {
+        "fov": "2",
+        "convars": [
+          [
+            "r_directlighting",
+            "0"
+          ],
+          [
+            "rate",
+            "786432"
+          ],
+          [
+            "threadpool_thread_limit",
+            "0"
+          ]
+        ],
+        "scenesystem": [
+          [
+            "GpuLightBinner",
+            "1"
+          ],
+          [
+            "CSMCascadeResolution",
+            "0"
+          ],
+          [
+            "SunLightShadowRenderMode",
+            "Depth"
+          ]
+        ],
+        "video": [
+          [
+            "setting.defaultres",
+            "2560"
+          ],
+          [
+            "setting.fps_max",
+            "0"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a later duplicate wins and first-seen order is kept",
+      "input": [
+        "cl_foo 1",
+        "cl_bar 2",
+        "cl_foo 9",
+        ""
+      ],
+      "expected": {
+        "fov": null,
+        "convars": [
+          [
+            "cl_foo",
+            "9"
+          ],
+          [
+            "cl_bar",
+            "2"
+          ]
+        ],
+        "scenesystem": [],
+        "video": []
+      }
+    },
+    {
+      "name": "quoted values keep their spaces and # starts a comment",
+      "input": [
+        "\"cl_name\" \"two words\"",
+        "cl_x 5 # note",
+        "\"Quoted\" \"Depth\"",
+        ""
+      ],
+      "expected": {
+        "fov": null,
+        "convars": [
+          [
+            "cl_name",
+            "two words"
+          ],
+          [
+            "cl_x",
+            "5"
+          ]
+        ],
+        "scenesystem": [
+          [
+            "Quoted",
+            "Depth"
+          ]
+        ],
+        "video": []
+      }
+    },
+    {
+      "name": "CRLF input parses the same",
+      "input": [
+        "cl_foo 1\r",
+        "GpuLightBinner 1\r",
+        ""
+      ],
+      "expected": {
+        "fov": null,
+        "convars": [
+          [
+            "cl_foo",
+            "1"
+          ]
+        ],
+        "scenesystem": [
+          [
+            "GpuLightBinner",
+            "1"
+          ]
+        ],
+        "video": []
+      }
+    },
+    {
+      "name": "lines without a value or with a bad key are ignored",
+      "input": [
+        "justakey",
+        "9bad 1",
+        "{",
+        "}",
+        ""
+      ],
+      "expected": {
+        "fov": null,
+        "convars": [],
+        "scenesystem": [],
+        "video": []
+      }
+    }
+  ],
+  "mergeLists": [
+    {
+      "name": "incoming values win and first-seen order is kept",
+      "existing": [
+        [
+          "a",
+          "1"
+        ],
+        [
+          "b",
+          "2"
+        ]
+      ],
+      "incoming": [
+        [
+          "c",
+          "3"
+        ],
+        [
+          "a",
+          "9"
+        ]
+      ],
+      "expected": [
+        [
+          "a",
+          "9"
+        ],
+        [
+          "b",
+          "2"
+        ],
+        [
+          "c",
+          "3"
+        ]
+      ]
+    },
+    {
+      "name": "an empty stored list takes the incoming one",
+      "existing": [],
+      "incoming": [
+        [
+          "a",
+          "1"
+        ]
+      ],
+      "expected": [
+        [
+          "a",
+          "1"
+        ]
+      ]
+    }
+  ]
+}

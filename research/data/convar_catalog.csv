@@ -1,0 +1,762 @@
+name,apply_class,flags,engine_default,engine_description,preset_comment(first seen),vanilla,sqooky,sqooky_test,kaiz_minspec,kaiz_extremelow,boot_maxfps,optilock_recommended,optilock_potato
+ai_async_queue_max_jobs,unknown,,,,,,,,,,1,1,1
+ai_disable,unknown,,,,"Both of these commands disable creep animations which means that neutrals and guardians won't move [def: ""0""]",,//1,//1,,,,,
+ai_disabled,unknown,,,,"[def: ""0""]",,//1,//1,,,,,
+ai_expression_optimization,unknown,,,,,,,,,,1,1,1
+ai_foot_sweep_enable,unknown,,,,,,,,,,false,false,false
+ai_gather_conditions_async,unknown,,,,default false,,,,,,true,true,true
+ai_lod_auto_enabled,unknown,,,,"Default 0, idk about this",,,,,,//1,true,true
+ai_strong_optimizations_no_checkstand,unknown,,,,"Not fully sure what exactly this does, but I would imagine given the name of the convar it optimizes ai. [def: ""0""]",,,,,,1,1,1
+ai_think_interval,unknown,,,,,,,,,,0.3,0.3,0.3
+ai_think_interval_lod_low,unknown,,,,,,,,,,1,1,1
+ai_think_interval_lod_med,unknown,,,,,,,,,,,0.4,0.4
+ai_use_async_ragdoll_fixup,unknown,,,,doesnt really need tbh since ragdoll is disabled,,,,,,true,true,true
+always_perform_full_spatial_partition_update,unknown,,,,,1,1,1,,,,,
+anim_decode_forcewritealltransforms,restart (gameinfo only),devonly,false,Force BatchAnimationDecode to write transformations for all bones,Default: false Force BatchAnimationDecode to write transformations for all bones,,,,,,true,true,true
+anim_disable,unknown,,,,,,,,,,true,,true
+anim_resource_validate_on_load,live,release,true,Validates the animation group channel list against the animations on load for every animation,,,,,0,0,,,
+animated_material_attributes,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,,,,,,0,0,,,
+animgraph_enable_dirty_netvar_optimization,restart (gameinfo only),"devonly, rep",true,,Only updates the animation graph if the network variables actually changed.,,,,,,,true,true
+animgraph_enable_parallel_op_evaluation,unknown,,,,"Allows animgraph operator evaluation to run in parallel (performance).   [def: ""0""]",,//1,//1,,,1,1,1
+animgraph_enable_parallel_preupdate,unknown,,,,"Allows animgraph pre-update work to run in parallel (performance).       [def: ""0""]",,//1,//1,,,1,1,1
+animgraph_footlock_calculate_tilt,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+animgraph_footlock_enabled,restart (gameinfo only),"devonly, rep",true,A master convar that effectively disables the entire footlock node.,kai's cfg,,false,false,,,false,false,false
+animgraph_footlock_ground_roll,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+animgraph_footlock_hip_offset_enable,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+animgraph_footlock_ik_enable,live w/ sv_cheats (hideout/sandbox),"rep, cheat",true,Enable IK.,,,false,false,,,,,
+animgraph_footlock_trace_ground_enabled,restart (gameinfo only),"devonly, rep",true,Convar for toggling foot lock ground tracking.,,,false,false,,,,,
+animgraph_footlock_use_hip_shift,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+animgraph_slowdownonslopes_enabled,restart (gameinfo only),"devonly, rep",true,,kai's cfg,,false,false,,,false,false,false
+audio_enable_spawn_mask_mix_layer,restart (gameinfo only),"devonly, cl",true,Enables the mix layer which mutes certain sounds at map load boundaries.,"Disabling these should help with performance, Yay! [def: ""true""]",,false,false,,,,,
+audio_enable_vmix_mastering,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,Enables mastering DSP in vmix.,"Whether the engine uses vmix to master the audio, might be a dev command [def: ""true""]",,false,false,//0,//0,0,0,0
+audio_enclosure_calc_enabled,unknown,,,,,0,0,0,,,,,
+battery_saver,live,a,false,"OBSOLETE replaced by mobile_fps_* - Battery saver mode. 0=off, 1=on","Disables battery saver mode (no automatic throttling).                   [def: ""0""]",,//0,//0,,,0,0,0
+cam_idealdelta,live,"cl, a",4,Controls the speed when matching offset to ideal angles in thirdperson view,,,0,0,,,,,
+cam_idealdist,live,"cl, a",150,,,,//0,//0,,,,,
+cam_ideallag,live,"cl, a",4,Amount of lag used when matching offset to ideal angles in thirdperson view,,,0,0,,,,,
+cc_captiontrace,restart (gameinfo only),"devonly, cl",1,"Show missing closecaptions (0 = no, 1 = devconsole, 2 = show in hud)","Show missing closecaptions (0 = no, 1 = devconsole, 2 = show in hud) [def: ""1""]",,0,0,,,,,
+citadel_auto_ping_window,restart (gameinfo only),"devonly, cl",0.35,"If the chat wheel is opened and closed within this time, trigger a ping when it's closed.",,,//0,//0,,,,,
+citadel_boss_glow_disabled,live,"cl, release",false,,"Disables boss and walker glow/highlight effect.                  [def: ""0]",,1,1,1,1,0,1,1
+citadel_bullet_shot_offset_fade_time,restart (gameinfo only),"devonly, cl",0.5,,,,0,0,0,0,,,
+citadel_camera_dist,unknown,,,,,,//0,//0,,,,,
+citadel_camera_height,live w/ sv_cheats (hideout/sandbox),"cl, cheat",63,The look at point of the camera is vertically offset by this distance.,,,0,0,,,,,
+citadel_camera_height_approach_speed,live w/ sv_cheats (hideout/sandbox),"cl, cheat",800,,This makes the camera go all black when set to zero. Cool!,,//0,//0,,,,,
+citadel_camera_height_ceiling_distance,restart (gameinfo only),"devonly, cl",20,,,,0,0,,,,,
+citadel_camera_hero_fov,live,"cl, a",90,The field of view angle of the camera when following a hero.,"The field of view angle of the camera when following a hero.     [def: ""90""] //",,//106,//106,,,90,100,100
+citadel_camera_listening_offset,restart (gameinfo only),"devonly, cl",0,,"To be completely honest I have no idea but I want to test this.  [def: ""0""]",,-1,-1,,,,,
+citadel_camera_parrot_smoothing_rate,restart (gameinfo only),"devonly, cl",60,"When the camera stops being clipped, smooth the motion back to the desired resting position.","Stops the camera from running math to ""smooth"" itself back into place after hitting a wall.",,,,,,,0,0
+citadel_camera_pitch_default,restart (gameinfo only),"devonly, cl",20,The default camera pitch.,,,0,0,,,,,
+citadel_camera_see_distance_max,unknown,,,,,,7000,7000,,,,,
+citadel_camera_soft_collision,restart (gameinfo only),"devonly, cl, rep",2,Experimental: Soften the camera to wall collision distance by using the gaussian weight of fibbonnaci cone of line traces. 2: Use soft collision system to inform hole punch.,(default 1),,,,0,0,0,0,0
+citadel_camera_soft_collision_angle,restart (gameinfo only),"devonly, cl",75,Experimental: Soft camera collision cone arc angle in degrees. Larger cone angle results in earlier softening.,"[def: ""75""]",,75,75,,,,,
+citadel_camera_use_vmdl_flatten_horizontal,restart (gameinfo only),"devonly, cl",true,"For each camera pose set, use the average of X positions. This is a motion sickness reducing action.","From my understanding of how these commands work, they slightly smooth camera inputs. This should make the camera more responsive?   [def: ""true""]",,false,false,,,,,
+citadel_camera_use_vmdl_flatten_vertical,restart (gameinfo only),"devonly, cl",true,Zero the relative Z axis of the camera to reduce motion sickness.,"Setting this command to false should improve responsiveness of mouse input but makes Rem, Venator, AND ESPICIALLY RAT KING's cameras move downwards when aiming down scope. Not exactly a dealbreaker but might be undesirable for some.                                                                                                                                      [def: ""true""]",,true,true,,,,,
+citadel_camera_wobble_disable,restart (gameinfo only),"devonly, cl",false,,I believe this disables the camera wobble when heavy melee'd or talking walker/guardian damage. I like it,,true,true,true,true,1,1,1
+citadel_cinematic_intro_duration_npc,unknown,,,,,,,,,,0.01,0.01,0.01
+citadel_cinematic_intro_duration_player,unknown,,,,,,,,,,0.01,0.01,0.01
+citadel_cinematic_intro_enabled,unknown,,,,,,,,,,-1,-1,-1
+citadel_commend_toast_enemy_seconds,restart (gameinfo only),"devonly, cl",4,Number of seconds to show enemy commend toasts,,,,,,,0,,
+citadel_commend_toast_seconds,restart (gameinfo only),"devonly, cl",30,Number of seconds to show commend toasts,,,,,,,0,,
+citadel_crosshair_hit_marker_duration,live,"cl, a",0.1,,"Removes the hitmarker when shooting people.                      [def: ""0.1""]",,//0.00001,//0.00001,,,0.01,//0.01,//0.01
+citadel_damage_offscreen_indicator_disabled,live,"cl, release",true,,"The little trooper portraits that show up behind walls.          [def: ""true""]",,true,true,1,1,1,1,1
+citadel_damage_report_enable,restart (gameinfo only),"devonly, cl",true,"If enabled, show damage report","Enables/Disables incoming/outgoing damage tab (tuning this off is very questionable but okay). [def: ""1""]",,1,1,,,1,1,1
+citadel_damage_text_batching_window_ability,restart (gameinfo only),"devonly, cl",1.05,"When ability damage events are within this amount of time of each other, they will be added together into a single entry.",How long to wait until batching damage text.,,1000,1000,,,,,
+citadel_damage_text_lifetime,restart (gameinfo only),"devonly, cl",1.5,How long do numbers live.,Damage numbers vanish instantly (default 1.5),,,,0.01,0.01,0.5,0.5,0.5
+citadel_damage_text_lifetime_new,restart (gameinfo only),"devonly, cl",1.5,How long do accumulated numbers live.,Accumulated damage numbers 0.1s (default 1.5),,,,0.1,0.1,,,
+citadel_damage_text_show_effectiveness,restart (gameinfo only),"devonly, cl",false,Show the damage effectiveness on every damage number,"Shows extra “effectiveness” info in damage text (e.g., resist/weakness style feedback). As far as I can tell this is unfinished right now [def: ""0""]",,//0,//0,,,0,0,0
+citadel_death_ragdoll_duration,unknown,,,,,,,,0,0,,,
+citadel_distance_mouse_move_for_minimap_drawing,live,"cl, release",15,,"this command makes drawing on the minimap more precise so you can actually doodle on it :D makes me happy [def: ""15""]",,1,1,//1,//1,,,
+citadel_enable_new_ping_particle,restart (gameinfo only),"devonly, cl",false,Convar to test new ping particle,,,,true,,,,,
+citadel_enable_vdata_sound_preload,restart (gameinfo only),"devonly, cl",true,,,true,true,true,,,true,true,true
+citadel_fibonnaci_sphere_trace_los_max,unknown,,,,,,,80,,,,,
+citadel_first_person,restart (gameinfo only),"devonly, cl",false,Enables first-person viewpoint,"Puts you in first person, messes up character rendering",,//true,//true,,,,,
+citadel_hideout_ball_show_juggle_count,unknown,,,,"Shows a fun juggle count minigame for hideout ball.              [def: ""0""]",,1,1,,,1,1,1
+citadel_hideout_ball_show_juggle_fx,unknown,,,,"Shows juggle visual FX for hideout ball minigame.                [def: ""0""]",,1,1,,,1,1,1
+citadel_hideout_enable_testing_tools,restart (gameinfo only),"devonly, cl",false,,"Unfortunately this doesn't work    [def: ""false""]",,//true,//true,,,true,true,true
+citadel_hud_objective_health_debug_show_midboss,restart (gameinfo only),"devonly, cl",false,,"This makes midboss' health bar visible whenever it's able to be rendered. I like it, you might not [def: ""false""]",,false,false,,,,,
+citadel_hud_objective_health_enabled,restart (gameinfo only),"devonly, cl",2,"Enable/Disable HUD-level objective health bars.  0=Off. 1=Shrines, Patron, Midboss. 2=T1s and T2s. 3=Barracks","0=Off, 1=Shrines, 2=T1/T2, 3=Barracks.                           [def: ""2""]",,2,2,,,2,2,2
+citadel_hud_objective_health_idle_timeout,restart (gameinfo only),"devonly, cl",7,After how many seconds of an objective is damage to hide its health on the HUD,Hide objective health HUD immediately (default 7),,,,0,0,4,4,4
+citadel_in_world_item_panel_dpi,restart (gameinfo only),"devonly, cl",2,In-world texture resolution scale,"This controls the quality of the text above soul pickups, so boxes, golden statues, and soul orbs. Higher values mean better quality, lower means worse. [def: ""2""]",,//0,0,//0.5,//0.5,0.25,0.75,0.75
+citadel_match_details_lane_stats_time,restart (gameinfo only),"devonly, cl",540,,,,,,,,360,360,360
+citadel_melee_shake_amplitude,unknown,,,,I believe this properly disables the camera shake on heavy melee                 [def: 0.55],,0,0,,,,0,0
+citadel_melee_shake_duration,unknown,,,,,,0,0,,,,0,0
+citadel_minimap_overlap_scan_distance,live,"cl, release",12.5,,,,,0,,,,,
+citadel_minimap_use_canvas_for_neutrals,restart (gameinfo only),"devonly, cl",true,,"Uses an alternate “canvas” rendering path for neutral icons on the minimap (render path toggle). [def: ""1""]",,,,,,0,0,0
+citadel_minimap_use_canvas_for_shop,restart (gameinfo only),"devonly, cl",true,,"Uses an alternate “canvas” rendering path for shop icons on the minimap (render path toggle). [def: ""1""]",,,,,,0,0,0
+citadel_npc_disable_cockroaches,unknown,,,,,,,,,,true,true,true
+citadel_npc_disable_floor_point_caching,unknown,,,,,,,,,,false,false,false
+citadel_npc_force_animate_every_tick,unknown,,,,"Don't change this, it does what it says on the tin.              [def: ""true""]",,false,false,,,false,false,false
+citadel_orb_debug_draw_state,unknown,,,,,,,1,,,,,
+citadel_outer_radius_scaler,restart (gameinfo only),"devonly, cl",0.2545,,For some reason setting this to zero disables ping wheel input.,,//0,//0,,,//0.25,,
+citadel_per_weapon_per_surface_impact_effects,unknown,,,,,,,,,,true,false,false
+citadel_perf_interval_report_s,unknown,,,,"The interval that we record performance stats to the log at measured in seconds [def: ""60""]",,//100000,//100000,,,,,
+citadel_ping_wheel_activation_radius,restart (gameinfo only),"devonly, cl",0.37,LEGACY. See: citadel_show_chat_wheel_angle_threshold. Increase this to change how much you have to move your mouse to make the mousewheel visible.,,,//1,//1,,,,,
+citadel_player_glow_disabled,live w/ sv_cheats (hideout/sandbox),"cl, cheat, release",false,,"Disables player glow/highlight effect when pinged.               [def: ""0""]",,,,,,0,0,0
+citadel_player_outline_enemies,restart (gameinfo only),"devonly, cl",true,,turn off enemy outline DOES NOT BREAK BACKSTABBER OR PING THRU WALL,,,false,,,true,true,true
+citadel_portrait_unit_ag2_enable,restart (gameinfo only),"devonly, cl",true,Enable AG2 use in portrait units,,,,false,,,,,
+citadel_portrait_world_renderer_off,restart (gameinfo only),"devonly, cl",false,,"Disables character models in shop and endgame screen                                            [def: ""false""]",,false,false,1,1,true,false,false
+citadel_reduce_camera_shake,unknown,,,,,,,,,,,true,
+citadel_roster_select_force_enable_priority_token,restart (gameinfo only),"devonly, cl",false,,Causes a crash but does what you think it would.,,//true,//true,,,,,
+citadel_rp_show_dev_messages,restart (gameinfo only),"devonly, cl",false,,"Rich presence debug messages. Spams console with ""x is doing y in the hideout""",,//true,//true,,,,,
+citadel_shoot_forward_offset,unknown,,,,,,0,0,,,,,
+citadel_show_chat_wheel_angle_threshold,restart (gameinfo only),"devonly, cl",16,(degrees) Increase this to change how much you have to move your camera angle to make the Chat Wheel instantly visible while holding Ping. ,"(degrees) Increase this to change how much you have to move your camera angle to make the Chat Wheel instantly visible while holding Ping. [def: ""16""]",,//30,//30,,,,,
+citadel_show_chat_wheel_time,restart (gameinfo only),"devonly, cl",0.23,How long it takes after pressing the +ping command for the chat wheel to appear.,,,//15,//15,,,,,
+citadel_show_new_damage_feedback_numbers,unknown,,,,Set 1 to enable,,,,,,0,0,0
+citadel_show_survey,restart (gameinfo only),"devonly, cl",false,A way to force the survey UI on even outside of matchmaking,,,true,true,,,,,
+citadel_stuck_camera_trace_extra_length,unknown,,,,,,0,0,,,,,
+citadel_test_ranked_summary,restart (gameinfo only),"devonly, cl",false,Test Ranked Summary,,,true,true,,,,,
+citadel_tightcamera_alternative,live,"cl, a",1.3,Tight-camera test mode alternative.,,,1,1,,,,,
+citadel_trooper_friendly_glow_disabled,live,"cl, release",true,Disable glow on friendly troopers except for through walls during laning,was false doesnt work btw,,,,,,false,1,1
+citadel_trooper_glow_disabled,live,"cl, release",false,,"1 = Disable friendly/enemy minion glow.                                                         [def: ""0""]",,1,1,false,false,0,1,1
+citadel_trooper_outline_enabled,live,"cl, release",false,,turn off trooper outline,,,,,,true,true,true
+citadel_unit_status_allies_see_thru_walls,restart (gameinfo only),"devonly, cl",true,,"Do you want to see allied player outlines through walls          [def: ""true""]",,true,true,,,,,
+citadel_unit_status_allies_see_thru_walls_max_distance,restart (gameinfo only),"devonly, cl, cheat",0,How far to make allied players' unit status show through walls. Use values <= 0 for no limit.,"How far to make allied players' unit status show through walls.  [def: ""0""] (0 means no limit)",,40,40,,,,,
+citadel_unit_status_delta_decay_delay,restart (gameinfo only),"devonly, cl",0.166667,,"The delay between doing damage and havin the yellow damage indicator appear [def: ""0.5""]",,//0,//0,,,0,0,0
+citadel_unit_status_delta_decay_rate,restart (gameinfo only),"devonly, cl",3,,"How quickly the yellow ""you're dealing damage"" indicator fades [def: ""0.5""]",,//10,//10,,,10,10,10
+citadel_unit_status_dpi,restart (gameinfo only),"devonly, cl",10,,"This increases the size of the health bar. Unfortunately I think this lowers performance. A shame. [def: ""10""]",,10,10,,,,,
+citadel_unit_status_hide_names,live w/ sv_cheats (hideout/sandbox),"cl, cheat, release",false,,Removes player names from health bars (text rendering is heavy).,,,true,,,,1,1
+citadel_unit_status_old_update_rate,restart (gameinfo only),"devonly, cl",30,How many times per second the unit status can update (0 = every frame).,"How frequently health bars can update. Lowering it should improve performance    [def: ""30""]",,15,15,,,15,15,15
+citadel_unit_status_recent_damage_time,restart (gameinfo only),"devonly, cl",0.25,,"how long to show someone's numerical health value when you shoot them. Inf means infinite, but will cause the healthbar to jiggle/shake forever. [def: ""0.25""]",,//inf,//inf,,,,,
+citadel_unit_status_single_bar_mode,live w/ sv_cheats (hideout/sandbox),"cl, cheat",false,"Allow only a single health bar, no stacking.","This makes the v2 halth bar be one bar as opposed to multiple, which I find more easily readable [def: ""false""]",,false,false,,,,,
+citadel_unit_status_stamina_low_pips,unknown,,,,"below this threshold stamina is permanantly visble [def: ""3""]",,7,7,,,,,
+citadel_unit_status_use_new,live,"cl, release",false,,"This uses new Health Bar, to use old Health Bar change ""true"" to ""false"".                    [def: ""false""]",,true,true,,,0,1,1
+citadel_unit_status_use_v2,restart (gameinfo only),"devonly, cl, cheat",false,,"Set to 1 to enable the new health bar that allows you to  see enemy stamina.                 [def: ""0""]",,0,0,,,,,
+citadel_unit_status_use_v2_for_nonplayers,restart (gameinfo only),"devonly, cl, cheat",false,,"Set to 1 to enable the new health bar but for troopers, objs, and camps.                     [def: ""0""]",,0,0,,,,,
+citadel_use_pvs_for_players,unknown,,,,"Use PVS for players (devonly sv, default false). Less entity visibility work. [SV]",,,,1,1,true,true,true
+citadel_video_preset,live,"cl, a",3,Rendering performance level.,"[def: ""3""]",,9,9,0,0,,,
+citadel_visibility_queue_rate,restart (gameinfo only),"devonly, cl",2,,use 2,,,,//4,//4,,,
+citadel_weapon_spread_debug,restart (gameinfo only),"devonly, cl",false,,Doesn't seem to do anything.,,//true,//true,,,,,
+cl_aggregate_particles,restart (gameinfo only),devonly,true,,"Doesn't seem to cause any issues but a benchmark proper should be conducted [def: ""false""]",true,true,true,1,1,true,//true,//true
+cl_async_usercmd_send,restart (gameinfo only),devonly,false,,"We don't support early prediction at the moment, which async send requires",false,false,false,,,true,false,false
+cl_async_usercmd_send_disabled_recvmargin_min,unknown,,,,Additional frame since we do not use the async usercmd send (potentially unneccessary),0.5,0.5,0.5,,,0.5,0.5,0.5
+cl_batch_entity_list_ops_during_latch,restart (gameinfo only),"devonly, cl",false,Batch entity list adds / removes while latching interpolated variables to avoid mutex contention.,"Batch entity list adds / removes while latching interpolated variables to avoid mutex contention.        [def: ""false""]",,true,true,1,1,1,1,1
+cl_bone_cache_optimization,restart (gameinfo only),"devonly, cl",true,,,,,,,,1,1,1
+cl_clock_buffer_ticks,restart (gameinfo only),devonly,1,"Clock sync will try to maintain an additional margin of N ticks.  This is intended to smooth over packet loss, and is a replacement for cl_interp_ratio / cl_interp.  This value is simply added to cl_clock_recvmargin_desired",Buffer added to the simulation clock margin ( affects pred offset and cadence of client world ticks ),1,1,1,,,1,1,1
+cl_disable_ragdolls,live w/ sv_cheats (hideout/sandbox),"cl, cheat",false,,"Keep set to 0 - enabling this (disabling ragdolls) can cause issue with doorman's ultimate. [def: ""0""]",,0,1,1,1,1,0,0
+cl_disconnect_soundevent,restart (gameinfo only),devonly,citadel.convar.stop_all_game_layer_soundevents,This soundevent is called to stop the desired soundevents when the game is disconnected.,,citadel.convar.stop_all_game_layer_soundevents,citadel.convar.stop_all_game_layer_soundevents,citadel.convar.stop_all_game_layer_soundevents,,,citadel.convar.stop_all_game_layer_soundevents,citadel.convar.stop_all_game_layer_soundevents,citadel.convar.stop_all_game_layer_soundevents
+cl_enable_eye_occlusion,restart (gameinfo only),"devonly, cl",true,,"[def: ""true""]",,false,false,0,0,,true,true
+cl_entityiter_allow_world_occlusion,unknown,,,,,,,,,,,0,0
+cl_eye_yaw_multiplier,restart (gameinfo only),"devonly, cl",1,,,,,,,,0,0,0
+cl_fasttempentcollision,restart (gameinfo only),"devonly, cl",5,,"Limits/controls fast collision processing for temporary entities (impacts/tracers/etc.); higher usually = more work. [def: ""5""]",,1000,1000,,,999999,999999,999999
+cl_globallight_freeze,restart (gameinfo only),"devonly, cl",false,,,,,,1,1,,,
+cl_globallight_shadow_mode,restart (gameinfo only),"devonly, cl",2,,"No idea. It is disabled based on the name.                       [def: ""2""]",,,,0,0,0,0,0
+cl_glow_brightness,live w/ sv_cheats (hideout/sandbox),"cl, cheat",1,Brightness of player halos,default 1,,,,,,0,0,0
+cl_hud_telemetry_frametime_show,live,"cl, a, release",1,"Show frame time (FPS) in the HUD.  0=never, 1=only if poor, 2=always","If you use an external FPS counter (Steam/RivaTuner), disable the in-game one to save Panorama updates",,,,,,,0,0
+cl_impacteffects,restart (gameinfo only),"devonly, cl",true,,Disable client impact effects (bullet hit FX) (devonly),,,,0,0,1,0,0
+cl_input_enable_raw_keyboard,live,release,false,Enable raw keyboard input,"Surprisingly this can cause issues with holding keys after upgrading with alt. [def: ""0""]",,//1,//1,,,1,1,1
+cl_interp,unknown,,,,Client-side interpolation time (smoothing delay) for rendering other players/entities.       [def: 0],,//0.01,//0.01,,,//0.01,,
+cl_interp_hermite,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,Set to zero do disable hermite interpolation.,"Disable hermite interpolation (cheaper, slightly jerkier). ⚠ User notes: test before changing",,,,//0,//0,,,
+cl_interp_parallel,restart (gameinfo only),"devonly, cl",false,Run interpolation in parallel for entities with no children.,"Run interpolation in parallel for entities with no children.     [def: ""false""]",1,1,1,1,1,1,1,1
+cl_interp_ratio,live,"cl, user",0,"Sets the client simulation interpolation amount, in terms of server updates (final amount is cl_interp_ratio / cl_updaterate).","Multiplier that affects interpolation time (often cl_interp_ratio / cl_updaterate).              [def: ""0""]",0,0,0,,,0,0,0
+cl_joystick_enabled,live,a,false,Enable joystick input,,0,0,0,,,0,1,1
+cl_max_particle_pvs_aabb_edge_length,live,release,100,,Cull particle systems outside smaller PVS AABB (default 100),100,100,100,50,50,100,10,100
+cl_modifier_parallel_gather_status_effect_updates,restart (gameinfo only),"devonly, cl, rep",false,,"Not sure                                                         [def: ""false""]",,false,false,,,,,
+cl_parallel_readpacketentities,restart (gameinfo only),devonly,true,Set to 1 to use threading snapshot reading (if game supports and server is sending bitcounts).,,,,,,,1,1,1
+cl_parallel_readpacketentities_threshold,restart (gameinfo only),devonly,2,Use parallel processing of snapshot reading if above this many entries.,,,,,,,2,2,2
+cl_particle_batch_mode,restart (gameinfo only),devonly,1,,"Has a range of 1 or 2, 2 will make celeste's auto rebound look weird and 0 will make them not batch [def: ""1""]",,1,1,1,1,1,1,1
+cl_particle_fallback_base,restart (gameinfo only),devonly,0,Base for falling back to cheaper effects under load.,"Base for falling back to cheaper effects under load.             [def: ""0""]",,5,5,1,1,//10,1,1
+cl_particle_fallback_multiplier,restart (gameinfo only),devonly,0,Multiplier for falling back to cheaper effects under load.,"Multiplier for falling back to cheaper effects under load.       [def: ""0""]",,10,10,2,2,//10,10,10
+cl_particle_max_count,restart (gameinfo only),devonly,0,,"Maximum allowed particles. Setting it too low will cause issues. With flooding from the console.  [def: ""0""]",,//1500,//1500,,,0,800,800
+cl_particle_newinit,restart (gameinfo only),devonly,true,turn on optimized particle init,,,,,,,,true,true
+cl_particle_sim_fallback_base_multiplier,restart (gameinfo only),devonly,5,How aggressive the switch to fallbacks will be depending on how far over the cl_particle_sim_fallback_threshold_ms the sim time is.  Higher numbers are more aggressive.,"How aggressive the switch to fallbacks will be depending on how far over the cl_particle_sim_fallback_threshold_ms the sim time is.  Higher numbers are more aggressive. [def: ""5""]",,100,100,10,10,//100,100,100
+cl_particle_sim_fallback_threshold_ms,restart (gameinfo only),devonly,6,Amount of simulation time that can elapse before new systems start falling back to cheaper versions,"Amount of simulation time that can elapse before new systems start falling back to cheaper versions [def: ""6""]",,//0.3,//0.3,1,1,//0,0,0
+cl_phys_animated_hierarchy,restart (gameinfo only),"devonly, cl",true,,,,,,,,,false,false
+cl_phys_assume_fixed_tick_interval,restart (gameinfo only),"devonly, cl",true,"If true, we assume the client uses a fixed tickrate like the server (which may not always be true). If false, we recalculate the number of physics substeps in each client tick based on the actual elapsed time in the tick.","Assume the client uses a fixed tickrate like the server (which may not always be true)                   [def: ""true""]",,true,true,,,,,
+cl_phys_enabled,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,Enable all physics simulation,"Disables all physics. This means ragdolls just maintain the last pose and boxes don't fall over [def: ""true""]",,//false,//false,,,true,true,true
+cl_phys_networked_start_sleep,restart (gameinfo only),"devonly, cl",false,,"try on and off, this is probably what causing result screen to pop up when idling",,,,,,true,true,true
+cl_phys_sleep_enable,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,Enable sleeping for dynamic physics bodies.,,,,,,,1,1,1
+cl_phys_timescale,restart (gameinfo only),"devonly, cl",1,Scale time for physics,"[FPS IMPACT] 0=Disable physics (max FPS) | 1=Normal physics | Lower = slower physics, less CPU",,,,,,1,1,1
+cl_physics_highlight_active,unknown,,,,Turns on the absbox for all active physics objects.  0 : un-highlight.,,,,,,0,0,0
+cl_poll_network_early,live,release,false,"Enable polling for network messages every frame, instead of every tick",,0,0,0,,,0,0,0
+cl_pred_optimize,restart (gameinfo only),"devonly, cl",true,Optimize for not repredicting if there were no errors,,,,,,,,true,true
+cl_pred_parallel_postnetwork,restart (gameinfo only),"devonly, cl",true,,,,,,,,,true,true
+cl_predict_after_every_createmove,unknown,,,,Test 1 0,,,,,,//0,,
+cl_prediction_savedata_postentitypacketreceived,live,"cl, release",false,"Experimental optimization.  If you are reading this in 2026, please delete this convar.",,,,,,,1,1,1
+cl_predictioncopy_runs,restart (gameinfo only),"devonly, cl",true,,Put to 1 if character vibrates,,,,,,//0,,
+cl_ragdoll_default_scale,restart (gameinfo only),"devonly, cl",1,,"Scale ragdoll to 0 (devonly, default 1)",,,,0,0,0,,
+cl_ragdoll_limit,live,"cl, a",20,Maximum number of ragdolls to show (-1 disables limit),"Limit of how many ragdolls can be rendered at once.              [def: ""-1""]",,0,0,0,0,0,1,1
+cl_removedecals,unknown,,,,,,,,,,,1,
+cl_resend,live,release,0.5,Delay in seconds before the client will resend the 'connect' attempt,"Delay in seconds between reconnect attempts (higher = less frequent, helps avoid kicks/timeouts on unstable connections). [def: ""0.5""]",,//15,//15,,,15,15,15
+cl_retire_low_priority_lights,restart (gameinfo only),"devonly, cl",false,Low priority dlights are replaced by high priority ones,"Replaces/drops low-priority dynamic lights when higher-priority lights are present (helps cap dlight clutter/cost). [def: ""0""]",,1,1,1,1,1,1,1
+cl_show_splashes,restart (gameinfo only),"devonly, cl",true,,"Disables splash effects (water/impact splashes).                 [def: ""1""]",,0,0,0,0,0,0,0
+cl_simulate_dormant_entities,restart (gameinfo only),"devonly, cl",true,,"Based on the name I would imagine it does what it says.          [def: ""true""]",,false,false,0,0,0,0,0
+cl_skel_constraints_enable,live w/ sv_cheats (hideout/sandbox),"rep, cheat",true,,,,,,,,,0,0
+cl_skip_hierarchy_update_for_unchanged_entities,unknown,,,,Skips updating bones/hierarchy for networked entities that haven't moved. Massive CPU saver.,,,,,,,true,true
+cl_skip_update_animations,restart (gameinfo only),"devonly, cl",false,Enable to skip game animations,Setting this to  true causes models outside of the game world to a-pose. looks cute.,,//true,//true,,,,,
+cl_smooth,restart (gameinfo only),"devonly, cl",true,Smooth view/eye origin after prediction errors,might change to false again,,,,,,true,true,true
+cl_smooth_draw_debug,live w/ sv_cheats (hideout/sandbox),"cl, cheat",false,,,,,,,,0,0,0
+cl_smoothtime,restart (gameinfo only),"devonly, cl",0.2,Smooth client's view after prediction error over this many seconds,"Smooth client's view after prediction error over this many seconds (Lower = snappier but more abrupt, higher = smoother but floaty). [def: ""0.2""]",,//0.01,//0.01,,,0.01,0.01,0.01
+cl_tickpacket_desired_queuelength,live,user,0,"This value, multiplied by the tick interval, is added to cl_tickpacket_recvmargin_desired to obtain the effective desired recv margin.",0 = attempt to always reach the queue's min floor,1,1,1,,,0,0,0
+cl_tickpacket_recvmargin_desired,restart (gameinfo only),devonly,5,Recvmargin-based usercommand pacing will try to maintain N ms margin between user command arriving at the server and the server needing that user command.  See also cl_tickpacket_desired_queuelength.,"5 ms base, min. floor for protecting against thrashing the queue",5,5,5,,,5,5,5
+cl_updaterate,live,"cl, a, user",20,Number of packets per second of updates you are requesting from the server,"Client snapshot update rate requested from the server (higher = more frequent updates).      [def: ""128""]",128,128,128,,,128,128,128
+cl_usesocketsforloopback,restart (gameinfo only),devonly,true,"When connecting to local listen server (for example, using the 'map' command), default to loopback=false, which connects to '127.0.0.1' instead of 'loopback'.  This uses the network stack so that fake lag/loss can be simulated.",,1,1,1,,,1,1,1
+closecaption,live,"cl, a, user",false,Enable close captioning.,"I assume this does what it says on the tin                       [def: ""false""]",,false,false,,,false,false,false
+cloth_filter_transform_stateless,restart (gameinfo only),devonly,false,"Enable the new, stateless version of FilterTransform",,0,0,0,,,0,0,0
+cloth_sim_on_tick,restart (gameinfo only),"devonly, cl",true,,"Update the cloth simulation every tick                           [def: ""1""]",,0,0,0,0,0,0,0
+cloth_update,restart (gameinfo only),"devonly, cl",true,,Disable cloth update altogether (devonly) you can use this if you use mods that remove character cloaks/coats/etc,,,,//0,//0,1,1,1
+con_enable,live,"a, per_user",false,Allows the console to be activated.,,,,true,,,,,
+cpu_level,restart (gameinfo only),"devonly, cl",2,CPU Level - Default: High,"CPU level.                                                               [def: ""2""]",,//1,//1,0,0,1,1,1
+cq_buffer_bloat_msecs_max,live,"rep, release",120,Server will not allow the client to buffer up more than N ms of commands.,7.68 ticks @64hz max cq bloat,120,120,120,,,120,120,120
+csm_bias_override_0,live w/ sv_cheats (hideout/sandbox),cheat,1,,,,,,,,,1,
+csm_bias_override_1,live w/ sv_cheats (hideout/sandbox),cheat,1,,,,,,,,,1,
+csm_bias_override_2,live w/ sv_cheats (hideout/sandbox),cheat,1,,,,,,,,,1,
+csm_bias_override_3,live w/ sv_cheats (hideout/sandbox),cheat,1,,,,,,,,,1,
+csm_cascade0_override_dist,live w/ sv_cheats (hideout/sandbox),cheat,-1,,All of these commands should reduce shadow quality.,,0,0,,,0,1,0
+csm_cascade1_override_dist,live w/ sv_cheats (hideout/sandbox),cheat,-1,,All of these commands should reduce shadow quality.,,0,0,,,0,1,0
+csm_cascade2_override_dist,live w/ sv_cheats (hideout/sandbox),cheat,-1,,All of these commands should reduce shadow quality.,,0,0,,,0,1,0
+csm_cascade3_override_dist,live w/ sv_cheats (hideout/sandbox),cheat,-1,,All of these commands should reduce shadow quality.,,0,0,,,0,1,0
+csm_cascade_viewdir_shadow_bias_scale,live w/ sv_cheats (hideout/sandbox),cheat,2,,,,,,,,,0.1,
+csm_max_dist_between_caster_and_receiver,live w/ sv_cheats (hideout/sandbox),cheat,15000,default pushback,All of these commands should reduce shadow quality.,,0,0,,,0,0,0
+csm_max_num_cascades_override,restart (gameinfo only),devonly,-1,Number of cascades in sunlight shadow,All of these commands should reduce shadow quality.,,0,0,1,1,0,0,0
+csm_max_shadow_dist_override,restart (gameinfo only),devonly,-1,,All of these commands should reduce shadow quality.,,,,1000,1000,0,0,0
+csm_max_visible_dist,live w/ sv_cheats (hideout/sandbox),cheat,7500,,All of these commands should reduce shadow quality.,,0,0,1000,1000,0,1,0
+csm_res_override_0,live w/ sv_cheats (hideout/sandbox),cheat,0,,All of these commands should reduce shadow quality.,,1,1,,,1,1,1
+csm_res_override_1,live w/ sv_cheats (hideout/sandbox),cheat,0,,All of these commands should reduce shadow quality.,,1,1,,,1,1,1
+csm_res_override_2,live w/ sv_cheats (hideout/sandbox),cheat,0,,All of these commands should reduce shadow quality.,,1,1,,,1,1,1
+csm_res_override_3,live w/ sv_cheats (hideout/sandbox),cheat,0,,All of these commands should reduce shadow quality.,,1,1,,,1,1,1
+csm_sst_max_visible_dist,live w/ sv_cheats (hideout/sandbox),cheat,2000,,(2000),,,,500,500,,10,
+csm_sst_pushback_distance,live w/ sv_cheats (hideout/sandbox),cheat,1500,default pushback,,,,,,,,100,
+csm_sst_shadow_focus_region_caster_headroom,unknown,,,,,,,,,,,8,
+csm_sst_shadow_focus_region_maxz,live w/ sv_cheats (hideout/sandbox),cheat,2000,,,,,,,,,-1000,
+csm_sst_shadow_focus_region_minz,live w/ sv_cheats (hideout/sandbox),cheat,-2000,,,,,,,,,-2000,
+csm_sst_vertical_depth_shear_enable,unknown,,,,,,,,,,,false,
+csm_viewmodel_farz,live w/ sv_cheats (hideout/sandbox),cheat,30,,,,1,1,1,1,,,
+csm_viewmodel_max_shadow_dist,live w/ sv_cheats (hideout/sandbox),cheat,21,,,,1,1,1,1,,1,
+csm_viewmodel_max_visible_dist,live w/ sv_cheats (hideout/sandbox),cheat,1000,,,,1,1,1,1,,100,
+csm_viewmodel_nearz,live w/ sv_cheats (hideout/sandbox),cheat,0.5,,,,512,512,,,,0.1,
+csm_viewmodel_shadows,restart (gameinfo only),devonly,false,,All of these commands should reduce shadow quality.,,false,false,,,false,false,false
+debug_draw_enable,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+default,unknown,,,,,0,0,0,,,0,0,0
+default_fov,live w/ sv_cheats (hideout/sandbox),"cl, cheat",70,,,,0,0,,,,,
+disable_source_soundscape_trace,unknown,,,,"Bypasses lookup of soundscapes for indvidual audio sources when enabled. [def: ""false""]",1,1,1,,,1,1,1
+dsp_slow_cpu,unknown,,,,,,,,,,1,1,1
+dsp_volume,live,"a, demo",0.8,,idk,,,,,,0,0,0
+enable_boneflex,live,"cl, a",true,,"Disables bone flexes (procedural facial/mesh flex drivers).      [def: ""1""]",,false,false,0,0,false,false,false
+enable_priority_boost,unknown,,,,,,//true,//true,,,1,true,true
+engine_accurate_input_processing_delta_time,restart (gameinfo only),devonly,false,"When true, elapsed time given to the input processing will be the time elapsed since the last input processing. This is only relevant when input is processed multiple times per frame ( i.e. multiple ticks per frame)","When true, elapsed time given to the input processing will be the time elapsed since the last input processing. This is only relevant when input is processed multiple times per frame ( i.e. multiple ticks per frame) [def: false]",,true,true,,,,true,true
+engine_allow_multiple_simulates_per_frame,restart (gameinfo only),devonly,false,"When the client is catching up in low frame rate situations, should we run client simulate more than once a frame?","Default false, not sure about this one so dont change it",,,,,,//false,true,true
+engine_allow_multiple_ticks_per_frame,restart (gameinfo only),devonly,true,"When the client is catching up in low frame rate situations, should we run tick more than once a frame?",Remove,,,,,,//0,,
+engine_low_latency_sleep_after_client_tick,live,release,false,"When r_low_latency is enabled, this moves the low latency sleep on tick frames to happen after client simulation.","When r_low_latency is enabled, this moves the low latency sleep on tick frames to happen after client simulation. [def: ""false""]",,false,true,1,1,1,1,1
+engine_max_ticks_to_simulate,restart (gameinfo only),devonly,-1,"Max number of ticks to simulate per frame, after which simulation will start to slow down compared to real time.","Max number of ticks to simulate per frame, after which simulation will start to slow down compared to real time. [def: ""-1""]",,2,2,2,2,33,33,33
+engine_no_focus_sleep,live,a,20,,Don't sleep when window loses focus (default 20). Mines CPU alt-tabbed; set 10 if you prefer,,,,0,0,0,0,0
+ent_joint_lines,unknown,,,,"[def: ""true""]        // These shouldn't be needed?",,//false,//false,,,,,
+ent_joint_names,unknown,,,,"[def: ""true""]        //",,//false,//false,,,,,
+fog_enable,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,Enable fog,Disable fog entirely (cheat),,false,false,0,0,0,0,0
+fog_enableskybox,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,,I doubt the fog commands actually are modifiable but I am maintaining their inclusion for posterity,,false,false,0,0,0,0,0
+fps_max,live,"a, release",400,Frame rate limiter.  0=no limit.  Does not apply to dedicated server.,"Uncap FPS (0=off, default 400). Set monitor_hz*1.1 to cap",400,400,400,0,0,0,0,0
+fps_max_tools,live,a,120,"Additional frame rate limit while in tools mode and a window other than the game window has focus. Note that fps_max still applies, this only allows the maximum frame rate for tools mode to be lower. 0=no tools specific limit.",Cap tools-mode FPS (default 120),,,,60,60,,,
+fps_max_ui,live,a,120,Frame rate limiter while the game UI is displayed.  0=no limit.  Does not apply to dedicated server.,Cap UI/menu FPS at 60 (default 120),120,120,120,60,60,120,120,120
+fs_async_threads,restart (gameinfo only),devonly,-1,Number of IO threads in async filesystem (-1 == auto),,,,,,,//8,-1,-1
+func_break_max_pieces,unknown,,,,"No breakable-prop debris pieces (sv/a/rep, default 15)",,,,0,0,1,1,1
+fx_drawmetalspark,restart (gameinfo only),"devonly, cl",true,Draw metal spark effects.,"Disable metal-spark effects on bullet hits (devonly, default 1)",,,,0,0,false,false,false
+g_ragdoll_important_maxcount,unknown,,,,"No important ragdolls (default 2, devonly sv/cl/rep)",,,,0,0,1,1,1
+g_ragdoll_maxcount,unknown,,,,"Max ragdoll count 0 (default 5, devonly sv/cl/rep)",,,,//0,//0,,1,1
+gpu_level,restart (gameinfo only),"devonly, cl",3,GPU Level - Default: High,"GPU level literally doesn't matter, gets set to 2 in the engine",,//1,//1,0,0,1,1,1
+gpu_mem_level,restart (gameinfo only),"devonly, cl",2,Memory Level - Default: High,"GPU Memory level.                                                        [def: ""2""]",,//1,//1,0,0,1,1,1
+hud_free_cursor,live,"cl, release",-1,"If -1 use the hud default, otherwise 0 is disabled, 1 is enabled",Reduces UI input delay in minimap/spectator modes (not sure if this is true),,,,,,0,0,0
+ik_constraints_enabled,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+ik_debug_dogleg3bone_enabled,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+ik_debug_fabrik_backwards_enabled,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+ik_debug_fabrik_forwards_enabled,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+ik_enable,live w/ sv_cheats (hideout/sandbox),"rep, cheat",true,Enable IK.,,,false,false,,,,0,0
+ik_fabrik_align_chain,restart (gameinfo only),"devonly, rep",true,,"Disables FABRIK chain alignment in IK (cheaper).                 [def: ""1""]",,1,1,,,0,0,0
+ik_fabrik_backwards_enabled,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+ik_fabrik_forwards_enabled,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+ik_final_fixup_enable,restart (gameinfo only),"devonly, rep",true,,"Disables final IK fixup pass (cheaper animations, potentially less accurate). [def: ""1""]",,false,false,,,0,0,0
+ik_planetilt_enable,restart (gameinfo only),"devonly, rep",true,,,,false,false,,,,,
+in_button_double_press_window,unknown,,,,,0.3,0.3,0.3,,,0.3,0.3,0.3
+instant_replay,restart (gameinfo only),devonly,true,Enable instant replay recording.,"enables/disables the replay system. If set to false players will be in the idle animation in replays [def: ""true""]",,//true,//true,,,,,
+iv_parallel_restore,restart (gameinfo only),"devonly, cl",true,,EDITED BY BOOT,1,1,1,,,1,1,1
+lb_allow_time_sliced_shadow_map_rendering,restart (gameinfo only),devonly,true,Allow time-sliced shadow buffer rendering when enabled via gameinfo.gi,,,,false,,,,false,false
+lb_barnlight_shadow_use_precomputed_vis,restart (gameinfo only),devonly,true,,,,,,,,0,0,0
+lb_barnlight_shadowmap_scale,live,release,1,Scale for computed barnlight shadowmap size,"Scale for computed barnlight shadowmap size (lower = cheaper).   [def: ""1""]",,0,0,0.5,0.5,0.01,0.001,0.01
+lb_bin_slices,restart (gameinfo only),devonly,8192,,,,,0,,,,,
+lb_csm_cascade_size_override,restart (gameinfo only),devonly,-1,Override width/height of individual cascades in the CSM,"Enables overriding CSM cascade sizing rules (forces engine to use override values). [def: ""-1""]",,1,1,1,1,0.25,0.25,0.25
+lb_csm_cross_fade_override,restart (gameinfo only),devonly,-1,Override CSM cross fade amount,(-1),,,,0,0,0,0,0
+lb_csm_distance_fade_override,restart (gameinfo only),devonly,-1,Override CSM distance fade,(-1),,,,0,0,0,0,0
+lb_csm_draw_alpha_tested,restart (gameinfo only),devonly,true,,"Prevents alpha-tested geometry from being included in CSM passes (cheaper, possible missing leaf/fence shadows). [def: ""1""]",,0,0,0,0,0,0,0
+lb_csm_draw_translucent,restart (gameinfo only),devonly,true,,"Prevents translucent objects from rendering into CSM (cheaper, fewer shadow details). [def: ""1""]",,0,0,0,0,0,0,0
+lb_csm_override_staticgeo_cascades,restart (gameinfo only),devonly,false,Override Cascades that will render static objects with lb_csm_override_staticgeo_cascades_value,"Override Cascades that will render static objects with lb_csm_override_staticgeo_cascades_value. [def: ""false""]",,true,true,,,0,0,0
+lb_csm_override_staticgeo_cascades_value,restart (gameinfo only),devonly,-1,"If lb_csm_override_staticgeo_cascades, override value used to determine which cascades render static objects","If lb_csm_override_staticgeo_cascades, override value used to determine which cascades render static objects [def: ""false""]",,true,true,,,0,0,0
+lb_csm_receiver_plane_depth_bias,restart (gameinfo only),devonly,1.526e-05,"Shader depth bias applied to shadow receiver (Note this conflicts with renderstate depth bias, both now default to 0)",kai's cfg,,,,,,0.00002,0.00002,0.00002
+lb_csm_receiver_plane_depth_bias_transmissive_backface,restart (gameinfo only),devonly,0.00015,Depth bias applied to shadow receiver for transmissive backface geo (based on renderstate depthbias being 0),kai's cfg,,,,,,0.0002,0.0002,0.0002
+lb_cubemap_normalization_max,restart (gameinfo only),devonly,32,,Default: 32,1,1,1,,,1,1,1
+lb_cubemap_normalization_roughness_begin,restart (gameinfo only),devonly,0.1,,Default: 0.1,,,,,,0.01,0.01,0.01
+lb_cull_onscreen_bounce_light_shadows,unknown,,,,(false),,,,1,1,,,
+lb_dynamic_shadow_penumbra,restart (gameinfo only),devonly,true,Adjust shadow penumbra based on light size,Disable shadow penumbra (default true),,,,0,0,false,false,false
+lb_dynamic_shadow_resolution,restart (gameinfo only),devonly,true,Dynamically adjust shadow resolution,No dynamic shadow resolution adjustment (devonly),,,,0,0,false,false,false
+lb_dynamic_shadow_resolution_base,restart (gameinfo only),devonly,1024,Base resolution for dynamic shadowmap sizing.  Shadowmap size of a screen sized light,"Base resolution for dynamic shadows (lower = cheaper).           [def: ""1024""]",,16,16,16,16,32,32,32
+lb_dynamic_shadow_resolution_base_cmp_shadowmapsize,restart (gameinfo only),"devonly, cheat",false,take min of lb_dynamic_shadow_resolution and barnlight shadowmapsize as base shadowmapsize,,,,,,,,true,true
+lb_dynamic_shadow_resolution_quantization,restart (gameinfo only),devonly,64,Quantization of dynamically computed shadow size,64,,,,,,32,32,32
+lb_enable_baked_shadows,restart (gameinfo only),"devonly, cheat",true,SceneSystem/LightBinner/Enable Baked Shadows,"*Disables baked shadows (game looks bright if this is on while stationary lights = 1). [def: ""1""]",,false,false,1,1,0,false,false
+lb_enable_binning,restart (gameinfo only),devonly,true,SceneSystem/LightBinner/Enable Binning,,,,,0,0,,false,false
+lb_enable_dynamic_lights,restart (gameinfo only),"devonly, cheat",true,Allows rendering dynamic lights,"SET THIS TO TRUE TO MAKE HERO PORTRAITS HAVE COLOR IN THE SHOP AND ENDGAME *Disables dynamic lights eg. walker, shop, tp, character abilities etc. (hero silhouettes go dark in menus as a side effect) [def: ""1""]",,true,false,0,0,0,true,false
+lb_enable_envmaps,restart (gameinfo only),"devonly, cheat",true,SceneSystem/LightBinner/Enable EnvMaps,This makes all characters black,,//false,//false,,,//0,//0,//0
+lb_enable_fog_mixed_shadows,restart (gameinfo only),"devonly, cheat",true,SceneSystem/LightBinner/Enable Fog Mixed Shadows,Disable fog-mixed shadows,,,false,0,0,0,0,0
+lb_enable_lights,restart (gameinfo only),"devonly, cheat",true,SceneSystem/LightBinner/Enable Lights,Disable ALL lights,,,,0,0,0,true,false
+lb_enable_newsum,restart (gameinfo only),"devonly, cheat",true,SceneSystem/LightBinner/Enable New Sum,,,,false,0,0,,false,false
+lb_enable_shadow_casting,restart (gameinfo only),devonly,true,Allow stationary/dynamic lights to cast shadows.,"Disables baked shadows I believe                                 [def: ""1""]",,0,false,0,0,0,0,0
+lb_enable_stationary_lights,restart (gameinfo only),"devonly, cheat",true,Allows rendering stationary/mixed lights,"*Disables stationary lights (map looks flatter but more performant).         [def: ""1""]",,false,false,0,0,0,false,false
+lb_enable_sunlight,restart (gameinfo only),"devonly, cheat",true,SceneSystem/LightBinner/Enable Sunlight,Disable sunlight (reinforces r_rendersun 0),,,false,0,0,false,false,false
+lb_max_visible_barn_lights_override,restart (gameinfo only),"devonly, cheat",-1,Override maximum visible barn lights,Cap visible barn lights (default -1),,,,1,1,1,1,1
+lb_max_visible_envmaps_override,restart (gameinfo only),"devonly, cheat",-1,Override maximum visible envmaps,Cap envmap reflections (default -1),,,,-1,-1,4,10,4
+lb_mixed_shadows,restart (gameinfo only),"devonly, cheat",true,SceneSystem/LightBinner/Enable Mixed Shadows,Disable mixed shadows (default true),,,false,0,0,false,false,false
+lb_precomputed_shadowmap_depth_bias,restart (gameinfo only),devonly,0.0001,,,,,,,,,1,1
+lb_precomputed_shadowmap_enable,restart (gameinfo only),devonly,true,,Disable precomputed shadowmaps,,,false,0,0,false,false,false
+lb_shadow_map_cull_empty_mixed,live w/ sv_cheats (hideout/sandbox),cheat,false,Don't render shadows for mixed shadowmaps with no dynamics objects in view,,,,,1,1,true,true,true
+lb_shadow_map_culling,live w/ sv_cheats (hideout/sandbox),cheat,true,,,,,,,,,1,
+lb_shadow_texture_height_override,restart (gameinfo only),devonly,-1,Override height of shadow atlas texture,,,,,,,,1,1
+lb_shadow_texture_width_override,restart (gameinfo only),devonly,-1,Override width of shadow atlas texture,,,,,,,,1,1
+lb_ssss_samples,restart (gameinfo only),devonly,11,Subsurface sample count,"Subsurface sample count                                          [def: ""11""]",,0,0,1,1,0,0,0
+lb_sun_csm_size_cull_threshold_texels,restart (gameinfo only),devonly,10,"Size, in texels, where we will cull an object in the shadowmap","Culls tiny CSM contributions below a texel threshold (performance).              [def: ""10""]",,60,60,100,100,30,30,30
+lb_timesliced_shadows_dynamic_size,restart (gameinfo only),devonly,true,,Disable timesliced shadow dynamic resizing (default true),,,,0,0,,true,true
+m_rawinput,unknown,,,,,,,,,,1,1,1
+mat_async_shader_load,live,release,false,,"I have no reason to believe the name doesn't match the function  [def: ""0""]",,1,1,1,1,1,1,1
+mat_colcorrection_disableentities,restart (gameinfo only),"devonly, cl",false,Disable map color-correction entities,uncomment if you want grey lookin game,,,,//1,1,0,1,1
+mat_colorcorrection,restart (gameinfo only),devonly,true,,"Disables/ Enables color correction (game looks less vibrant when off).   [def: ""1""]",,1,1,//0,0,1,false,false
+mat_depthbias_shadowmap,restart (gameinfo only),"devonly, cl",0.0005,,,,,,,,,0.00000001,0.00000001
+mat_disable_dynamic_shader_compile,unknown,,,,BUGGY,,,,,,//1,,
+mat_max_lighting_complexity,live w/ sv_cheats (hideout/sandbox),cheat,8,,"Doesn't seem to do anything but throwing it in for posterity.    [def: ""8""]",,0,0,0,0,1,1,1
+mat_set_shader_quality,unknown,,,,Force shader quality low (devonly). ⚠ May force shader recompiles; test first,,,,0,0,0,0,0
+mat_shading_complexity_max_instruction_count,live w/ sv_cheats (hideout/sandbox),cheat,1024,,,,,,,,,1,
+mat_shading_complexity_max_register_count,live w/ sv_cheats (hideout/sandbox),cheat,128,,,,,,,,,1,
+mat_slopescaledepthbias_shadowmap,restart (gameinfo only),"devonly, cl",4,,,,,,,,,1,1
+mat_tonemap_bloom_scale,live w/ sv_cheats (hideout/sandbox),cheat,-1,,,,,,,,0,0,0
+mat_tonemap_boost,unknown,,,,,,,,,,,1.15,1.15
+mat_tonemapping_occlusion_use_stencil,unknown,,,,,,,,,,,0,0
+mat_viewportscale,restart (gameinfo only),"devonly, cl",1,Scale down the main viewport (to reduce GPU impact on CPU profiling),"Scale down the main viewport I belive this gets overwritten by video.txt [def: ""1""]",,//0.01,//0.01,,,1,1,1
+max,unknown,,,,,2,2,2,,,2,2,2
+mem_level,restart (gameinfo only),"devonly, cl",2,Memory Level - Default: High,Low memory level (default 2),,,,1,1,,,
+mesh_calculate_curvature_smooth_pass_count,unknown,,,,kai's cfg,,,,,,0,0,0
+min,unknown,,,,,0,0,0,,,0,0,0
+minimap_trooper_update_rate_hz,unknown,,,,"(default 5) — fewer minimap updates, server-side.",,,,2,2,,,
+minimap_update_rate_hz,unknown,,,,,,,,,,,30,30
+mm_idle_enabled,restart (gameinfo only),"devonly, cl",true,Kill switch for the idle detection system,,,,,,,false,false,false
+mm_idle_show_warning_at_s,restart (gameinfo only),"devonly, cl",300,How many seconds to wait before showing the idle warning dialog,How many seconds to wait before showing the idle warning dialog,,,,,,999,999,999
+mm_prefer_solo_only,live,"cl, a, release",false,Prefer being matched with other solo players when not in a party,"If I understand what this command does, this command controls whether or not you are matched with other solo queue players. For me this dramatically improved the solo queue performance but I am not sure if that is placebo. [def: ""false""]",,//true,//true,,,,true,true
+movement_stats_debug_draw,unknown,,,,Doesn't seem to do anything,,//true,//true,,,,,
+music_hideout_debug_enabled,restart (gameinfo only),"devonly, cl",false,Displays music manager debug info for hideout.,Doesn't do anything,,//true,//true,,,,,
+nav_edit_use_camera,unknown,,,,,,0,0,,,,,
+nav_gen_connect_dist_a,unknown,,,,,2.0,2.0,2.0,,,,,
+nav_obstruction_async_update,unknown,,,,"Not fully sure but async good wowie                              [def: ""false""]",,,,,,true,true,true
+nav_pathfind_multithread,unknown,,,,"default false test 1 and 0, moves npc pathing to separate thread",,,,,,1,1,1
+net_async_clientconnect,restart (gameinfo only),devonly,true,Enable async client connect optimization,,,,,,,1,1,1
+net_gather_child_fields_only,unknown,,,,,1,1,1,,,,,
+net_skip_redundant_change_callbacks,restart (gameinfo only),"devonly, cl",false,,"Skip redundant netvar change callbacks (devonly cl, default false). ⚠ User notes: test before changing",,,,//1,//1,//true,,
+panorama_allow_transitions,restart (gameinfo only),"devonly, hidden",true,,"Turns off UI anim (shop,etc)                                     [def: ""1""]",,false,false,0,0,false,false,false
+panorama_async_compute_mipgen,restart (gameinfo only),"devonly, cl",true,use asynchronous compute for mipmap generation.,,,,,,,1,1,1
+panorama_classes_perf_warning_threshold_ms,unknown,,,,,0.75,0.75,0.75,,,0.75,0.75,0.75
+panorama_clear_frames_on_device_restore,restart (gameinfo only),"devonly, hidden",2,,,,,,,,,0,0
+panorama_comp_layer_lru_lifetime,restart (gameinfo only),"devonly, hidden",1,,"This should keep panorama caches loaded for longer so the game can use them more frequently. [def: ""1""]",,4,4,4,4,,,
+panorama_disable_blur,restart (gameinfo only),"devonly, hidden",false,,"Disables UI blur effects in the UI.                              [def: ""false""]",,true,true,1,1,1,1,1
+panorama_disable_box_shadow,restart (gameinfo only),"devonly, hidden",false,,"Disables UI box shadows in the UI (less GPU/UI cost).            [def: ""false""]",,//true,//true,1,1,1,1,1
+panorama_disable_descendant_filtering,restart (gameinfo only),"devonly, hidden",false,Disable descendant selector filtering,Causes issues with the hud,,//true,//true,//1,//1,,true,true
+panorama_disable_draw_fancy_quad,restart (gameinfo only),"devonly, hidden",false,,Causes issues with the hud,,//true,//true,,,,,
+panorama_disable_render_target_cache,restart (gameinfo only),"devonly, hidden",false,,,0,0,0,,,0,0,0
+panorama_draw_text_fast_path,restart (gameinfo only),"devonly, hidden",true,,Forces text rendering through a hardware fast-path,,,,,,,1,1
+panorama_draw_text_fast_path_text_shadow,restart (gameinfo only),"devonly, hidden",true,,Forces text shadows through a hardware fast-path,,,,,,,1,1
+panorama_enable_secondary_layout_pass,restart (gameinfo only),"devonly, hidden",true,,Setting this to false causes text (chat messages) to not wrap.,,//false,//false,,,,,
+panorama_hsbc_through_fast_path,restart (gameinfo only),"devonly, hidden",true,,Forces UI hue/saturation/brightness changes through a fast-path,,,,,,,1,1
+panorama_joystick_enabled,live,a,false,Enable panorama joystick input,,0,0,0,,,0,1,1
+panorama_js_minidumps,restart (gameinfo only),"devonly, hidden",true,Enable sending minidumps on JS Exceptions.,,1,1,1,,,1,1,1
+panorama_max_fps,restart (gameinfo only),"devonly, hidden",120,,"Menu FPS.                                                        [def: ""120""]",,30,30,30,30,15,15,15
+panorama_max_overlay_fps,restart (gameinfo only),"devonly, hidden",60,,"Fps In the settings/esc menu.                                    [def: ""60""]",,30,30,30,30,15,15,15
+panorama_max_text_shadow_strength,restart (gameinfo only),"devonly, hidden",10,,Freaks out text shadows.,,//10,//10,,,,,
+panorama_panel_occlusion,restart (gameinfo only),"devonly, hidden",true,,"According to John Valve this is an optimization feature that stops rendering of panels underneath the top level. [def: ""true""]",,true,true,,,,,
+panorama_render_target_cache_max_size,restart (gameinfo only),"devonly, hidden",31457280,,"This should increase the panorama cache size by 4x, needs more testing                       [def: ""31457280""]",,//134217728,//134217728,67108864,67108864,,,
+panorama_script_cache_enabled,restart (gameinfo only),"devonly, hidden",true,Enable script caching to speed up recompiling scripts multiple times.,Aggressively caches UI Javascript to prevent mid-game recompilation,,,,,,,1,1
+panorama_skip_composition_layer_content_paint,restart (gameinfo only),"devonly, hidden",true,,,1,1,1,,,1,1,1
+panorama_temp_comp_layer_min_dimension,restart (gameinfo only),"devonly, hidden",512,,"Based on the name I'm implied to believe this is the minimum size for panorama compositing, ie blur, rounded corners, etc. [def: ""512""]",,//128,//128,,,128,128,128
+panorama_transition_time_factor,restart (gameinfo only),"devonly, hidden",1,"A float representing a scale factor for transitions. 1.0 is normal, 2.0 would be twice as fast as normal, 0.5 half as fast",faster transition for the stuff that doesnt use animation,,,,,,2,2,2
+panorama_use_backbuffer_directly,restart (gameinfo only),"devonly, hidden",true,,Skips copying the UI buffer to memory and writes directly to the backbuffer,,,,,,,1,1
+panorama_use_new_occlusion_invalidation,restart (gameinfo only),"devonly, hidden",true,,SPOOKY TESTING CONVARS HAS IT SET TO ZERO,,,,,,1,1,1
+panorama_worldpanel_update_culling,restart (gameinfo only),"devonly, cl",false,,"Messes with health bar rendering, the information will be inaccurate unless close to the target if set to true. It is weird.       [def: ""false""]",,//true,//true,//1,//1,,,
+parallel_perform_invalidate_physics,unknown,,,,"Not sure                                                         [def: ""false""]",1,1,1,,,,,
+parallel_update_surrounding_bounds_in_spatial_partition_update,unknown,,,,,1,1,1,,,,,
+particle_cluster_nodraw,unknown,,,,"Skips drawing particle “clusters”/grouped particle batches (performance, fewer small effects). [def: ""0""]",,//1,//1,1,1,0,1,1
+particle_cluster_use_collision_hulls,unknown,,,,"Should make particles able to pass through each other. Saves some perf   [def: ""true""]",,//false,//false,false,false,true,false,false
+phys_agg_world_compounds,unknown,,,,,0,0,0,,,,,
+phys_batch_ray_test,restart (gameinfo only),"devonly, cl",0,,"Don't know what this does? shouldn't be needed deadlock doesn't have many physics objects  [def: ""0""]",,//16,//16,,,,,
+phys_continuous_kinematic_update,unknown,,,,,,,,,,,0,0
+phys_cull_internal_mesh_contacts,restart (gameinfo only),"devonly, rep",false,,"Don't simulate the bones inside of a mesh.                       [def: ""false""]",,true,true,1,1,true,true,true
+phys_dynamic_scaling,unknown,,,,default true,,,,,,false,false,false
+phys_expensive_shape_threshold,live w/ sv_cheats (hideout/sandbox),"cl, cheat",6,,default: 6,,,,,,100,100,100
+phys_highlight_expensive_objects_strength,live w/ sv_cheats (hideout/sandbox),cheat,0.02,Highlight expensive physics objects strength,"Default: 0.02 Highlight expensive physics objects strength, no need since expensive obj is disabled by default",,,,,,0,0,0
+phys_multithreading_enabled,unknown,,,,"default true, alr enabled no need to include ngl",,,,,,1,1,1
+phys_threaded_cloth_bone_update,unknown,,,,"I am inclined to believe this makes the cloth update threaded    [def: ""0""]",,//1,//1,//1,//1,1,1,1
+phys_threaded_kaiz_transform_update,unknown,,,,"Threaded transform update (devonly sv/cl/rep, default false). [SV] may override",,,,//1,//1,,,
+phys_threaded_kinematic_bone_update,unknown,,,,"I am inclined to believe this makes the cloth kinematics threaded    [def: ""0""]",,//1,//1,//1,//1,1,1,1
+phys_threaded_transform_update,unknown,,,,"Same as above                                                    [def: ""0""]",,//1,//1,,,1,1,1
+pred_cloth_pos_max,restart (gameinfo only),"devonly, cl",2,,Reduce cloth prediction was 1,,,,,,0,0,0
+pred_cloth_pos_multiplier,restart (gameinfo only),"devonly, cl",0.5,,was 0.3,,,,,,0,0,0
+pred_cloth_pos_strength,restart (gameinfo only),"devonly, cl",0.25,,was 0.1,,,,,,0,0,0
+pred_cloth_rot_high,restart (gameinfo only),"devonly, cl",0.1,,was 0.05,,,,,,0,0,0
+pred_cloth_rot_low,restart (gameinfo only),"devonly, cl",0.01,,was 0.005,,,,,,0,0,0
+pred_cloth_rot_multiplier,restart (gameinfo only),"devonly, cl",0.3,,was 0.2 changing these values does fucking nothing,,,,,,0,0,0
+presettle_cloth_iterations,restart (gameinfo only),"devonly, cl",30,,default 3,,,,,,0,0,0
+props_break_apply_radial_forces,unknown,,,,default: 1,,,,,,0,0,0
+props_break_max_pieces_perframe,unknown,,,,"Makes boxes and troopers break into a single piece               [def: ""16""]  // Say thank you to jasper that this can be set to 0 now <3",,0,0,1,1,0.5,0.1,0.5
+r_RainParticleDensity,restart (gameinfo only),"devonly, cl",1,Density of Particle Rain 0-1,"Disable rain particles (devonly, default 1)",,,,0,0,0,0,0
+r_add_views_in_pre_output,restart (gameinfo only),devonly,false,,,1,1,1,,,,1,1
+r_ambientboost,unknown,,,,,,,,,,,1,1
+r_ambientfactor,unknown,,,,,,,,,,,12,12
+r_ambientmin,unknown,,,,,,,,,,,0.35,0.35
+r_animatable_mesh_shaders,unknown,,,,"(default false, cheat) — animatable meshes via GPU shader path instead of CPU skinning. Experimental-sounding name, test in bot match, watch for deformed models.",,,,1,1,,,
+r_aoproxy_cull_dist,restart (gameinfo only),devonly,12,Distance to cull the AO proxy as a factor of size,"default: 12, might be able to do 0, idk",,,,,,0.01,0.01,0.01
+r_aoproxy_min_dist,restart (gameinfo only),devonly,3,,"default: 3, 0 is always tricky so consider changing this to 1",,,,,,9999,9999,9999
+r_aoproxy_min_dist_box,restart (gameinfo only),devonly,1,,,,,,,,9999,9999,9999
+r_arealights,restart (gameinfo only),"devonly, cl",true,,Disable area lights,,,,0,0,false,false,false
+r_aspectratio,restart (gameinfo only),devonly,0,,1.75=80fov | 2.15=90fov | 2.49=100fov (every .15 interval = 5 fov).,,2.9,2.9,2.3,2.3,2.15,2.15,2.15
+r_async_compute_fog,restart (gameinfo only),"devonly, cl",false,,"Just whether to asyncroniously render fog                        [def: ""false""]",,true,true,,,true,true,true
+r_bloom_tent_filter_radius,restart (gameinfo only),"devonly, cl, cheat",0,"bloom mip up-sample filtering radius (using 3x3 tent filter, radius in mip level texels), 0.0 radius => box (2x2) filter with (fixed) 1.0 radius","Zero bloom tent-filter radius (cheat, default 0 — already off, reinforces)",,,,0,0,,,
+r_character_decal_monitor_render_res,restart (gameinfo only),devonly,512,,default: 512,,,,,,64,8,32
+r_character_decal_resolution,restart (gameinfo only),devonly,1024,Resolution of character decal texture.,"Resolution of character decal textures.                          [def: ""1024""]",,4,4,128,128,0.01,0.01,0.01
+r_citadel_antialiasing,restart (gameinfo only),"devonly, cl",1,,Disable AA (default 1),,,,0,0,0,0,0
+r_citadel_clip_sphere_min_opacity,restart (gameinfo only),"devonly, cl, cheat",0.4,,"Removes the blur from the pinhole camera                         [def: ""40""]",,0,0,0,0,,0,0
+r_citadel_cloak_blur_amount,live w/ sv_cheats (hideout/sandbox),"cl, cheat",0.01,cloak,"Disable cloak/blur post-effect (cheat, default 0.01). Saves blur pass for cloaked units",,,,0,0,,0,0
+r_citadel_cloak_refract_amount,live w/ sv_cheats (hideout/sandbox),"cl, cheat",0,cloak,Disables the GPU-heavy refraction effect when heroes go invisible (Wraith/Invis item),,,,,,,0,0
+r_citadel_depth_prepass_dynamic_objects,restart (gameinfo only),"devonly, cl",true,,"Should be not prepassing entities that move                      [def: ""true""]",,false,false,0,0,false,false,false
+r_citadel_depthoffield_enable,restart (gameinfo only),"devonly, cl",false,Enable/Disable Depth of Field,"Hard-disable DOF (default false — already off, reinforces)",,,,0,0,false,false,false
+r_citadel_disable_npr_lighting,restart (gameinfo only),"devonly, cl",false,,~1 extra FPS but game looks terrible. Uncomment if you don't mind (devonly),,,,1,1,false,false,false
+r_citadel_distancefield_ao_quality,restart (gameinfo only),"devonly, cl",0,Distance Field AO quality,Distance-field AO off (already default 0 — reinforces),,,,0,0,,,
+r_citadel_distancefield_blur,restart (gameinfo only),"devonly, cl",true,Enable/Disable distance field blur,Disable distance-field blur (background blur),,,,0,0,false,false,false
+r_citadel_distancefield_down_sample,restart (gameinfo only),"devonly, cl",1,Distance field down sample factor,DF downsample 0 (default 1). Reinforces DF shutoff,,,,0,0,6,6,6
+r_citadel_distancefield_farfield_enable,restart (gameinfo only),"devonly, cl",true,Distance field far field enable,"Disable DF far-field trace pass (devonly, default true)",,,,0,0,0,0,0
+r_citadel_distancefield_shadows,restart (gameinfo only),"devonly, cl",true,,Disable distance-field soft shadows (ray-marched),,,,0,0,false,false,false
+r_citadel_enable_pano_world_blur,restart (gameinfo only),"devonly, cl",true,Enable world-blur style,"This command disables the blur in the shop and improves the performance of the shop DRAMATICALLY however it can cause visual issues with the pause menu on nvidia systems running vulkan. Please experiment. [def: ""true""]",,true,true,0,0,//false,//false,//false
+r_citadel_fog_quality,restart (gameinfo only),"devonly, cl",1,Fog Quality,Lowest fog quality,,,,0,0,0,0,0
+r_citadel_fsr_enable_mip_bias,restart (gameinfo only),"devonly, cl",true,Apply negative mip bias when rendering with FSR.,"Disable FSR mip bias (avoids sharper mip loading, default true)",,,false,0,0,,,
+r_citadel_glow_health_bar_debug,live w/ sv_cheats (hideout/sandbox),"cl, cheat",false,,"This seems to be a command controlling the rendering of a debug tool. Seeing as its inclusion doesn't benefit us I have disabled it [def: ""true""]",,false,false,,,,,
+r_citadel_glow_health_bars,restart (gameinfo only),"devonly, cl",true,,Disable glow health bars. ⚠ Makes health bars invisible through walls — gameplay readability hit,,,,//0,//0,false,false,false
+r_citadel_gpu_culling,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/GPU Culling,"The game barely uses the gpu so this is a win                    [def: ""true""]",,true,true,,,,,
+r_citadel_gpu_culling_shadows,restart (gameinfo only),"devonly, cl",false,Citadel/Graphics/GPU Cull Shadow Views,GPU-cull shadow views (default false). Harmless with shadows off,,,,1,1,true,true,true
+r_citadel_gpu_culling_two_pass,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/GPU Culling (Two Pass),"Setting this to false will cause issues with frametime [def: ""true""]",,//false,//false,,,,,
+r_citadel_gpu_preview_baked_shadows,restart (gameinfo only),"devonly, cl",true,,Disable baked/preview shadow denoising,,,,0,0,,false,false
+r_citadel_gpu_preview_denoise,restart (gameinfo only),"devonly, cl",true,,Disable shadow denoiser (saves GPU passes),,,,0,0,,,
+r_citadel_gpu_preview_denoise_passes,restart (gameinfo only),"devonly, cl",3,,"[def: ""3""]",,0,0,0,0,,,
+r_citadel_gpu_preview_denoise_shadow_passes,restart (gameinfo only),"devonly, cl",1,,Zero shadow denoise passes,,,,0,0,,,
+r_citadel_npr_force_solid_outline,restart (gameinfo only),"devonly, cl",false,,"Causes odd visual bugs with dragons and neutrals when set to true    [def: ""false""]",,//false,//false,1,1,true,,
+r_citadel_npr_outlines,restart (gameinfo only),"devonly, cl, cheat",true,Enable/Disable NPR Outlines,"Enable the little black outlines on players. Unfortunately this was disabled and no longer works a few months ago.                                [def: ""true""]",,//false,//false,//0918,//0918,true,true,true
+r_citadel_npr_outlines_max_dist,restart (gameinfo only),"devonly, cl, cheat",1000,Maximum distance at which NPR outlines are rendered,"Limits outline distance to reduce unnecessary processing.        [def: ""1000""]",,//1,//1,,,600,600,600
+r_citadel_outlines,unknown,,,,Enables enemy outlines for better visibility.,,,,,,,1,1
+r_citadel_screenspace_particles_full_res,restart (gameinfo only),"devonly, cl",true,Render screen space particles at full resolution,"Render screen space particles at full resolution. This could introduce readability issues but should be fine. [def: ""true""]",,true,true,0,0,0,0,0
+r_citadel_selection_outline2_alpha,restart (gameinfo only),"devonly, cl",0.8,Selection Outline Alpha,"Outlines on enemy players and abilities on a scale of 0-1.       [def: ""0.8""]",,//0.2,//0.2,,,255,0.8,0.8
+r_citadel_selection_outline2_offset,restart (gameinfo only),"devonly, cl",0.3,"Selection Outline Offset: -1 for interior, 0 for centered, 1 for exterior.",,,,,,,,2,2
+r_citadel_selection_outline2_width,restart (gameinfo only),"devonly, cl",4,Selection Outline Width,,,,,,,,50,50
+r_citadel_shadow_caching,restart (gameinfo only),"devonly, cl",true,,"We disable all shadows so this shouldn't be needed               [def: ""true""]",,true,true,0,0,,,
+r_citadel_shadow_quality,restart (gameinfo only),"devonly, cl",1,Shadow Quality,"Deadlock/Citadel shadow quality level (0 = lowest).              [def: ""2""]",,0,0,1,1,0,0,0
+r_citadel_shadowdb,restart (gameinfo only),"devonly, cl",2048,,Default: 2048,,,,,,256,256,256
+r_citadel_ssao_bent_normals,unknown,,,,,,,,,,false,false,false
+r_citadel_ssao_denoise_passes,unknown,,,,,,,,,,0,0,0
+r_citadel_ssao_quality,restart (gameinfo only),"devonly, cl",3,,"SSAO quality level (0 = lowest/off-ish).                         [def: ""3""]",,0,0,0,0,0,0,0
+r_citadel_ssao_radius,unknown,,,,,,,,,,0,0,0
+r_citadel_ssao_thin_occluder_compensation,restart (gameinfo only),"devonly, cl",0.5,,"Disables special handling for thin occluders in SSAO (cheaper).  [def: ""0.5""]",,0,0,0,0,0,0,0
+r_citadel_sun_shadow_slope_scale_depth_bias,restart (gameinfo only),"devonly, cl",3.54,,"\\                                                               [def: ""3.54""]",,0,0,0,0,1.0,1.0,1.0
+r_citadel_upscaling,restart (gameinfo only),"devonly, cl",4,,"Disable upscaling (0=off, default 4=DLSS/FSR). Keeps native res; reduces CPU post work. Uncomment if not using upscaling",,,,0,0,,,
+r_cubemap_normalization,restart (gameinfo only),"devonly, cl",true,,"Skip cubemap normalization pass (devonly, default true). Minor GPU saver",,,,//0,//0,,,
+r_dashboard_render_quality,restart (gameinfo only),"devonly, cl",true,,"Sets dashboard/UI render quality (lower = cheaper UI rendering). [def: ""1""]",,1,1,0,0,0,0,0
+r_decals,unknown,,,,"Maximum number of decals allowed. (lower = fewer bullet holes/blood/impact marks). [def: ""2048""]",,//1,//1,,,1,0,1
+r_decals_default_fade_duration,unknown,,,,"How quickly decals (bullet holes) fade                           [def: ""3""]",,//1,//1,,,0.001,0.001,0.001
+r_decals_default_start_fade,unknown,,,,,,,,,,0.001,0.001,0.001
+r_decals_max_on_deformables,unknown,,,,,,,,,,0,0,0
+r_decals_overlap_threshold,unknown,,,,,,,,,,5,5,5
+r_depth_of_field,restart (gameinfo only),"devonly, cl",true,,"Disables depth of field.                                         [def: ""1""]",,0,0,0,0,0,0,0
+r_directional_lightmaps,restart (gameinfo only),devonly,true,,Disable directional lightmaps,,,,0,0,false,false,false
+r_directlighting,live w/ sv_cheats (hideout/sandbox),cheat,true,Set to use direct lighting,Disable direct lighting (cheat),,,,0,0,true,false,true
+r_distancefield_enable,restart (gameinfo only),"devonly, cl",true,Graphics/Enable Distance Field rendering,"Disables/ Enables distance-field system (used by some lighting/shadowing/occlusion features). [def: ""1""]",,1,1,0,0,0,0,0
+r_dopixelvisibility,live w/ sv_cheats (hideout/sandbox),cheat,true,,Causes issues with boxes being invisible,,//0,//0,//0,//0,//false,//false,//false
+r_draw3dskybox,restart (gameinfo only),"devonly, cl",true,,"Enables drawing the 3D skybox layer (distant geometry).         [def: ""1""]",,//0,//0,0,0,0,0,0
+r_draw_first_tri_only,live w/ sv_cheats (hideout/sandbox),cheat,false,,"Only draw the first triangle. Only works on dx11, causes issues with every playermodel and the hud for some reason [def: ""false""]",,//true,//true,,,,,
+r_draw_instances,live w/ sv_cheats (hideout/sandbox),cheat,true,,causes boxes to freak out on dx11,,//0,//0,,,,,
+r_draw_overlays,restart (gameinfo only),"devonly, cl",true,,causes problems with the hud,,//0,//0,,,//false,//false,//false
+r_draw_particle_children_with_parents,live w/ sv_cheats (hideout/sandbox),cheat,-1,"Draw particle children with parents (-1=use gameinfo, 0=no, 1=yes)","I believe this handles the drawing of little visual flourish particles. [def: ""-1""]",,1,1,,,0,false,false
+r_drawdecals,live w/ sv_cheats (hideout/sandbox),cheat,true,Set to render decals,"*Render decals. If not set to true lash's slam and warden's ult indicators become quite difficult to see.                                                  [def: ""1""]",,//1,//1,//0,//0,0,1,0
+r_drawmodeldecals,unknown,,,,does not exist in master convar,,,,,,0,0,0
+r_drawparticles,live w/ sv_cheats (hideout/sandbox),cheat,true,SceneSystem/Particles/Draw Particles,default: true - might change to false again,,,,,,true,true,true
+r_drawropes,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,,"[def: ""true""]",,false,false,0,0,0,0,0
+r_drawskybox,live w/ sv_cheats (hideout/sandbox),cheat,true,Render the 2d skybox.,"Can't be changed anymore                                             [def: ""true""]",,//true,//true,0,0,0,,
+r_drawtracers,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,,"Makes lash's ground slam marker invisible. I would enable it anyway but I don't like getting fifty trillion ""how do I fix this"" dms",,//false,//false,,,0,0,0
+r_drawtracers_firstperson,live,"cl, a, release",true,Toggle visibility of first person weapon tracers,"[def: ""true""]",,false,false,,,0,0,0
+r_drawviewmodel,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,Render view model,"[def: ""true""]",,false,false,,,,,
+r_dx11_software_cmd_lists,restart (gameinfo only),devonly,true,Enable Software Command lists for DX11 (Avoid using deferred contexts),causes a lot of issues,,//0,//0,,,,,
+r_effects_bloom,restart (gameinfo only),"devonly, cl",true,,"Disables effects bloom.                                          [def: ""1""]",,0,0,0,0,0,0,0
+r_enable_cubemap_fog,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/Fog/Enable Cubemap Fog,Disable cubemap fog,,,false,0,0,0,0,0
+r_enable_gradient_fog,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/Fog/Enable Gradient Fog,Disable gradient fog,,,false,0,0,0,0,0
+r_enable_rigid_animation,restart (gameinfo only),"devonly, cl",false,,"[def: ""true""]",,false,false,,,0,0,0
+r_enable_volume_fog,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/Fog/Enable Volume Fog,Disable volume fog,,,false,0,0,0,0,0
+r_environment_map_roughness_range,restart (gameinfo only),"devonly, cl, cheat",0.2 0.3,Fade region for sampling environment maps on lightmapped nonmetals. Smoother values than the first param sample envmaps. Rougher values than the second sample only lightmap SH. r_environment_map_roughness_range 1 1 to always sample envmaps for comparison.,"Fade region for envmap sampling (default ""0.2 0.3""). Rougher values skip envmaps; 0.01 0.01 = basically turn off map reflections",,,,0.01 0.01,0.01 0.01,0.01,0.01,0.01
+r_extra_render_frames,live w/ sv_cheats (hideout/sandbox),cheat,0,,"Setting this to anything above 0 causes issues with latency. negative values cause the game to crash. [def: ""0""]",,//1,//1,,,,,
+r_fallback_texture_lod_scale,live w/ sv_cheats (hideout/sandbox),cheat,2,Scale factor for requested texture size (texture streaming) - used for geo that doesn't have a precomputed UV density measure,Fallback geo uses 8x lower mip (default 2) (cheat),,,,8,8,4,4,4
+r_farz,live w/ sv_cheats (hideout/sandbox),"cl, cheat",-1,Override the far clipping plane. -1 means to use the value in env_fog_controller.,"This controls the far clipping plane, ie building/player popin   [def: ""-1""]",,7000,7000,4500,4500,6000,8000,8000
+r_fastzreject,unknown,,,,,,,,,,,1,1
+r_flashlightambient,live w/ sv_cheats (hideout/sandbox),"cl, cheat",0,,Disables ambient lighting math on flashlights/muzzle flashes,,,,,,,0,0
+r_flashlightbrightness,live w/ sv_cheats (hideout/sandbox),"cl, rep, cheat",1,,,,,,,,0,0,0
+r_flashlightconstant,live w/ sv_cheats (hideout/sandbox),"cl, rep, cheat",0,,Disables constant lighting math,,,,,,,0,0
+r_flashlightfar,live w/ sv_cheats (hideout/sandbox),"cl, rep, cheat",1500,,,,,,,,0,0,0
+r_flashlightshadowatten,live w/ sv_cheats (hideout/sandbox),"cl, cheat",0.35,,,,,,,,0,0,0
+r_flush_on_pooled_ib_resize,live,release,true,,,,,,,,,false,false
+r_force_ambient,unknown,,,,,,,,,,,2,2
+r_force_thick_hair,restart (gameinfo only),"devonly, cheat",false,,Don't force thick hair (cheaper),,,,0,0,,,
+r_force_zprepass,live w/ sv_cheats (hideout/sandbox),cheat,-1,0: Force z prepass off. 1: Force on. -1: Don't force,"0: Force z prepass off. 1: Force on. -1: Don't force             [def: ""-1""] // With my understanding of how zprepasses work this should reduce cpu usage if set to zero, but that's under the assumption that valve's implementation isn't properly optimized. Please play with this. Your mileage may vary.",,//0,//0,,,,,
+r_frame_sync_enable,restart (gameinfo only),devonly,true,,"Setting this to false causes vram to overflow to normal ram for some reason? Game freaks out.                [def: ""true""]",,//false,//false,0,0,//0,0,0
+r_fullscreen_gamma,live,a,2.2,Screen Gamma (only in fullscreen modes),"recommended ppl to use this to make the game brighter, bigge number = darker",,,,,,2.2,2.2,2.2
+r_gbuffer_disable_npr_lighting,unknown,,,,might change to true,,,,,,true,true,true
+r_grass_allow_flattening,restart (gameinfo only),devonly,false,,Disable grass flattening simulation,,,,0,0,,,
+r_grass_alpha_test,restart (gameinfo only),devonly,0,,Skips transparency rendering math for foliage,,,,,,,0,0
+r_grass_density_mode,restart (gameinfo only),devonly,0,"0 = Density corresponds to blade existance, 1 = Density corresponds to blade height, 2 = Both 0 and 1",0 = Density logic completely disabled. Skips checking if grass blades exist.,,,,,,,0,0
+r_grass_end_fade,restart (gameinfo only),devonly,3000,,"When to cull grass when far                                      [def: ""300""]",,0,0,0,0,0,0,0
+r_grass_quality,restart (gameinfo only),devonly,2,"0 = Off, 1 = Low, 2 = Med, 3 = high, 4 = ultra","Quality of the grass                                             [def: ""2""]",,0,0,0,0,0,0,0
+r_grass_start_fade,restart (gameinfo only),devonly,2000,,"When to cull grass when it's close I think                       [def: ""0""]",,0,0,0,0,0,0,0
+r_grass_vertex_lighting,restart (gameinfo only),devonly,0,,Disable per-vertex grass lighting (already default 0 — reinforces),,,,0,0,,,
+r_hair_ao,restart (gameinfo only),devonly,true,,"Disables hair ambient occlusion/shading pass.                    [def: ""1""]",,0,0,0,0,0,0,0
+r_hair_indirect_transmittance,restart (gameinfo only),devonly,true,,Disable hair indirect light transmission,,,,0,0,false,false,false
+r_hair_shadowtile,restart (gameinfo only),devonly,true,,Disable hair shadow tiling,,,,0,0,false,false,false
+r_hair_wind_motion_scale,restart (gameinfo only),devonly,0.07,,Zero hair wind animation,,,,0,0,,,
+r_hair_wind_noise,restart (gameinfo only),devonly,0.2,,Disable hair wind noise,,,,0,0,,,
+r_haircull_percent,restart (gameinfo only),"devonly, cheat",-1,,,,,,,,100,100,100
+r_impacts_alt_orientation,restart (gameinfo only),"devonly, cl",true,,Simplify impact orientation (minor),,,,0,0,,false,false
+r_indirectlighting,live w/ sv_cheats (hideout/sandbox),cheat,true,Set to use indirect lighting,turns character black,,,,//0,//0,,true,true
+r_late_particle_job_sync,restart (gameinfo only),"devonly, cl",false,,,,,,,,,1,1
+r_light_flickering_enabled,unknown,,,,"Enables light flicker effects where used.                        [def: ""1""]",,//0,//0,0,0,false,false,false
+r_light_sensitivity_mode,restart (gameinfo only),"devonly, cl",false,,,,,,,,true,true,true
+r_lightmap_bicubic_filtering,restart (gameinfo only),"devonly, cl",true,,"Enables bicubic filtering on lightmaps.                          [def: ""1""]",,1,1,//0,//0,1,1,1
+r_lightmap_size,restart (gameinfo only),devonly,65536,Maximum lightmap resolution.,"Maximum lightmap resolution..                                    [def: ""65536""]",,2048,2048,1,1,4,4,4
+r_lightmap_size_directional_irradiance,restart (gameinfo only),devonly,-1,Maximum lightmap resolution for directional_irradiance channel. -1 = use value of r_lightmap_size,"Sets directional irradiance lightmap data size (lower = less detail) (-1 = uses value of r_lightmap_size ). [def: ""-1""]",,0,0,0,0,0,0,0
+r_limit_particle_job_duration,restart (gameinfo only),devonly,false,,"Seems to help with particle clutter, although I am not sure.             [def: ""false""]",,true,true,,,1,true,true
+r_lod,unknown,,,,,,,,,,,-5,-5
+r_low_latency,restart (gameinfo only),devonly,1,"NVIDIA Low Latency/AMD Anti-Lag 2 (0 = off, 1 = on, 2 = NV-only, on + boost)","This acts as the convar which enables low latency, hardware dependent    [def: ""1""]",,//0,//0,,,1,1,1
+r_mapextents,live w/ sv_cheats (hideout/sandbox),"cl, cheat",16384,Set the max dimension for the map.  This determines the far clipping plane,"Far clipping plane, this will make buildings pop in and out      [def: ""16384""]",,7000,7000,4500,4500,4500,100,100
+r_max_portal_render_targets,restart (gameinfo only),"devonly, cl",2,,"Maxium number of Doorman doors to allow rendering.               [def: ""0""] // This will cause visual bugs when set to 1, either set it to 2 or 0 to disable them.",,2,2,,,2,2,2
+r_max_texture_pool_size,restart (gameinfo only),devonly,0,Upper limit on texture pool size.,Match cap,,,,//800,//800,,,
+r_mixed_shadows_fade_out_time,unknown,,,,,,,,,,,0.0001,0.0001
+r_monitor_3dskybox,restart (gameinfo only),"devonly, cl",true,,kai's cfg,,,,0,0,0,0,0
+r_morphing_enabled,live w/ sv_cheats (hideout/sandbox),cheat,true,,Disable vertex morph targets / facial expressions (cheat),,,false,0,0,false,false,false
+r_multiscattering,restart (gameinfo only),"devonly, cl",true,,"Enables multi-scattering lighting approximation.                 [def: ""1""]",,1,1,0,0,1,1,1
+r_muzzleflashbrightness,live w/ sv_cheats (hideout/sandbox),"cl, rep, cheat",0.4,,default 0.4 idk if this does anything,,,,,,0.01,0.01,0.01
+r_nearz,live w/ sv_cheats (hideout/sandbox),"cl, cheat",-1,Override the near clipping plane. -1 means use the default.,,,,,12,12,,10,10
+r_opaque,restart (gameinfo only),"devonly, cl",true,,makes the map invisible,,//false,//false,,,,,
+r_particle_allowprerender,restart (gameinfo only),devonly,true,,"I imagine it renders particles prematurely, which we do not care for.    [def: ""true""]",,true,true,,,true,,
+r_particle_batch_collections,restart (gameinfo only),devonly,false,,"Batches collections of particles, typically batch rendering is faster so this is set to true. [def: ""false""]",1,1,1,1,1,true,true,true
+r_particle_batch_simulate,unknown,,,,,,,,,,,1,1
+r_particle_cables_cast_shadows,restart (gameinfo only),devonly,true,,Cable particles don't cast shadows (default 1),,,,0,0,0,false,false
+r_particle_cables_culling,restart (gameinfo only),devonly,1,,,,,,,,,1,1
+r_particle_cables_render,restart (gameinfo only),devonly,true,,Skip rendering cable/rope particle geometry (default 0? keep 1 = render minimal),,,,1,1,false,false,false
+r_particle_cables_render_meshlets,restart (gameinfo only),devonly,true,,,,,,,,0,false,false
+r_particle_explicit_fetch,restart (gameinfo only),devonly,false,,"[def: ""false""]        // I believe this improves performance but will make soul orbs a bit difficult to see",,false,false,,,,,
+r_particle_fixedrandomseeds,restart (gameinfo only),devonly,false,Use fixed seeds for easier debugging,"I need to properly test this, but I'm pretty sure that setting this to true marginally increases performance. That being said it does make flames from paige 1 always appear on the left, so your call ig [def: ""false""]",,true,true,1,1,,,
+r_particle_gpu_implicit_lds_cache,restart (gameinfo only),devonly,false,,"(default false) — caches implicit particle data in GPU LDS (on-chip), fewer VRAM round-trips per particle. Try it.",,,,1,1,,,
+r_particle_max_detail_level,restart (gameinfo only),devonly,3,The maximum detail level of particle to create,Only spawn lowest-detail particle systems (default -1),,,,0,0,1,0,0
+r_particle_max_draw_distance,live w/ sv_cheats (hideout/sandbox),cheat,1e+06,The maximum distance that particles will render,Reduce particle draw distance (default 1e6),,,,300000,300000,300000,100000,300000
+r_particle_max_size_cull,restart (gameinfo only),devonly,1200,Particle systems larger than this in every dimension skip culling to save CPU.  They will be drawn anyway.,"[def: ""1200""] // Particle systems larger than this in every dimension skip culling to save CPU.  They will be drawn anyway. // So particle culling is handled by the CPU in deadlock, if you have GPU overhead to spare, consider lowering this value.",,900,900,256,256,1600,126,256
+r_particle_max_texture_layers,restart (gameinfo only),devonly,-1,,"Anything below 4 will make infernus afterburn, paige fire, and drifter's passive look very weird and blocky [def: ""-1""]",,4,4,4,4,4,4,4
+r_particle_min_timestep,restart (gameinfo only),devonly,0,"A minimum on particle simulation time, particle simulation happening more frequently than this will lerp.","Minimum amount of time for particles to update. Higher values will have particles stutter, while lower values could negatively impact performance. [def: ""0""]",,0.00241,0.00241,//0.00241,//0.00241,0.001,0.001,0.001
+r_particle_mixed_resolution_viewstart,restart (gameinfo only),devonly,500,,"I don't know if this does anything but I didn't notice anything terrible out the gate and lowering particle resolution can't hurt [def: ""500""]",,//16,//16,100,100,800,800,800
+r_particle_model_new,restart (gameinfo only),devonly,false,,"Jasper stated that these variables aren't used by deadlock so I'm disabling them to be safe :steam_happy:    [def: ""false""]",,false,false,,,,,
+r_particle_model_new8,restart (gameinfo only),devonly,true,,"Jasper stated that these variables aren't used by deadlock so I'm disabling them to be safe :steam_happy:    [def: ""true""]",,false,false,,,0,false,false
+r_particle_model_per_thread_count,restart (gameinfo only),devonly,32,,"I believe it is how many particle models a thread is allowed to handle.  [def: ""32""]",,64,64,,,32,32,32
+r_particle_newinput,restart (gameinfo only),devonly,false,Enable input path in particle ops,,,true,true,1,1,,,
+r_particle_parallel_simulation,unknown,,,,,,,,,,,1,1
+r_particle_skip_postsim,restart (gameinfo only),devonly,false,,"Not entirely sure what it does, going off of the name I'd imagine it skips the post simulation, this is a testvar [def: ""false""]",,true,true,1,1,1,true,true
+r_particle_timescale,restart (gameinfo only),devonly,1,,"Speeds up particle simulation, thus making them end sooner, however this causes visual desyncs, most notably with big effects that last a while such as infernus ult. Please tweak this to what you are comfortable with. [def: ""1""]",,//1,//1,,,,1.1,1.1
+r_physics_particle_op_spawn_scale,restart (gameinfo only),devonly,1,,"Prevents physics-based particle spawns.                          [def: ""1""]",,0,0,0,0,0,0,0
+r_pipeline_stats_use_flush_api,restart (gameinfo only),devonly,true,Experimental: Set to 1 to use the ID3D11DeviceContext11::Flush() to flush the GPU pipeline instead of queries.,,,,,,,false,false,false
+r_pixelvisibility_partial,live w/ sv_cheats (hideout/sandbox),cheat,true,,"As far as I am aware this disables the pixel visibility system which should reduce visual fidelity but saves you from drawing a ray (I THINK) [def: ""true""]",,false,false,//0,//0,,,
+r_post_bloom,restart (gameinfo only),"devonly, cl",false,,"Disables post-process bloom.                                     [def: ""1""]",,0,0,0,0,0,0,0
+r_postprocess_enable,restart (gameinfo only),"devonly, cl",true,,Disable ALL post-processing. Uncomment if not using post-processing mods like Sunlock or you want the game to look grey,,,,//0,0,true,true,true
+r_propsmaxdist,restart (gameinfo only),"devonly, cl",1200,Maximum visible distance,Max prop draw distance (default 1200). Controls how far you see boxes/props,,,,600,600,700,600,600
+r_render_hair,restart (gameinfo only),"devonly, cheat",true,,"[def: ""true""]",,false,false,0,0,0,0,0
+r_render_portals,restart (gameinfo only),"devonly, cl",true,,default: true,,,,,,true,true,true
+r_renderdoc_auto_shader_pdbs,restart (gameinfo only),devonly,true,Automatically generate shader debug info on capture,"Automatically generate shader debug info on capture.             [def: ""true""]",,false,false,0,0,0,0,0
+r_rendersun,live w/ sv_cheats (hideout/sandbox),cheat,true,Render sun lighting,"Disables sun lighting.                                           [def: ""1""]",,0,0,0,0,false,false,false
+r_ropetranslucent,restart (gameinfo only),"devonly, cl",true,,Disable translucent rope rendering,,,,0,0,0,0,0
+r_shadows,live w/ sv_cheats (hideout/sandbox),cheat,true,,Disable all shadow rendering (cheat),,,,0,0,0,0,0
+r_showdebugoverlays,live w/ sv_cheats (hideout/sandbox),cheat,false,Set to render debug overlays,"Shows a ton of debug overlays IT MAKES ME SO HAPPY I LOVE IT     [def: ""false""]",,//true,//true,,,,,
+r_size_cull_threshold,restart (gameinfo only),devonly,0.8,Threshold of screen size percentage below which objects get culled,"This will control the distance trooper healthbars and boxes stop rendering *Culls small objects sooner based on screen size threshold (higher = more culling). [def: ""0.8""]",,0.9,1.4,1.75,1.75,1.6,0.8,0.8
+r_size_cull_threshold_shadow,live w/ sv_cheats (hideout/sandbox),cheat,0.2,Threshold of shadow map size percentage below which objects get culled,"Threshold of shadow map size percentage below which objects get culled (higher = cull more to save shadow cost). [def: ""0.2""]",,2.4,2.4,1.0,1.0,200,200,200
+r_skinning_enabled,live w/ sv_cheats (hideout/sandbox),cheat,true,,makes players a pose,,//false,//false,,,,,
+r_skip_precache_validation_check,restart (gameinfo only),devonly,false,,"I believe this checks to see if things are properly cached in a debug context, which we shouldn't need   [def: ""false""]",,true,true,1,1,,,
+r_smooth_morph_normals,live,release,true,,Disable smooth morph normals (cheaper),,,,0,0,0,0,0
+r_ssao,restart (gameinfo only),devonly,true,Set to use screen-space ambient occlusion,"Disables screen-space ambient occlusion.                         [def: ""1""]",,0,0,0,0,0,0,0
+r_ssao_blur,restart (gameinfo only),devonly,true,,Disable SSAO blur pass,,,,0,0,0,0,0
+r_ssao_strength,restart (gameinfo only),devonly,1.2,,"AO strength multiplier (0 = no AO contribution).                 [def: ""1.2""]",,0,0,,,0,0,0
+r_strip_invisible_during_sceneobject_update,restart (gameinfo only),"devonly, cl",false,,"idk ngl    [def: ""false""]",,1,1,1,1,1,1,1
+r_texture_budget_dynamic,restart (gameinfo only),devonly,true,Dynamically adjust texture streaming budget based on GPU memory usage.,Dynamic texture budget adjustment,,,,,,1,1,1
+r_texture_budget_threshold,restart (gameinfo only),devonly,0.9,Reduce texture memory pool size when this percentage of the budget is full.,"Reduce texture memory pool size when this percentage of the budget is full. [def: ""0.8""]",,0.7,0.7,,,0.7,0.7,0.7
+r_texture_budget_update_period,restart (gameinfo only),devonly,0.1,Time (in seconds) between updating texture memory budget.,"Time (in seconds) between updating texture memory budget.        [def: ""0.1""]",,0.5,0.5,,,0.5,0.5,0.5
+r_texture_eager_eviction,restart (gameinfo only),devonly,false,,Eagerly evict unused textures (lower VRAM). Uncomment to enable,,,,//1,//1,,,
+r_texture_lod_scale,live w/ sv_cheats (hideout/sandbox),cheat,1,Scale factor for requested texture size (texture streaming),"Bias textures to lower mips — blurrier, less VRAM (cheat)",,,,2,2,4,4,4
+r_texture_nonstreaming_load,restart (gameinfo only),devonly,true,"Allow immediately loading mips of textures (when possible) when their headers are loaded, saving IO & reducing latency.",,,,,,,,1,1
+r_texture_pool_reduce_rate,restart (gameinfo only),devonly,256,Reduce texture memory pool size by this many MB / s when over budget.,,,,,,,512,512,512
+r_texture_pool_size,restart (gameinfo only),devonly,1600,Total size of the texture pool in MB,Halve texture pool (default 1600 MB),,,,//800,//800,256,256,256
+r_texture_stream_max_resolution,restart (gameinfo only),devonly,2147483647,Maximum resolution for top mip level in streaming textures,Cap texture resolution at 512px (default unlimited),,,,1,1,128,128,128
+r_texture_stream_mip_bias,restart (gameinfo only),devonly,0,Biases the mip level the texture streaming system choses to stream for each texture.,"Worth adjusting, practically how good your textures will look.   [def: ""1""]",,3,3,,,8,8,8
+r_texture_stream_resolution_bias,restart (gameinfo only),devonly,1,,,,,,,,0.01,0.01,0.01
+r_texture_stream_throttle_amount,restart (gameinfo only),devonly,10,,"(default 10) fewer streaming ops per frame, smaller individual hitches, slightly slower texture pop-in",,,,4,4,,,
+r_texture_stream_throttle_count,restart (gameinfo only),devonly,3,,(default 3),,,,1,1,,,
+r_texture_stream_throttle_count_over_budget,restart (gameinfo only),devonly,1,,,,,,,,,0,0
+r_texturefilteringquality,restart (gameinfo only),devonly,1,"0: Bilinear, 1: Trilinear, 2: Aniso 2x, 3: Aniso 4x, 4: Aniso 8x, 5: Aniso 16x","Texture filtering, has very low fps impact. 0: Bilinear, 1: Trilinear, 2: Aniso 2x, 3: Aniso 4x, 4: Aniso 8x, 5: Aniso 16x",,0,0,0,0,0,0,0
+r_threaded_particles,restart (gameinfo only),devonly,true,,,,,,,,,1,1
+r_translucent,live w/ sv_cheats (hideout/sandbox),cheat,true,Enable rendering of translucent geometry,Messes up all particles,,//false,//false,,,true,true,true
+r_update_particles_on_render_only_frames,restart (gameinfo only),"devonly, cl",false,,"This does what it says on the tin, should save more performance the lower fps gets   [def: ""false""]",,true,true,1,1,,,
+r_vma_defrag_algorithm,restart (gameinfo only),devonly,1,Defrag algorithm 0=Fast 1=Balanced 2=full 3=Extensive,"Should speed up vulkan defragging, which could increase performance if you're  getting bad performance the longer a match goes on [def: ""1""]",,0,0,,,,,
+r_wait_on_present,restart (gameinfo only),devonly,false,,Seems to cause frame rate to artificially lower,,//true,//true,,,,,
+r_world_wind_frequency_grass,restart (gameinfo only),devonly,0.03,,Zero grass wind animationaiz,,,,0,0,0,0,0
+r_world_wind_frequency_trees,restart (gameinfo only),devonly,0.003,,Zero tree wind animation,,,,0,0,0,0,0
+r_world_wind_strength,restart (gameinfo only),devonly,40,,"Disables wind effects, cosmetic only.                            [def: ""40""]",,0,0,0,0,0,0,0
+ragdoll_parallel_pose_control,unknown,,,,"Multithreaded ragdoll handling, better performance (if ragdolls aren't disabled). [def: ""0""]",,//1,//1,,,1,1,1
+reset_voice_on_input_stallout,live,user,false,"If true, resets the input device when there was a long enough hitch between callbacks.",,0,0,0,,,0,0,0
+rope_collide,restart (gameinfo only),"devonly, cl",1,Collide rope with the world,"Disable rope world collision (devonly cl, default 1). CPU saver; ropes not rendered anyway",,,,0,0,0,0,0
+rope_smooth_enlarge,restart (gameinfo only),"devonly, cl",1.4,How much to enlarge ropes in screen space for antialiasing effect,"How much to enlarge ropes in screen space for antialiasing effect. [def: ""1.4""]",,,,,,0,0,0
+rope_smooth_maxalpha,restart (gameinfo only),"devonly, cl",0.5,Alpha for rope antialiasing effect,"Alpha for rope antialiasing effect. [def: ""0.5""]",,,,,,0,0,0
+rope_smooth_maxalphawidth,restart (gameinfo only),"devonly, cl",1.75,,"Disables rope smoothing width-based alpha. [def: ""1.75""]",,,,,,0,0,0
+rope_smooth_minalpha,restart (gameinfo only),"devonly, cl",0.2,Alpha for rope antialiasing effect,"Disables rope minimum smoothing alpha. [def: ""0.2""]",,,,,,0,0,0
+rope_smooth_minwidth,restart (gameinfo only),"devonly, cl",0.3,"When using smoothing, this is the min screenspace width it lets a rope shrink to","Disables rope minimum smoothing width. [def: ""0.3""]",,,,,,0,0,0
+rope_subdiv,restart (gameinfo only),"devonly, cl",2,Rope subdivision amount,"Sets rope subdivision (0 = minimal geometry). [def: ""2""]",,,,,,0,0,0
+rope_wind_dist,restart (gameinfo only),"devonly, cl",1000,Don't use CPU applying small wind gusts to ropes when they're past this distance.,"Disables rope wind influence. [def: ""1000""]",,,,,,0,0,0
+rpg_camera_yaw,restart (gameinfo only),"devonly, cl, rep, cheat",90,,,,0,0,,,,,
+rtx_dynamic_blas,restart (gameinfo only),devonly,true,Allow dynamic BLAS creation for geometry going through the compute shader skinning path.,"Don't think that raytracing is used, but I'm making sure         [def: ""true""]",,false,false,,,,,
+rtx_dynamic_blas_caching,restart (gameinfo only),devonly,true,Cache dynamic BLAS if geometry has not changed,"[def: ""true""]",,true,true,,,,,
+rtx_force_default_hitgroup,restart (gameinfo only),devonly,false,Forces all ray traced geometry to use default hit shaders instead of specialized ones.,"[def: ""false""]",,true,true,,,,,
+rtx_texture_resolution,restart (gameinfo only),devonly,512,Sets the texture resolution the raytracer will mark to stream in,"[def: ""true""]",,64,64,,,,,
+sc_aggregate_bvh_threshold,restart (gameinfo only),devonly,128,,"Not fully sure what these do. Don't change them.                 [def: ""128""]",,256,256,,,16,16,16
+sc_aggregate_gpu_culling,restart (gameinfo only),devonly,true,Toggles GPU culling of aggregate meshes,,,,,,,,true,true
+sc_aggregate_gpu_culling_show_culled,restart (gameinfo only),devonly,false,SceneSystem/Aggregates/Show GPU Culled Meshes,"Debug I think, doesn't seem to do anything                     [def: ""false""]",,//true,//true,,,,,
+sc_aggregate_gpu_occlusion_culling,restart (gameinfo only),devonly,true,,,,,,,,,1,1
+sc_aggregate_gpu_vis_culling,restart (gameinfo only),devonly,true,,,,,true,,,,1,1
+sc_aggregate_indirect_draw_compaction_threshold,live,release,8,Threshold of indirect draws when we will do compaction,"Need to test                                                   [def: ""8""]",,//1,//1,,,,,
+sc_aggregate_render_mesh_shader,restart (gameinfo only),devonly,true,Using mesh shaders if available instead of drawcalls,"Using mesh shaders if available instead of drawcalls. Should be cheaper [def: ""true""]",,//false,//false,,,,,
+sc_aggregate_rtproxy_instanced_geo,restart (gameinfo only),"devonly, cheat",true,,,,//false,//false,,,,,
+sc_aggregate_rtproxy_unique_geo,restart (gameinfo only),"devonly, cheat",true,,,,//false,//false,,,,,
+sc_aggregate_show_outside_vis,restart (gameinfo only),devonly,false,,"This makes the entire map stop rendering             [def: ""false""]",,//true,//true,,,,,
+sc_allow_dithered_lod,restart (gameinfo only),devonly,true,Allow use of dithered lod transitions,"Pretty sure this just turns dithering off for when switching between lods. Isn't a big deal [def: ""true""]",,false,false,0,0,false,false,false
+sc_allow_dynamic_constant_batching,restart (gameinfo only),devonly,true,,,,,,,,,1,1
+sc_allow_precomputed_vismembers,restart (gameinfo only),devonly,true,,,,,,,,,1,1
+sc_barnlight_enable_precomputed_vis,restart (gameinfo only),devonly,true,Enable use of precomputed vis membership for lights (requires map restart),,,,,,,,1,1
+sc_cache_envmap_lpv_lookup,restart (gameinfo only),devonly,true,,was true,,,,,,false,false,false
+sc_clutter_density_full_size,restart (gameinfo only),devonly,0.0075,Screen-size where clutter will be full density,kai's cfg,,,,,,0.5,0.5,0.5
+sc_clutter_density_none_size,restart (gameinfo only),devonly,0.0035,Screen-size where clutter will be gone,Default 0.0035,,,,,,0.1,0.1,0.1
+sc_clutter_enable,restart (gameinfo only),devonly,true,SceneSystem/Clutter/Draw Clutter,"Disables clutter props, improves visibility & FPS.               [def: ""true""]",,false,false,0,0,0,0,0
+sc_disable_baked_lighting,restart (gameinfo only),devonly,false,,default: false,,,,,,true,true,true
+sc_disable_culling_boxes,live w/ sv_cheats (hideout/sandbox),cheat,false,,Skips calculating bounding boxes for culling,,,,,,,1,1
+sc_disable_procedural_layer_rendering,live w/ sv_cheats (hideout/sandbox),cheat,false,,"Disables rendering, ie the screen is black.          [def: ""false""]",,//false,//false,,,,,
+sc_disable_shadow_materials,unknown,,,,kai's cfg,,,,,,1,1,1
+sc_disable_spotlight_shadows,live w/ sv_cheats (hideout/sandbox),cheat,false,,"Disable spotlight shadow rendering (cheat, default false)",,,,1,1,1,1,1
+sc_dithered_lod_transition_amt,restart (gameinfo only),devonly,0.075,Percentage of the transition between two lods we will apply a dither,,,,,,,0,0,0
+sc_enable_discard,restart (gameinfo only),devonly,true,,default true,,,,,,true,true,true
+sc_fade_distance_scale_override,live w/ sv_cheats (hideout/sandbox),cheat,-1,,"Distance objects fade in and out                                 [def: ""-1""]",,100,100,100,100,180,5,180
+sc_force_materials_batchable,live w/ sv_cheats (hideout/sandbox),cheat,false,,"I would imagine this functions as the variable is named.         [def: ""false""]",,//true,//true,1,1,true,true,true
+sc_force_single_display_list_per_layer,restart (gameinfo only),devonly,false,,,,,,//1,//1,,1,1
+sc_hdr_enabled_override,restart (gameinfo only),devonly,-1,"Override default setting for HDR rendering. -1 default, 0 NoHdr, 1 Hdr, 2 Hdr 1010102 3 Hdr 111110",default: -1,,,0,,,0,0,0
+sc_instanced_mesh_enable,restart (gameinfo only),"devonly, cheat",true,SceneSystem/Instanced/Draw Instanced,,,,false,,,,,
+sc_instanced_mesh_gpu_culling,restart (gameinfo only),devonly,true,Toggles GPU culling of instanced meshes,,,,,,,,true,true
+sc_instanced_mesh_gpu_density_culling,restart (gameinfo only),devonly,true,Toggles density culling (if enabled),,,,false,,,,,
+sc_instanced_mesh_lod_bias,restart (gameinfo only),devonly,1.25,Bias for LOD selection of instanced meshes,"Bias for LOD selection of instanced mesh                         [def: ""1.25""]",,//0.001,//0.001,3,3,15,15,15
+sc_instanced_mesh_lod_bias_shadow,restart (gameinfo only),devonly,1.75,Bias for LOD selection of instanced meshes in shadowmaps,"Bias for LOD selection of instanced meshes in shadowmaps         [def: ""1.75""]",,//0.001,//0.001,,,10,10,10
+sc_instanced_mesh_mesh_shader,restart (gameinfo only),devonly,true,Toggles mesh shader rendering for instanced meshes,default true Toggles mesh shader rendering for instanced meshes,,,,,,false,false,false
+sc_instanced_mesh_motion_vectors,restart (gameinfo only),devonly,true,Toggles motion vector support for instanced meshes,"Set 1 if you use motion blur                                     [def: ""1""]",,0,0,0,0,0,0,0
+sc_instanced_mesh_opaque_fade,restart (gameinfo only),devonly,true,Toggles fade support for instanced meshes,"Fade meshes? NAH                                                 [def: ""true""]",,false,false,0,0,false,false,false
+sc_instanced_mesh_size_cull_bias,restart (gameinfo only),devonly,1.5,Bias for size culling of instanced meshes,"Bias for size culling of instanced meshes                        [def: ""1.5""]",,//10,//10,3,3,10,10,10
+sc_instanced_mesh_size_cull_bias_shadow,restart (gameinfo only),devonly,2,Bias for size culling instanced meshes in shadowmaps,"Bias for size culling instanced meshes in shadowmaps             [def: ""2""]",,10,10,10,10,10,10,10
+sc_layer_batch_threshold,restart (gameinfo only),devonly,128,,"Not fully sure what these do. Don't change them.                 [default: ""128""]",,256,256,,,16,16,16
+sc_layer_batch_threshold_fullsort,restart (gameinfo only),devonly,80,,"Not sure what these do. Jasper said to leave them at default     [def: ""80""]",20,20,20,,,20,20,20
+sc_max_framebuffer_copies_per_layer,restart (gameinfo only),devonly,1,,no idea what this does ngl,,,,,,0,0,0
+sc_screen_size_lod_scale_override,live w/ sv_cheats (hideout/sandbox),cheat,-1,,"Controls LOD scale. Lower values will make sinners and playermodels look worse ""my sinner's lights are little triangles"" [def: ""-1""]",,0.55,0.00001,0.000001,0.000001,0.001,0.8,0.001
+sc_skip_traversal,live w/ sv_cheats (hideout/sandbox),cheat,false,,"Disables rendering, ie the screen is black.          [def: ""false""]",,//true,//true,,,,,
+sc_throw_away_all_layers,restart (gameinfo only),devonly,false,,"Disables rendering, ie the screen is black.          [def: ""false""]",,//true,//true,,,,,
+scene_clientflex,unknown,,,,Disable client-side flex (facial) animation (default true),,,,0,0,,,
+shake_show,restart (gameinfo only),"devonly, cl",false,Displays a list of the active screen shakes.,,,,,,,,false,false
+skeleton_instance_lod_optimization,unknown,,,,"Compute LOD mask internally like since 2016, i.e. force all LOD groups' bones to compute [def: ""false""]",,//false,//false,1,1,//1,1,1
+snd_boxverb_simd,restart (gameinfo only),devonly,true,Enable SIMD code path for shoebox reverb processor.,"Disabling these should help with performance, Yay! [def: ""true""]",,false,false,,,,,
+snd_diffusor_simd,restart (gameinfo only),devonly,false,Enable SIMD code path for diffusor processor.,"Enable SIMD for diffusor audio processor (devonly, default false). Minor audio CPU saver",,,,//1,//1,,,
+snd_disable_mixer_duck,live w/ sv_cheats (hideout/sandbox),cheat,false,,,,,,//1,//1,,1,1
+snd_enable_subgraph_corenull_passthrough,restart (gameinfo only),devonly,true,,"Disabling these should help with performance, Yay! [def: ""true""]",,false,false,,,,,
+snd_envelope_rate,live w/ sv_cheats (hideout/sandbox),cheat,100,,,100.0,100.0,100.0,,,100.0,100.0,100.0
+snd_event_browser_default_stack,unknown,,,,,citadel_default_3d,citadel_default_3d,citadel_default_3d,,,citadel_default_3d,citadel_default_3d,citadel_default_3d
+snd_event_browser_focus_events,unknown,,,,,true,true,true,,,true,true,true
+snd_kaizdisable_mixer_solo,unknown,,,,,,,,//1,//1,,,
+snd_mix_async,restart (gameinfo only),"devonly, cheat",true,,kai's cfg,,,,,,1,1,1
+snd_mixahead,live,a,0.001,,"Adds some latency that shouldn't be percivable to save cpu       [def: ""0.001""]",,0.05,0.05,//0.05,//0.05,0.05,0.05,0.05
+snd_occlusion_bounces,live w/ sv_cheats (hideout/sandbox),"rep, cheat",1,,"Limits audio occlusion to save cpu                               [def: ""1""]",,0,0,,,0,0,0
+snd_occlusion_rays,live w/ sv_cheats (hideout/sandbox),"rep, cheat",4,,"Occlusion bounces, this effectively disables them.               [def: ""4""]",,0,0,//0,//0,,,
+snd_report_audio_nan,live,release,true,,,1,1,1,,,1,//1,//1
+snd_sos_max_event_base_depth,restart (gameinfo only),devonly,10,,,10,10,10,,,10,10,10
+snd_soundmixer,restart (gameinfo only),devonly,Default_Mix,,,Default_Mix,Default_Mix,Default_Mix,,,Default_Mix,Default_Mix,Default_Mix
+snd_soundmixer_update_maximum_frame_rate,live w/ sv_cheats (hideout/sandbox),cheat,0,,,0,0,0,,,0,0,0
+snd_soundmixer_version,restart (gameinfo only),devonly,2,,"[def: ""2""]",,2,2,,,,,
+snd_spatialize_lerp,live,"a, release",0,,,,,,,,0,0,0
+snd_steamaudio_active_hrtf,restart (gameinfo only),devonly,0,Index of active HRTF.,,0,0,0,,,0,0,0
+snd_steamaudio_baked_dimensions_probelookup_usealternate,unknown,,,,,1,1,1,,,,,
+snd_steamaudio_custombake_dimensions_outsidefield_bake_enabled,unknown,,,,,0,0,0,,,,,
+snd_steamaudio_custombake_dimensions_size_and_inout_bake_enabled,unknown,,,,,1,1,1,,,,,
+snd_steamaudio_custombake_dimensions_smallsizefield_bake_enabled,unknown,,,,,0,0,0,,,,,
+snd_steamaudio_dimensions_grid_height_max,unknown,,,,,100,100,100,,,,,
+snd_steamaudio_dimensions_max_ray_length,unknown,,,,,2500,2500,2500,,,,,
+snd_steamaudio_enable_custom_hrtf,restart (gameinfo only),devonly,false,Enable custom HRTF loading.,,0,0,0,,,0,0,0
+snd_steamaudio_enable_pathing,live w/ sv_cheats (hideout/sandbox),cheat,false,This variable is checked by soundstack to globally enabling pathing for audio processing.,,0,0,0,,,0,0,0
+snd_steamaudio_enable_perspective_correction,live,"a, release",false,Enable perspective correction for 3D audio.,,,,,,,0,0,0
+snd_steamaudio_enable_reverb,live,release,0,Enable Steam Audio Reverb processor.,,0,0,0,,,0,0,0
+snd_steamaudio_invalid_path_length,restart (gameinfo only),devonly,0,Path length of invalid path in inches. Set this to .0 to use direct distance as path length.,,0.0,0.0,0.0,,,0.0,0.0,0.0
+snd_steamaudio_ir_duration,live w/ sv_cheats (hideout/sandbox),cheat,1,The time delay between a sound being emitted and the last audible reflection in Steam Audio.,,,,,,,1.0,1.0,1.0
+snd_steamaudio_load_dimensions_data,restart (gameinfo only),devonly,true,"If set, baked dimensions data is loaded.",,1,1,1,//0,//0,,,
+snd_steamaudio_load_materials_data,restart (gameinfo only),devonly,true,"If set, baked materials data is loaded.",,0,0,0,//0,//0,,,
+snd_steamaudio_load_occlusion_data,restart (gameinfo only),devonly,true,"If set, baked occlusion data is loaded.","Skip loading baked occlusion data we disabled (devonly, default true). Saves load time/memory",0,0,0,//0,//0,,,
+snd_steamaudio_load_pathing_data,restart (gameinfo only),devonly,false,"If set, baked pathing data is loaded. Steam Audio Hammer entities can successfully use pathing in this case.",,0,0,0,,,0,0,0
+snd_steamaudio_load_reverb_data,restart (gameinfo only),devonly,false,"If set, baked reverb data is loaded. Reset it to zero during an format changes of baked data until all data is updated.",,0,0,0,,,0,0,0
+snd_steamaudio_max_occlusion_samples,live w/ sv_cheats (hideout/sandbox),cheat,64,The maximum number of rays that can be traced for volumetric occlusion by Steam Audio.,"max number of samples for audio reverb [def: ""64""]",,32,32,,,,,
+snd_steamaudio_max_probes_customdata_dimensions,restart (gameinfo only),devonly,4294967295,Maximum number of probes to create when baking custom data (dimensions).,,100000,100000,100000,,,,,
+snd_steamaudio_num_diffuse_samples,live w/ sv_cheats (hideout/sandbox),cheat,2048,The number of directions considered for ray bounce by Steam Audio.,"The number of directions considered for ray bounce by the game's audio [def: ""2048""]",,512,512,,,,,
+snd_steamaudio_num_threads,live w/ sv_cheats (hideout/sandbox),cheat,2,Sets the number of threads used for realtime reflection by Steam Audio.,"Audio thread count                                               [def: ""4""]",,6,6,,,4,4,4
+snd_steamaudio_pathing_order,live w/ sv_cheats (hideout/sandbox),cheat,1,The amount of directional detail in the simulated by Steam Audio.,,3,3,3,,,,,
+snd_steamaudio_pathing_order_rendering,live w/ sv_cheats (hideout/sandbox),cheat,1,The amount of directional detail in the rendered audio by Steam Audio.,,3,3,3,,,,,
+snd_steamaudio_reverb_level_db,live,release,-3,Adjust overall volume (dB) of the output from Steam Audio Reverb processor.,,-6,-6,-6,,,,,
+snd_steamaudio_reverb_order_rendering,restart (gameinfo only),devonly,1,"Ambisonics order to use for convolution reverb. 0th order = 1 channel, 1st order = 4 channels.","The amount of directional detail in the rendered audio by Steam Audio. [def: ""0""]",,0,0,,,,,
+snd_steamaudio_reverb_update_rate,restart (gameinfo only),devonly,10,Set the maximum update rate (in Hz) for reverb.,,,,,,,10.0,10.0,10.0
+snd_ui_positional,restart (gameinfo only),"devonly, cheat",true,,"Disables positional audio to save cpu                            [def: ""true""]",1,1,1,,,1,false,false
+snd_ui_spatialization_spread,restart (gameinfo only),"devonly, cheat",2.4,,,2.4,2.4,2.4,,,2.4,2.4,2.4
+snd_use_baked_occlusion,live w/ sv_cheats (hideout/sandbox),"rep, cheat, release",0,,,,,,,,1,1,1
+sos_use_guid_filter,unknown,,,,,1,1,1,,,1,1,1
+soundsystem_update_async,restart (gameinfo only),devonly,true,,kai's cfg',,,,,,1,1,1
+sparseshadowtree_disable_add_layers,restart (gameinfo only),devonly,false,"Disable SST runtime layers, for debugging (will exclude geo that CAN render into SST if SST otherwise enabled)",Exclude all SST-eligible geo from shadow rendering,,,false,1,1,,1,1
+sparseshadowtree_disable_for_viewmodel,restart (gameinfo only),devonly,true,Disable SST generation and runtime for viewmodel (use original CSM rendering).,"Disable SST generation and runtime for viewmodel (use original CSM rendering).   [def: ""1""]",,1,1,1,1,1,1,1
+sparseshadowtree_enable_rendering,restart (gameinfo only),devonly,false,Enable use of SST at runtime (static geo rendered into cascades via SST).,"Enables Sparse Shadow Tree, rendering static geometry into shadow cascades.      [def: ""0""]",,0,0,0,0,0,0,0
+sparseshadowtree_leaf_precision_viewmodel,restart (gameinfo only),devonly,0.0005,(viewmodel) precision for depth compression at SST leaf nodes.,"[def: ""0.0005""]",,0,0,0,0,,,
+sparseshadowtree_parallel_generation,restart (gameinfo only),devonly,2,"Split SST tile generation into threadjobs (0 - disabled, 1 - wait on readpixels for job batch, 2 - async readpixels).",,,,,,,2,2,2
+steam_inputhandler_enabled,restart (gameinfo only),"devonly, cl",true,Enable steaminput,"This disables controller support when set to false. Setting to false should improve performance if you're not on a steam deck, but some people are, and I don't want an influx of ""why no work with controller""  [def: ""true""]",,true,false,,,,0,0
+subtick_buttons_enabled,restart (gameinfo only),"devonly, cl",false,,Makes it so people on windows systems cannot move,,//true,//true,,,,,
+sv_force_transmit_players,unknown,,,,,,,,,,,1,1
+sv_hide_ent_in_pvs,unknown,,,,,,,,,,,1,1
+sv_lagcomp_filterbyviewangle,unknown,,,,,false,false,false,,,false,false,false
+sv_maxunlag,unknown,,,,,0.500,0.500,0.500,,,0.500,0.500,0.500
+sv_maxunlag_player,unknown,,,,,0.200,0.200,0.200,,,0.200,0.200,0.200
+sv_minrate,live,"rep, release",98304,"Min bandwidth rate allowed on server, 0 == unlimited",,98304,98304,98304,,,98304,98304,98304
+sv_parallel_checktransmit,unknown,,,,,2,2,2,,,,,
+sv_parallel_sendsnapshot,live,release,2,"0: run all send jobs on main thread; 1: send jobs run asynchronously (except on dedicated server); 2: send jobs asynchronously; 3: send jobs run in parallel but block to not overlap the next tick; 4: main server clients' send jobs run in parallel, then HLTV server jobs; this approximately matches pre-async profile for a single HLTV server configuration",,,,,,,2,2,2
+sv_pvs_max_distance,live,"rep, release",0,"if set, adds a maximum range to PVS/PAS checks","default 4000, unrender things(boxes, creeps, objs,etc) behind walls or out of viewing distance, does not affect player model.",,,,,,8500,4000,6500
+sv_remove_ent_from_pvs,unknown,,,,"default 0 remove entities from potential view something, basically culling objs outside of view",,,,,,1,1,1
+sv_waterdist,unknown,,,,,,,,,,0,0,0
+think_limit,unknown,,,,"Limits how much “think” time/entities can process per tick (CPU cap).    [def: ""10""]",,,,,,10,10,10
+this_is_an_example_comment,unknown,,,,"This command is commented out, represented by the // at the beginning of the line. Editing it will not do anything. To mess with it remove the //",,//true,//true,,,,,
+thread_pool_option,live,"hidden, release",-1,Thread pool option,"If I understand correctly, this should be how threads are handled relative to the game, but there isn't a clear indication of what changing it even does. For now I have it at -1 which is the default, but your mileage may vary. [def: ""-1""]",,2,2,0,0,,-1,-1
+threadpool_thread_limit,unknown,,,,,,,,,,,0,0
+thumper_use_plane_reflection,unknown,,,,Default: true,,,,,,false,false,false
+tv_enable_delta_frames,live,release,true,Indicates whether or not the tv should use delta frames for storage of intermediate frames. This takes more CPU but significantly less memory.,,,,false,,,,,
+update_all_keyframed_in_spatial_partition_update,unknown,,,,,0,0,0,,,,,
+update_voices_low_priority,restart (gameinfo only),devonly,false,,default false,,,,,,true,true,true
+v8_maximum_heap_size_mb,restart (gameinfo only),devonly,512,Hard limit for the v8 heap size (in mBytes),"This should double the amount of cache used by the ingame hud, so less stutter! Yay!",,1024,1024,1024,1024,,512,512
+version,unknown,,,,,2,2,2,,,2,2,2
+viewmodel_fov,live w/ sv_cheats (hideout/sandbox),"cl, cheat",54,,"[def: ""54""]",,0,0,,,,,
+violence_ablood,live,a,true,Draw alien blood,"Disables alien/other blood effects.                              [def: ""1""]",,0,0,//kaiz,//kaiz,false,false,false
+violence_agibs,live,a,true,Show alien gib entities,"Disables alien/other gibs.                                       [def: ""1""]",,0,0,0,0,false,false,false
+violence_hblood,live,a,true,Draw human blood,"Disables human blood effects.                                    [def: ""1""]",,0,0,0,0,false,false,false
+violence_hgibs,live,a,true,Show human gib entities,"Disables human gibs.                                             [def: ""1""]",,0,0,0,0,false,false,false
+vis_sunlight_enable,restart (gameinfo only),"devonly, cheat",true,"Toggle whether to use sunlight PVS for sunlight views (0 = sky PVS, 1 = sunlight PVS)","Use sky PVS instead of sunlight PVS (cheat, default true). Less PVS work",,,false,0,0,0,0,0
+voice_in_process,restart (gameinfo only),devonly,true,,,1,1,1,,,1,1,1
+voice_input_stallout,live,user,0.5,Time before we consider a mic stalled out and need to reset it.,,0.5,0.5,0.5,,,0.5,0.5,0.5
+volume_fog_density_scale,restart (gameinfo only),"devonly, cheat",1,Scale global volume fog density,Zero volume fog density (cheat),,,,0,0,,,
+volume_fog_enable_jitter,live w/ sv_cheats (hideout/sandbox),cheat,true,,Don't think I can,,false,false,0,0,,,
+volume_fog_intermediate_textures_hdr,restart (gameinfo only),devonly,true,,"See below                                                        [def: ""true""]",,false,false,0,0,0,0,0
+volume_fog_temporal_filter,restart (gameinfo only),devonly,true,,Disable fog temporal filter (devonly),,,,0,0,,,
+vulkan_batch_size,restart (gameinfo only),devonly,500,,"Larger Vulkan draw-call batches, fewer CPU submissions (devonly, default 500)",,,,1000,1000,,,
+wind_system_default_resolution_xy,restart (gameinfo only),devonly,256,,,,,,,,64,64,64
+wind_system_temporal_smoothing,restart (gameinfo only),devonly,true,,,,,,,,false,false,false
+zipline_use_new_latch,unknown,,,,"Use the new latch motion for getting on a zipline. 0: Dont use 1: Just those with b_UseNewZipLineSetup 2: Everyone use. [def: ""2""]",,,,,,0,0,0

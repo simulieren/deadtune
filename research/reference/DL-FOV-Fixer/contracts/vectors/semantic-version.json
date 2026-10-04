@@ -1,0 +1,36 @@
+{
+  "about": "Reading versions, ordering them, and which published release the running app is offered. Only the C# app reads this file.",
+  "parse": [
+    { "input": "2.0.0", "expected": { "major": 2, "minor": 0, "patch": 0, "prerelease": null } },
+    { "input": "10.20.30", "expected": { "major": 10, "minor": 20, "patch": 30, "prerelease": null } },
+    { "input": "2.0.0-dev", "expected": { "major": 2, "minor": 0, "patch": 0, "prerelease": "dev" } },
+    { "input": "2.1.0-rc.1", "expected": { "major": 2, "minor": 1, "patch": 0, "prerelease": "rc.1" } },
+    { "input": "v2.0.0", "expected": null },
+    { "input": "2.0", "expected": null },
+    { "input": "02.0.0", "expected": null },
+    { "input": "2.0.0+build.5", "expected": null },
+    { "input": "2.0.0\n", "expected": null },
+    { "input": " 2.0.0", "expected": null },
+    { "input": "2.0.0-", "expected": null },
+    { "input": "99999999999.0.0", "expected": null },
+    { "input": "", "expected": null }
+  ],
+  "compare": [
+    { "left": "2.0.1", "right": "2.0.0", "expected": 1 },
+    { "left": "2.0.0", "right": "2.0.0", "expected": 0 },
+    { "left": "2.0.0", "right": "10.0.0", "expected": -1 },
+    { "left": "2.0.0", "right": "2.0.0-dev", "expected": 1 },
+    { "left": "2.1.0-rc.2", "right": "2.1.0-rc.10", "expected": -1 },
+    { "left": "2.1.0-rc.1", "right": "2.1.0-rc", "expected": 1 },
+    { "left": "2.1.0-1", "right": "2.1.0-alpha", "expected": -1 }
+  ],
+  "offer": [
+    { "name": "a newer release is offered", "installed": "2.0.0", "available": "2.0.1", "expected": true },
+    { "name": "the same release is not offered", "installed": "2.0.0", "available": "2.0.0", "expected": false },
+    { "name": "an older release is not offered", "installed": "2.1.0", "available": "2.0.9", "expected": false },
+    { "name": "a pre-release is never offered", "installed": "2.0.0", "available": "2.1.0-rc.1", "expected": false },
+    { "name": "a dev build never updates itself", "installed": "2.0.0-dev", "available": "9.0.0", "expected": false },
+    { "name": "an unreadable installed version is never updated", "installed": "unknown", "available": "2.0.1", "expected": false },
+    { "name": "an unreadable available version is never offered", "installed": "2.0.0", "available": "v2.0.1", "expected": false }
+  ]
+}

@@ -1,0 +1,788 @@
+{
+  "about": "Merging keys into one named block of gameinfo.gi. Text fields are arrays of lines joined with LF. Unless a case says otherwise, every case with text input also runs with each LF replaced by CRLF in both input and expected output, and every case runs a second time on its own output, which must change nothing.",
+  "cases": [
+    {
+      "name": "convars update, add and skip a nested block",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"r_directlighting\" \"1\"                 // keep this comment",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t}",
+        "",
+        "\tSceneSystem",
+        "\t{",
+        "\t\tGpuLightBinner 1",
+        "\t\tCSMCascadeResolution 2048",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": true,
+      "entries": [
+        [
+          "r_directlighting",
+          "0"
+        ],
+        [
+          "cl_new",
+          "1"
+        ],
+        [
+          "rate",
+          "786432"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tConVars",
+          "\t{",
+          "\t\t\"cl_new\"\t\"1\"",
+          "",
+          "\t\t\"r_aspectratio\" \"2.3\"",
+          "\t\t\"r_directlighting\" \"0\"                 // keep this comment",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t}",
+          "",
+          "\tSceneSystem",
+          "\t{",
+          "\t\tGpuLightBinner 1",
+          "\t\tCSMCascadeResolution 2048",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "r_directlighting",
+            "updated"
+          ],
+          [
+            "cl_new",
+            "added"
+          ],
+          [
+            "rate",
+            "skipped_block"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "convars key after a nested rate block is updated in place",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tgame \t\"citadel\"",
+        "",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"min\"\t\t\"98304\"",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t\t\"fps_max\"\t\"400\"",
+        "\t}",
+        "",
+        "\tMemory",
+        "\t{",
+        "\t\t\"Foo\" \"1\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": true,
+      "entries": [
+        [
+          "fps_max",
+          "240"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tgame \t\"citadel\"",
+          "",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\" \"2.3\"",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"min\"\t\t\"98304\"",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t\t\"fps_max\"\t\"240\"",
+          "\t}",
+          "",
+          "\tMemory",
+          "\t{",
+          "\t\t\"Foo\" \"1\"",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "fps_max",
+            "updated"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "scenesystem unquoted update and add",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"r_directlighting\" \"1\"                 // keep this comment",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t}",
+        "",
+        "\tSceneSystem",
+        "\t{",
+        "\t\tGpuLightBinner 1",
+        "\t\tCSMCascadeResolution 2048",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "SceneSystem",
+      "quoted": false,
+      "create": true,
+      "entries": [
+        [
+          "CSMCascadeResolution",
+          "0"
+        ],
+        [
+          "VolumetricFog",
+          "0"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\" \"2.3\"",
+          "\t\t\"r_directlighting\" \"1\"                 // keep this comment",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t}",
+          "",
+          "\tSceneSystem",
+          "\t{",
+          "\t\tVolumetricFog\t0",
+          "",
+          "\t\tGpuLightBinner 1",
+          "\t\tCSMCascadeResolution 0",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "CSMCascadeResolution",
+            "updated"
+          ],
+          [
+            "VolumetricFog",
+            "added"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "unquoted update keeps a trailing comment",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tSceneSystem",
+        "\t{",
+        "\t\tCSMCascadeResolution 2048    // shadow quality",
+        "\t\tWellKnownLightCookies",
+        "\t\t{",
+        "\t\t\t\"cookie\" \"1\"",
+        "\t\t}",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "SceneSystem",
+      "quoted": false,
+      "create": true,
+      "entries": [
+        [
+          "CSMCascadeResolution",
+          "0"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tSceneSystem",
+          "\t{",
+          "\t\tCSMCascadeResolution 0    // shadow quality",
+          "\t\tWellKnownLightCookies",
+          "\t\t{",
+          "\t\t\t\"cookie\" \"1\"",
+          "\t\t}",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "CSMCascadeResolution",
+            "updated"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "unquoted key that is a nested block is skipped",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tSceneSystem",
+        "\t{",
+        "\t\tCSMCascadeResolution 2048    // shadow quality",
+        "\t\tWellKnownLightCookies",
+        "\t\t{",
+        "\t\t\t\"cookie\" \"1\"",
+        "\t\t}",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "SceneSystem",
+      "quoted": false,
+      "create": true,
+      "entries": [
+        [
+          "WellKnownLightCookies",
+          "1"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tSceneSystem",
+          "\t{",
+          "\t\tCSMCascadeResolution 2048    // shadow quality",
+          "\t\tWellKnownLightCookies",
+          "\t\t{",
+          "\t\t\t\"cookie\" \"1\"",
+          "\t\t}",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "WellKnownLightCookies",
+            "skipped_block"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "missing block is created before the root close",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tgame \t\"citadel\"",
+        "",
+        "\tMemory",
+        "\t{",
+        "\t\t\"Foo\" \"1\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": true,
+      "entries": [
+        [
+          "r_aspectratio",
+          "2.49"
+        ],
+        [
+          "fps_max",
+          "0"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tgame \t\"citadel\"",
+          "",
+          "\tMemory",
+          "\t{",
+          "\t\t\"Foo\" \"1\"",
+          "\t}",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\"\t\"2.49\"",
+          "\t\t\"fps_max\"\t\"0\"",
+          "\t}",
+          "\t}",
+          ""
+        ],
+        "results": [
+          [
+            "r_aspectratio",
+            "added"
+          ],
+          [
+            "fps_max",
+            "added"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "missing block is left alone when create is off",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tgame \t\"citadel\"",
+        "",
+        "\tMemory",
+        "\t{",
+        "\t\t\"Foo\" \"1\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": false,
+      "entries": [
+        [
+          "fps_max",
+          "0"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tgame \t\"citadel\"",
+          "",
+          "\tMemory",
+          "\t{",
+          "\t\t\"Foo\" \"1\"",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "fps_max",
+            "no_block"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "block is created in a file with only the root braces",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "}",
+        ""
+      ],
+      "block": "SceneSystem",
+      "quoted": false,
+      "create": true,
+      "entries": [
+        [
+          "VolumetricFog",
+          "0"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tSceneSystem",
+          "\t{",
+          "\t\tVolumetricFog\t0",
+          "\t}",
+          "\t}",
+          ""
+        ],
+        "results": [
+          [
+            "VolumetricFog",
+            "added"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a file with no root block is not written",
+      "input": [
+        "// not a KeyValues file",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": true,
+      "entries": [
+        [
+          "fps_max",
+          "0"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "// not a KeyValues file",
+          ""
+        ],
+        "results": [
+          [
+            "fps_max",
+            "no_root"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "braces inside strings and comments do not end a block",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\t\"title\"\t\"a { brace in a string\"   // and } one in a comment",
+        "\tConVars",
+        "\t{",
+        "\t\t\"fps_max\"\t\"400\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": true,
+      "entries": [
+        [
+          "fps_max",
+          "240"
+        ],
+        [
+          "cl_new",
+          "1"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\t\"title\"\t\"a { brace in a string\"   // and } one in a comment",
+          "\tConVars",
+          "\t{",
+          "\t\t\"cl_new\"\t\"1\"",
+          "",
+          "\t\t\"fps_max\"\t\"240\"",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "fps_max",
+            "updated"
+          ],
+          [
+            "cl_new",
+            "added"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "no entries leaves the text alone",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tConVars",
+        "\t{",
+        "\t\t\"r_aspectratio\" \"2.3\"",
+        "\t\t\"r_directlighting\" \"1\"                 // keep this comment",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t}",
+        "",
+        "\tSceneSystem",
+        "\t{",
+        "\t\tGpuLightBinner 1",
+        "\t\tCSMCascadeResolution 2048",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": true,
+      "entries": [],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tConVars",
+          "\t{",
+          "\t\t\"r_aspectratio\" \"2.3\"",
+          "\t\t\"r_directlighting\" \"1\"                 // keep this comment",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t}",
+          "",
+          "\tSceneSystem",
+          "\t{",
+          "\t\tGpuLightBinner 1",
+          "\t\tCSMCascadeResolution 2048",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": []
+      }
+    },
+    {
+      "name": "a quoted key that exists only inside a sub-block is added at the top",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tConVars",
+        "\t{",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"min\"\t\"98304\"",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": true,
+      "entries": [
+        [
+          "default",
+          "1"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tConVars",
+          "\t{",
+          "\t\t\"default\"\t\"1\"",
+          "",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"min\"\t\"98304\"",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "default",
+            "added"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a top-level quoted key after a sub-block with the same key is the one updated",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tConVars",
+        "\t{",
+        "\t\t\"rate\"",
+        "\t\t{",
+        "\t\t\t\"default\"\t\"786432\"",
+        "\t\t}",
+        "\t\t\"default\"\t\"5\"",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": true,
+      "entries": [
+        [
+          "default",
+          "1"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tConVars",
+          "\t{",
+          "\t\t\"rate\"",
+          "\t\t{",
+          "\t\t\t\"default\"\t\"786432\"",
+          "\t\t}",
+          "\t\t\"default\"\t\"1\"",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "default",
+            "updated"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a quoted key that is a block only deeper down is added, not skipped",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tConVars",
+        "\t{",
+        "\t\t\"speaker_config\"",
+        "\t\t{",
+        "\t\t\t\"surround\"",
+        "\t\t\t{",
+        "\t\t\t\t\"on\"\t\"1\"",
+        "\t\t\t}",
+        "\t\t}",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "ConVars",
+      "quoted": true,
+      "create": true,
+      "entries": [
+        [
+          "surround",
+          "0"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tConVars",
+          "\t{",
+          "\t\t\"surround\"\t\"0\"",
+          "",
+          "\t\t\"speaker_config\"",
+          "\t\t{",
+          "\t\t\t\"surround\"",
+          "\t\t\t{",
+          "\t\t\t\t\"on\"\t\"1\"",
+          "\t\t\t}",
+          "\t\t}",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "surround",
+            "added"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "an unquoted key that exists only inside a sub-block is added at the top",
+      "input": [
+        "\"GameInfo\"",
+        "{",
+        "\tSceneSystem",
+        "\t{",
+        "\t\tShadows",
+        "\t\t{",
+        "\t\t\tCSMCascadeResolution 2048",
+        "\t\t}",
+        "\t}",
+        "}",
+        ""
+      ],
+      "block": "SceneSystem",
+      "quoted": false,
+      "create": true,
+      "entries": [
+        [
+          "CSMCascadeResolution",
+          "0"
+        ]
+      ],
+      "expected": {
+        "output": [
+          "\"GameInfo\"",
+          "{",
+          "\tSceneSystem",
+          "\t{",
+          "\t\tCSMCascadeResolution\t0",
+          "",
+          "\t\tShadows",
+          "\t\t{",
+          "\t\t\tCSMCascadeResolution 2048",
+          "\t\t}",
+          "\t}",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "CSMCascadeResolution",
+            "added"
+          ]
+        ]
+      }
+    }
+  ]
+}

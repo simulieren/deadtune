@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DlFovFixer.App/DlFovFixer.App.csproj" />
+    <Project Path="src/DlFovFixer.Core/DlFovFixer.Core.csproj" />
+    <Project Path="src/DlFovFixer.Infrastructure/DlFovFixer.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DlFovFixer.App.Tests/DlFovFixer.App.Tests.csproj" />
+    <Project Path="tests/DlFovFixer.Core.Tests/DlFovFixer.Core.Tests.csproj" />
+    <Project Path="tests/DlFovFixer.Infrastructure.Tests/DlFovFixer.Infrastructure.Tests.csproj" />
+  </Folder>
+</Solution>

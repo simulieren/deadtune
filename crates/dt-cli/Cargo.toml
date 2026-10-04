@@ -1,0 +1,17 @@
+[package]
+name = "dt-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "deadtune-cli"
+path = "src/main.rs"
+
+[dependencies]
+dt-core.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

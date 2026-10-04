@@ -1,0 +1,22 @@
+# Left over from the retired Python 1.x app, so old local build output stays out of Git
+__pycache__/
+.pytest_cache/
+build/
+dist/
+*.spec
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+.vs/
+
+# Installer build output
+artifacts/

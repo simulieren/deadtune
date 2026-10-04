@@ -1,0 +1,22 @@
+{
+  "required_documents": [
+    "README.md",
+    "ARCHITECTURE.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "LICENSE.md",
+    "docs/pitfalls.md"
+  ],
+  "migration_directories": [],
+  "type_scan_roots": [
+    "src"
+  ],
+  "type_policy_excludes": [
+    "**/generated/**",
+    "**/obj/**",
+    "**/bin/**",
+    "**/build/**"
+  ],
+  "link_check_excludes": []
+}

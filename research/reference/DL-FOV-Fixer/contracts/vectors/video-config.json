@@ -1,0 +1,142 @@
+{
+  "about": "Merging setting.* entries into cfg/video.txt. A null input means the file does not exist, and a created file always uses CRLF. Text fields are arrays of lines joined with LF. Unless a case says otherwise, every case with text input also runs with each LF replaced by CRLF in both input and expected output, and every case runs a second time on its own output, which must change nothing.",
+  "cases": [
+    {
+      "name": "a missing file is created",
+      "input": null,
+      "entries": [
+        [
+          "setting.fps_max",
+          "0"
+        ]
+      ],
+      "expected": {
+        "changed": true,
+        "created": true,
+        "output": [
+          "\"video.cfg\"\r",
+          "{\r",
+          "\t\"setting.fps_max\"\t\t\"0\"\r",
+          "}\r",
+          ""
+        ],
+        "results": [
+          [
+            "setting.fps_max",
+            "added"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "existing keys are updated and new ones added",
+      "input": [
+        "\"video.cfg\"",
+        "{",
+        "\t\"setting.fps_max\"\t\t\"0\"",
+        "\t\"setting.defaultres\"\t\t\"2560\"",
+        "}",
+        ""
+      ],
+      "entries": [
+        [
+          "setting.fps_max",
+          "240"
+        ],
+        [
+          "setting.mat_vsync",
+          "0"
+        ]
+      ],
+      "expected": {
+        "changed": true,
+        "created": false,
+        "output": [
+          "\"video.cfg\"",
+          "{",
+          "\t\"setting.mat_vsync\"\t\t\"0\"",
+          "",
+          "\t\"setting.fps_max\"\t\t\"240\"",
+          "\t\"setting.defaultres\"\t\t\"2560\"",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "setting.fps_max",
+            "updated"
+          ],
+          [
+            "setting.mat_vsync",
+            "added"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a correct file is not written",
+      "input": [
+        "\"video.cfg\"",
+        "{",
+        "\t\"setting.fps_max\"\t\t\"0\"",
+        "\t\"setting.defaultres\"\t\t\"2560\"",
+        "}",
+        ""
+      ],
+      "entries": [
+        [
+          "setting.fps_max",
+          "0"
+        ]
+      ],
+      "expected": {
+        "changed": false,
+        "created": false,
+        "output": [
+          "\"video.cfg\"",
+          "{",
+          "\t\"setting.fps_max\"\t\t\"0\"",
+          "\t\"setting.defaultres\"\t\t\"2560\"",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "setting.fps_max",
+            "updated"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a file with no block is replaced by a fresh block",
+      "input": [
+        "garbage",
+        ""
+      ],
+      "entries": [
+        [
+          "setting.fps_max",
+          "0"
+        ]
+      ],
+      "expected": {
+        "changed": true,
+        "created": false,
+        "output": [
+          "\"video.cfg\"",
+          "{",
+          "\t\"setting.fps_max\"\t\t\"0\"",
+          "}",
+          ""
+        ],
+        "results": [
+          [
+            "setting.fps_max",
+            "added"
+          ]
+        ]
+      }
+    }
+  ]
+}

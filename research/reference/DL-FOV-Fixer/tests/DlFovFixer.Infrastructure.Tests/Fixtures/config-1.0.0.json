@@ -1,0 +1,33 @@
+{
+  "gameinfo_path": "D:\\Games\\SteamLibrary\\steamapps\\common\\Deadlock\\game\\citadel\\gameinfo.gi",
+  "fov_value": "2.49",
+  "auto_apply_on_start": false,
+  "periodic_check_minutes": 5,
+  "start_with_windows": true,
+  "check_updates_on_start": false,
+  "tweaks": {
+    "convars": [
+      [
+        "r_directlighting",
+        "0"
+      ],
+      [
+        "cl_new",
+        "1"
+      ]
+    ],
+    "scenesystem": [
+      [
+        "VolumetricFog",
+        "0"
+      ]
+    ],
+    "video": [
+      [
+        "setting.fps_max",
+        "240"
+      ]
+    ]
+  },
+  "apply_tweaks": false
+}

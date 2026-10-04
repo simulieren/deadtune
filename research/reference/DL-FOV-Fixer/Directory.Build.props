@@ -1,0 +1,39 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <Company>Lukáš Krejčí</Company>
+    <Product>DL-FOV-Fixer</Product>
+    <RepositoryRoot>$(MSBuildThisFileDirectory)</RepositoryRoot>
+  </PropertyGroup>
+
+  <!--
+    One version for every project, read from version.properties. Only builds made with
+    -p:DlFovFixerReleaseBuild=true carry the plain version. Every other build is "-dev", so the
+    updater never mistakes a local build for a release.
+  -->
+  <PropertyGroup>
+    <DlFovFixerReleaseBuild Condition="'$(DlFovFixerReleaseBuild)' == ''">false</DlFovFixerReleaseBuild>
+    <_DlFovFixerVersionText>$([System.IO.File]::ReadAllText('$(RepositoryRoot)version.properties'))</_DlFovFixerVersionText>
+    <DlFovFixerVersion>$([System.Text.RegularExpressions.Regex]::Match($(_DlFovFixerVersionText), 'versionName=([0-9]+\.[0-9]+\.[0-9]+)').Groups[1].Value)</DlFovFixerVersion>
+    <Version Condition="'$(DlFovFixerReleaseBuild)' == 'true'">$(DlFovFixerVersion)</Version>
+    <Version Condition="'$(DlFovFixerReleaseBuild)' != 'true'">$(DlFovFixerVersion)-dev</Version>
+    <AssemblyVersion>$(DlFovFixerVersion).0</AssemblyVersion>
+    <FileVersion>$(DlFovFixerVersion).0</FileVersion>
+    <InformationalVersion>$(Version)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <Target Name="RequireVersionName" BeforeTargets="CoreCompile" Condition="'$(DlFovFixerVersion)' == ''">
+    <Error Text="version.properties must hold a line like versionName=2.0.0." />
+  </Target>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="DlFovFixer.ReleaseBuild" Value="$(DlFovFixerReleaseBuild)" />
+  </ItemGroup>
+</Project>

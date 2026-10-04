@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/dt-core", "crates/dt-cli", "crates/dt-gui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+rust-version = "1.95"
+
+[workspace.dependencies]
+dt-core = { path = "crates/dt-core" }
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+toml = "0.9"
+tempfile = "3"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

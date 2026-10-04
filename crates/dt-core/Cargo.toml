@@ -1,0 +1,29 @@
+[package]
+name = "dt-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+fetch = ["dep:ureq"]
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+toml.workspace = true
+sha2 = "0.10"
+similar = "3.2"
+csv = "1.3"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+steamlocate = "2.1.1"
+notify = "8.2"
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+ureq = { version = "3", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Power", "Win32_Foundation"] }
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,2 @@
+# Fixtures and catalog are byte-exact golden files (LF and CRLF on purpose); never convert line endings.
+* -text

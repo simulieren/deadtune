@@ -101,10 +101,11 @@ pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
         rule.push('}');
     }
     for (path, css) in &layout.extra_css {
-        check_balanced(css).map_err(|e| LayoutError::ExtraCss(path.clone(), e))?;
-        let css = css.trim();
+        let css = super::css::parse_rules(css)
+            .and_then(|_| super::css::minify(css))
+            .map_err(|e| LayoutError::ExtraCss(path.clone(), e))?;
         if !css.is_empty() {
-            files.entry(path.clone()).or_default().push_str(css);
+            files.entry(path.clone()).or_default().push_str(&css);
         }
     }
     Ok(StylePatch { files })
@@ -123,40 +124,6 @@ fn validate(id: ElementId, edit: &ElementEdit) -> Result<(), LayoutError> {
         return Err(LayoutError::Opacity(id, edit.opacity_pct));
     }
     Ok(())
-}
-
-/// Brace balance outside comments and strings, so a stray `}` cannot close
-/// a vanilla rule early or leave ours open.
-fn check_balanced(css: &str) -> Result<(), CssError> {
-    let bytes = css.as_bytes();
-    let mut open: Vec<usize> = Vec::new();
-    let mut quote: Option<u8> = None;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        match quote {
-            Some(_) if b == b'\\' => i += 1,
-            Some(q) if b == q => quote = None,
-            Some(_) => {}
-            None => match b {
-                b'"' | b'\'' => quote = Some(b),
-                b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                    let close = css[i + 2..].find("*/").ok_or(CssError::OpenComment)?;
-                    i += close + 3;
-                }
-                b'{' => open.push(i),
-                b'}' => {
-                    open.pop().ok_or(CssError::Unbalanced(i))?;
-                }
-                _ => {}
-            },
-        }
-        i += 1;
-    }
-    match open.pop() {
-        Some(pos) => Err(CssError::Unbalanced(pos)),
-        None => Ok(()),
-    }
 }
 
 /// CSS declarations for one edit on its element. Empty for identity.

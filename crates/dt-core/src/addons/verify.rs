@@ -162,8 +162,12 @@ pub fn expect_for(id: AddonId, paths: &GamePaths, state_dir: &Path) -> Expect {
                 .and_then(|pak| particles::stub_from_upstream(&pak).ok())
                 .map(|stub| stub.particle);
         }
-        Kind::GeneratedCss => {
-            if let Some(bytes) = game_file(paths, blur::STYLE) {
+        Kind::Blur => {
+            let rebuilt = read_record(state_dir)
+                .ok()
+                .and_then(|r| r.installed.get(id.key()).map(|i| i.from_game))
+                .unwrap_or(false);
+            if rebuilt && let Some(bytes) = game_file(paths, blur::STYLE) {
                 expect.originals.insert(blur::STYLE.to_string(), bytes);
             }
         }
@@ -452,6 +456,11 @@ mod tests {
         sources::import(
             &sources::cache_dir(&state),
             &sources::tests::research("Sinner Light Fix Mod", "pak26_dir.vpk"),
+        )
+        .unwrap();
+        sources::import(
+            &sources::cache_dir(&state),
+            &sources::tests::research("Blur Disabler", "pak97_dir.vpk"),
         )
         .unwrap();
         let config = super::super::AddonsConfig {

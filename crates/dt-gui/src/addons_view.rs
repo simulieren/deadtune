@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use dt_core::addons::install::{Action, Blocker, InstalledState};
+use dt_core::addons::install::{Action, Blocker, InstalledState, game_updated_since};
 use dt_core::addons::textures::{category_label, summary};
 use dt_core::addons::{self, AddonId, AddonInfo, Kind, Source, particles};
 use dt_core::addons::{Factor, TextureCategory, TextureDownscale};
@@ -20,10 +20,7 @@ enum Edit {
     Expand(Option<AddonId>),
     Particle(&'static str, bool),
     AllParticles(bool),
-    Blur {
-        hud: bool,
-        menu: bool,
-    },
+    Blur(addons::BlurOptions),
     Textures(TextureDownscale),
     Import(PathBuf),
     #[cfg(feature = "fetch")]
@@ -87,7 +84,7 @@ pub fn addons(ui: &mut Ui, state: &mut AppState) {
                     state.set_particle_group(g.id, visible);
                 }
             }
-            Edit::Blur { hud, menu } => state.set_blur(hud, menu),
+            Edit::Blur(opts) => state.set_blur(opts),
             Edit::Textures(cfg) => state.set_textures(cfg),
             Edit::Import(path) => {
                 state.status = Some(match state.import_addon(&path) {
@@ -185,6 +182,11 @@ fn status(
         Some(Action::Unavailable(Blocker::GameFiles(e))) => {
             (BAD, "Game files unreadable".into(), Some(e.clone()))
         }
+        Some(Action::Unavailable(Blocker::Invalid(e))) => (
+            BAD,
+            "Built pak failed its check; not installed".into(),
+            Some(e.clone()),
+        ),
     }
 }
 
@@ -254,6 +256,17 @@ fn card(
                 });
             });
         });
+        if info.id == AddonId::BlurDisabler
+            && !state.profile.addons.blur.rebuild
+            && let Some(InstalledState::Current(rec)) = installed
+            && game_updated_since(rec, &state.paths)
+        {
+            ui.colored_label(
+                WARN,
+                "Deadlock updated since this was installed. If the blur is back, Sqooky may have \
+                 published a newer file: download or import it again.",
+            );
+        }
         for c in state.addon_conflicts(info.id) {
             ui.colored_label(
                 WARN,
@@ -291,7 +304,7 @@ fn card(
         ui.add_space(4.0);
         match info.kind {
             Kind::ParticleGroups => particle_options(ui, state, edits),
-            Kind::GeneratedCss => blur_options(ui, state, edits),
+            Kind::Blur => blur_options(ui, state, edits),
             Kind::Textures => texture_options(ui, state, edits),
             Kind::Toggle => {}
         }
@@ -358,25 +371,56 @@ fn particle_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
 
 fn blur_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     let blur = state.profile.addons.blur;
-    caption(ui, "Turn off blur behind");
-    ui.horizontal(|ui| {
-        let mut hud = blur.hud;
-        let mut menu = blur.menu;
-        let a = ui
-            .checkbox(&mut hud, "HUD panels (minimap frame and friends)")
-            .changed();
-        let b = ui.checkbox(&mut menu, "Menus").changed();
-        if a || b {
-            edits.push(Edit::Blur { hud, menu });
-        }
-    });
-    ui.label(
-        RichText::new(
-            "Made from your game's own stylesheet, so it is rebuilt automatically after every game update.",
+    if !blur.rebuild {
+        ui.label(
+            RichText::new(
+                "Sqooky's published pak97, copied as is (a stub stylesheet plus its copy of the game's base \
+                 stylesheet). After a game patch it can go out of date; DeadTune warns on the card when the game \
+                 updated since it was installed, and a newer file from Sqooky's repository replaces it.",
+            )
+            .small()
+            .color(WEAK),
+        );
+        ui.add_space(4.0);
+    }
+    let mut rebuild = blur.rebuild;
+    if ui
+        .checkbox(
+            &mut rebuild,
+            RichText::new("Experimental: rebuild from my game files (may stop Deadlock from starting)")
+                .color(WARN),
         )
-        .small()
-        .color(WEAK),
-    );
+        .on_hover_text(
+            "Rewrites the two blur defines inside your game's current citadel_base_styles.vcss_c instead of \
+             using Sqooky's file. The first such build stopped Deadlock from starting. The pak is read back \
+             before it is installed, and the next launch is a trial: if the game fails to start, DeadTune removes it.",
+        )
+        .changed()
+    {
+        edits.push(Edit::Blur(addons::BlurOptions { rebuild, ..blur }));
+    }
+    if !blur.rebuild {
+        return;
+    }
+    ui.indent("blur_rebuild_options", |ui| {
+        caption(ui, "Turn off blur behind");
+        ui.horizontal(|ui| {
+            let mut hud = blur.hud;
+            let mut menu = blur.menu;
+            let a = ui
+                .checkbox(&mut hud, "HUD panels (minimap frame and friends)")
+                .changed();
+            let b = ui.checkbox(&mut menu, "Menus").changed();
+            if a || b {
+                edits.push(Edit::Blur(addons::BlurOptions { hud, menu, ..blur }));
+            }
+        });
+        ui.label(
+            RichText::new("Rebuilt automatically after every game update.")
+                .small()
+                .color(WEAK),
+        );
+    });
 }
 
 fn texture_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {

@@ -1238,8 +1238,8 @@ impl AppState {
         self.refresh_preview();
     }
 
-    pub fn set_blur(&mut self, hud: bool, menu: bool) {
-        self.profile.addons.blur = addons::BlurOptions { hud, menu };
+    pub fn set_blur(&mut self, opts: addons::BlurOptions) {
+        self.profile.addons.blur = opts;
         self.refresh_preview();
     }
 

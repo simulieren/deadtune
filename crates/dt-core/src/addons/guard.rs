@@ -585,6 +585,11 @@ mod tests {
             &sources::tests::research("Sinner Light Fix Mod", "pak26_dir.vpk"),
         )
         .unwrap();
+        sources::import(
+            &sources::cache_dir(&state),
+            &sources::tests::research("Blur Disabler", "pak97_dir.vpk"),
+        )
+        .unwrap();
         let config = AddonsConfig {
             enabled: [AddonId::SinnerLightFix, AddonId::BlurDisabler]
                 .into_iter()

@@ -72,8 +72,10 @@ pub enum Kind {
     Toggle,
     /// Our pak holds the upstream empty-particle stub at the paths the player hides.
     ParticleGroups,
-    /// Our pak holds a stylesheet rebuilt from the installed game's own file.
-    GeneratedCss,
+    /// The upstream file by default; with [`BlurOptions::rebuild`] on, a stylesheet rebuilt
+    /// from the installed game's own file instead (experimental: the first such build
+    /// stopped Deadlock from starting on 2026-10-05).
+    Blur,
     /// Our pak holds the game's own textures with their top mip levels dropped
     /// (`crate::texture`). Built on demand (minutes, gigabytes read), not by Apply.
     Textures,
@@ -147,10 +149,14 @@ pub static ADDONS: [AddonInfo; 6] = [
         name: "UI blur disabler",
         author: "Sqooky, with Bytenode",
         credit_url: REPO,
-        description: "Turns off the blur behind HUD and menu panels; rebuilt from your game's own stylesheet after every update.",
+        description: "Turns off the blur behind HUD and menu panels. Sqooky's published pak, copied as is; after a game patch it may need his update.",
         benefit: "Less stutter when menus and the HUD open",
-        kind: Kind::GeneratedCss,
-        source: Source::Generated,
+        kind: Kind::Blur,
+        source: upstream!(
+            "Blur%20Disabler",
+            "pak97_dir.vpk",
+            "7f5cc43cd8b175b53268238b960d9e62efd05d46e08c0c9f2c8f267d358d5dc5"
+        ),
         slot: 72,
     },
     AddonInfo {
@@ -222,9 +228,12 @@ pub fn info(id: AddonId) -> &'static AddonInfo {
         .expect("every AddonId has an entry in ADDONS")
 }
 
-/// Which blur defines the generated stylesheet neutralises.
+/// How the blur disabler pak is made. Off by default, `rebuild` swaps Sqooky's file for a
+/// stylesheet rebuilt from the installed game's own; `hud` and `menu` only matter then.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BlurOptions {
+    #[serde(default)]
+    pub rebuild: bool,
     #[serde(default = "yes")]
     pub hud: bool,
     #[serde(default = "yes")]
@@ -238,6 +247,7 @@ fn yes() -> bool {
 impl Default for BlurOptions {
     fn default() -> BlurOptions {
         BlurOptions {
+            rebuild: false,
             hud: true,
             menu: true,
         }
@@ -370,11 +380,13 @@ mod tests {
         assert_eq!(toml::to_string(&config).unwrap(), "");
         let mut config = AddonsConfig::default();
         config.set_enabled(AddonId::BlurDisabler, true);
+        config.blur.rebuild = true;
         config.blur.menu = false;
         config.keep_particles.insert("low_health".into());
         config.textures.factor = Factor::Quarter;
         let text = toml::to_string(&config).unwrap();
         assert!(text.contains("enabled = [\"blur_disabler\"]"), "{text}");
+        assert!(text.contains("rebuild = true"), "{text}");
         assert!(text.contains("factor = \"quarter\""), "{text}");
         let back: AddonsConfig = toml::from_str(&text).unwrap();
         assert_eq!(back, config);

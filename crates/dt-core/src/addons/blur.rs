@@ -79,6 +79,7 @@ pub(crate) mod tests {
             neutralise(
                 text,
                 &BlurOptions {
+                    rebuild: true,
                     hud: false,
                     menu: true
                 }
@@ -89,6 +90,7 @@ pub(crate) mod tests {
             neutralise(
                 ".x{}",
                 &BlurOptions {
+                    rebuild: true,
                     hud: true,
                     menu: false
                 }
@@ -96,6 +98,7 @@ pub(crate) mod tests {
             ".x{}@define ingameHudBlur: none;"
         );
         let off = BlurOptions {
+            rebuild: true,
             hud: false,
             menu: false,
         };
@@ -120,6 +123,7 @@ pub(crate) mod tests {
         let hud_only = build(
             &pak,
             &BlurOptions {
+                rebuild: true,
                 hud: true,
                 menu: false,
             },

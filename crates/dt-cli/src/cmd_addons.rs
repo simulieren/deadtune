@@ -55,7 +55,7 @@ pub fn list(env: &Env, args: &Args) -> CliResult {
         let kind = match a.kind {
             Kind::Toggle => "on/off",
             Kind::ParticleGroups => "per effect group",
-            Kind::GeneratedCss => "generated",
+            Kind::Blur => "upstream pak; or rebuilt from game files (experimental)",
             Kind::Textures => "built on demand",
         };
         println!(

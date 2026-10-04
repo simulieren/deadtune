@@ -212,22 +212,22 @@ pub fn apply(ctx: &egui::Context, state: &mut AppState) {
 
 pub fn simple(ui: &mut egui::Ui, state: &mut AppState) {
     egui::Panel::top("simple_top").show(ui, |ui| {
-        ui.add_space(4.0);
+        ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.heading("DeadTune");
-            ui.separator();
-            ui.label(RichText::new(&state.profile.name).strong());
-            if state.ctx.game_running {
-                ui.colored_label(GREEN, "Deadlock is running");
-            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Advanced view").clicked() {
-                    state.settings.view = View::Advanced;
-                }
+                ui.add(egui::Button::new("⋯").min_size(egui::vec2(32.0, 32.0)))
+                    .on_hover_text("Tools menu")
+                    .clicked()
+                    .then(|| state.menu_open = !state.menu_open);
+                ui.add(egui::Button::new("Advanced").min_size(egui::vec2(70.0, 32.0)))
+                    .clicked()
+                    .then(|| state.settings.view = View::Advanced);
             });
         });
-        ui.add_space(4.0);
+        ui.add_space(6.0);
     });
+
     if let Some(banner) = state.banner.clone() {
         egui::Panel::top("simple_banner").show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -246,21 +246,55 @@ pub fn simple(ui: &mut egui::Ui, state: &mut AppState) {
             });
         });
     }
+
     egui::Panel::bottom("simple_apply").show(ui, |ui| apply_bar(ui, state));
+
     egui::CentralPanel::default().show(ui, |ui| {
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            safety(ui, state);
-            ui.separator();
-            starting_point(ui, state);
-            bind_helper(ui, state);
-            ui.separator();
-            settings_list(ui, state);
-            ui.separator();
-            check_setup(ui, state, true);
-            ui.add_space(8.0);
-            ui.weak("DeadTune is free software (GPL-3.0). Presets by their authors, credited in Advanced view > Settings.");
+            centered_column(ui, |ui| {
+                ui.add_space(12.0);
+
+                if state.menu_open {
+                    safety_menu(ui, state);
+                    ui.add_space(16.0);
+                }
+
+                preset_selector(ui, state);
+                ui.add_space(16.0);
+
+                settings_search_and_list(ui, state);
+                ui.add_space(16.0);
+
+                if state.settings.bind_helper_dismissed == false
+                    && state.settings.bridge == BridgeKind::ExecFile
+                {
+                    bind_helper_compact(ui, state);
+                    ui.add_space(16.0);
+                }
+
+                ui.add_space(4.0);
+                ui.weak("DeadTune is free software (GPL-3.0). Presets by their authors, credited in Advanced > Settings.");
+                ui.add_space(8.0);
+            });
         });
     });
+}
+
+/// Center content in a column with max width ~760px
+fn centered_column(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
+    let max_width = 760.0;
+    let available = ui.available_width();
+    if available <= max_width + 40.0 {
+        add_contents(ui);
+    } else {
+        let margin = (available - max_width) / 2.0;
+        ui.horizontal(|ui| {
+            ui.add_space(margin);
+            ui.vertical(|ui| {
+                ui.allocate_ui(egui::vec2(max_width, 0.0), add_contents);
+            });
+        });
+    }
 }
 
 fn apply_bar(ui: &mut egui::Ui, state: &mut AppState) {
@@ -304,159 +338,219 @@ fn apply_bar(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(4.0);
 }
 
-fn safety(ui: &mut egui::Ui, state: &mut AppState) {
-    ui.label(RichText::new("Safety").size(17.0).strong());
-    ui.horizontal_wrapped(|ui| {
-        if big_button(ui, true, "Undo last change").clicked() {
-            state.status = Some(match state.undo_last() {
-                Ok(()) => Status::Info(
-                    "Undone. The game files are back to before your last Apply.".into(),
-                ),
-                Err(e) => Status::Info(e),
-            });
+fn safety_menu(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.label(RichText::new("Tools").size(15.0).strong());
+    ui.add_space(8.0);
+
+    if ui.button("Undo last change").clicked() {
+        state.menu_open = false;
+        state.status = Some(match state.undo_last() {
+            Ok(()) => Status::Info(
+                "Undone. The game files are back to before your last Apply.".into(),
+            ),
+            Err(e) => Status::Info(e),
+        });
+    }
+
+    if ui.button("Restore original game files").clicked() {
+        state.menu_open = false;
+        state.status = Some(match state.restore_original_files() {
+            Ok(()) => {
+                Status::Info("The game files are back to how they were before DeadTune.".into())
+            }
+            Err(e) => Status::Info(e),
+        });
+    }
+
+    let ranked = state.settings.source == TargetSource::RankedSafe;
+    let label = if ranked {
+        "Turn off Ranked-safe mode"
+    } else {
+        "Enable Ranked-safe mode"
+    };
+    if ui.button(label).clicked() {
+        state.menu_open = false;
+        state.status = Some(match state.toggle_ranked_safe() {
+            Ok(_) if ranked => Status::Info(
+                "Your settings are back. Takes effect next time you start Deadlock.".into(),
+            ),
+            Ok(_) => Status::Info(
+                "Ranked-safe mode is on. Takes effect next time you start Deadlock.".into(),
+            ),
+            Err(e) => Status::Error(e),
+        });
+    }
+
+    ui.separator();
+
+    if ui.button("Run checks").clicked() {
+        state.menu_open = false;
+        state.run_checks();
+    }
+
+    if state.settings.bind_helper_dismissed && state.settings.bridge == BridgeKind::ExecFile {
+        if ui.button("Show keybind help").clicked() {
+            state.menu_open = false;
+            state.settings.bind_helper_dismissed = false;
         }
-        if big_button(ui, true, "Restore original game files").clicked() {
-            state.status = Some(match state.restore_original_files() {
-                Ok(()) => {
-                    Status::Info("The game files are back to how they were before DeadTune.".into())
-                }
-                Err(e) => Status::Info(e),
-            });
-        }
-        let ranked = state.settings.source == TargetSource::RankedSafe;
-        let label = if ranked {
-            "Ranked-safe mode: ON"
-        } else {
-            "Ranked-safe mode: OFF"
-        };
-        if big_button(ui, true, label).clicked() {
-            state.status = Some(match state.toggle_ranked_safe() {
-                Ok(_) if ranked => Status::Info(
-                    "Your settings are back. Takes effect next time you start Deadlock.".into(),
-                ),
-                Ok(_) => Status::Info(
-                    "Ranked-safe mode is on. Takes effect next time you start Deadlock.".into(),
-                ),
-                Err(e) => Status::Error(e),
-            });
-        }
-    });
-    ui.weak(
-        "Ranked-safe mode puts the game's own performance settings back so matchmaking never complains. \
-         Your video settings stay. Click it again to return to your settings.",
-    );
+    }
+
+    ui.separator();
+    ui.weak("Ranked-safe mode keeps your performance tweaks but reverts the engine config to vanilla so matchmaking never complains.");
 }
 
-fn starting_point(ui: &mut egui::Ui, state: &mut AppState) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Starting preset").size(17.0).strong());
-        let current = match &state.profile.base {
-            dt_core::profile::BaseRef::Preset(id) => preset::info(*id).label.to_string(),
-            dt_core::profile::BaseRef::File(_) => "My original settings".to_string(),
-        };
-        let mut picked = None;
-        egui::ComboBox::from_id_salt("simple_base")
-            .selected_text(current)
-            .width(240.0)
-            .show_ui(ui, |ui| {
-                for info in preset::all() {
-                    let Some(blurb) = friendly::preset_blurb(info.id) else {
-                        continue;
-                    };
-                    let selected = state.profile.base == dt_core::profile::BaseRef::Preset(info.id);
-                    if ui
-                        .selectable_label(selected, format!("{} ({})", info.label, info.author))
-                        .on_hover_text(blurb)
-                        .clicked()
-                    {
-                        picked = Some(info.id);
-                    }
+fn preset_selector(ui: &mut egui::Ui, state: &mut AppState) {
+    let current = match &state.profile.base {
+        dt_core::profile::BaseRef::Preset(id) => preset::info(*id).label.to_string(),
+        dt_core::profile::BaseRef::File(_) => "My original settings".to_string(),
+    };
+
+    ui.label(RichText::new("Preset").size(13.0).weak());
+    ui.add_space(2.0);
+
+    let mut picked = None;
+    egui::ComboBox::from_id_salt("simple_base")
+        .selected_text(RichText::new(&current).size(18.0).strong())
+        .width(700.0)
+        .height(200.0)
+        .show_ui(ui, |ui| {
+            for info in preset::all() {
+                let Some(blurb) = friendly::preset_blurb(info.id) else {
+                    continue;
+                };
+                let selected = state.profile.base == dt_core::profile::BaseRef::Preset(info.id);
+                let label = format!("{} — {}", info.label, blurb);
+                if ui
+                    .selectable_label(selected, label)
+                    .clicked()
+                {
+                    picked = Some(info.id);
                 }
-            });
-        if let Some(id) = picked {
-            state.set_base(dt_core::profile::BaseRef::Preset(id));
-        }
-    });
-    if let dt_core::profile::BaseRef::Preset(id) = &state.profile.base
-        && let Some(blurb) = friendly::preset_blurb(*id)
-    {
-        ui.weak(blurb);
+            }
+        });
+
+    if let Some(id) = picked {
+        state.set_base(dt_core::profile::BaseRef::Preset(id));
     }
 }
 
-fn bind_helper(ui: &mut egui::Ui, state: &mut AppState) {
+fn bind_helper_compact(ui: &mut egui::Ui, state: &mut AppState) {
     if state.settings.bind_helper_dismissed || state.settings.bridge != BridgeKind::ExecFile {
         return;
     }
-    ui.separator();
-    ui.label(
-        RichText::new("Bind a key for instant changes")
-            .size(17.0)
-            .strong(),
-    );
-    ui.label("Some settings (like the FPS limit) can change while you play. Do this once:");
-    ui.label("1. In Deadlock, open the console (F7) and paste this line:");
-    let line = ExecFileBridge::bind_hint(&state.settings.bind_key);
-    ui.horizontal(|ui| {
-        ui.code(RichText::new(&line).size(15.0));
-        if ui.button("Copy").clicked() {
-            ui.ctx().copy_text(line.clone());
-            state.status = Some(Status::Info(
-                "Copied. Paste it into the Deadlock console.".into(),
-            ));
-        }
+    let frame = egui::Frame::new()
+        .fill(egui::Color32::from_rgb(40, 50, 60))
+        .inner_margin(egui::Margin::symmetric(12, 8));
+    frame.show(ui, |ui| {
+        ui.vertical(|ui| {
+            ui.label(
+                RichText::new("Live key bind")
+                    .size(14.0)
+                    .strong(),
+            );
+            ui.weak("Some settings change while you play. Paste this in the game console once:");
+            let line = ExecFileBridge::bind_hint(&state.settings.bind_key);
+            ui.horizontal(|ui| {
+                ui.code(RichText::new(&line).monospace().small());
+                if ui.small_button("Copy").clicked() {
+                    ui.ctx().copy_text(line.clone());
+                    state.status = Some(Status::Info(
+                        "Copied. Paste in Deadlock console (F7).".into(),
+                    ));
+                }
+            });
+            if ui.small_button("Done").clicked() {
+                state.settings.bind_helper_dismissed = true;
+            }
+        });
     });
-    ui.label(format!(
-        "2. After changing a setting here, press {} in game to load it.",
-        state.settings.bind_key
-    ));
-    if ui.button("Done, hide this").clicked() {
-        state.settings.bind_helper_dismissed = true;
-    }
 }
 
-fn settings_list(ui: &mut egui::Ui, state: &mut AppState) {
-    ui.label(RichText::new("Settings").size(17.0).strong());
+fn settings_search_and_list(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.label(RichText::new("Settings").size(15.0).weak());
+    ui.add_space(4.0);
+
+    let _search_response = ui.add(
+        egui::TextEdit::singleline(&mut state.ui.search)
+            .desired_width(700.0)
+            .hint_text("Search settings...")
+    );
+
     if state.settings.source == TargetSource::RankedSafe {
+        ui.add_space(8.0);
         ui.colored_label(
             YELLOW,
-            "Ranked-safe mode is on: changes here are kept for later and not applied.",
+            "Ranked-safe mode is on: changes are kept but not applied.",
         );
     }
+
+    ui.add_space(12.0);
+
     let mut edits = Vec::new();
     let mut last_category = "";
+    let search_lower = state.ui.search.to_lowercase();
+
     for name in friendly::simple_rows(state.catalog) {
         let Some(entry) = state.catalog.get(name) else {
             continue;
         };
+
+        let label = friendly::label(name).unwrap_or(name);
+        let label_lower = label.to_lowercase();
+
+        if !search_lower.is_empty()
+            && !label_lower.contains(&search_lower)
+            && !entry.notes.to_lowercase().contains(&search_lower)
+        {
+            continue;
+        }
+
         if entry.category != last_category {
             last_category = &entry.category;
-            ui.add_space(6.0);
+            if last_category != "" {
+                ui.add_space(8.0);
+            }
             ui.label(
                 RichText::new(&entry.category)
+                    .size(13.0)
                     .color(ui.visuals().weak_text_color())
                     .strong(),
             );
+            ui.add_space(4.0);
         }
+
         let setting = state.setting(name);
         let value = state.current_value(name);
+        let is_changed = matches!(setting, Setting::Override(_) | Setting::CommentedOut);
+
         ui.horizontal(|ui| {
-            let label = RichText::new(friendly::label(name).unwrap_or(name)).strong();
-            views::left_label(ui, 230.0, egui::Label::new(label).truncate());
+            ui.set_height(48.0);
+
+            ui.vertical(|ui| {
+                ui.set_width(380.0);
+                let label_text = RichText::new(label).size(13.0).strong();
+                ui.label(label_text);
+                if !entry.notes.is_empty() {
+                    ui.weak(RichText::new(&entry.notes).size(11.0));
+                }
+            });
+
+            ui.add_space(12.0);
+
             if let Some(v) = views::control(ui, name, Some(entry), value.as_deref()) {
                 edits.push((name, Some(v)));
             }
-            if matches!(setting, Setting::Override(_) | Setting::CommentedOut) {
-                ui.colored_label(Color32::LIGHT_BLUE, "changed");
+
+            if is_changed {
+                ui.add_space(8.0);
+                ui.colored_label(Color32::from_rgb(100, 200, 255), "✓ changed");
                 if ui.small_button("Reset").clicked() {
                     edits.push((name, None));
                 }
             }
         });
-        if !entry.notes.is_empty() {
-            ui.weak(&entry.notes);
-        }
     }
+
     for (name, value) in edits {
         match value {
             Some(v) => {

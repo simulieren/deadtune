@@ -225,6 +225,8 @@ pub struct AppState {
     pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
     pub checks: Option<Vec<Check>>,
+    /// Whether the safety/tools menu is open in simple view.
+    pub menu_open: bool,
     #[cfg(feature = "remote")]
     pub remote: Option<crate::remote::Remote>,
     watch: Option<(Watcher, Receiver<Vec<Change>>)>,
@@ -313,6 +315,7 @@ impl AppState {
             hud_cache: None,
             undo_cursor: None,
             checks: None,
+            menu_open: false,
             #[cfg(feature = "remote")]
             remote: None,
             watch: None,

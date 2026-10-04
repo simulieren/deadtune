@@ -122,6 +122,10 @@ impl App {
                 if self.args.compact {
                     state.ui.mode = Mode::Compact;
                 }
+                if self.screenshot.is_some() {
+                    state.settings.onboarded = true;
+                    state.welcome = None;
+                }
                 self.startup_profile(&mut state);
                 self.screen = Screen::Main(Box::new(state));
             }

@@ -39,6 +39,10 @@ powershell -ExecutionPolicy Bypass -File scripts\get-testing.ps1 -Tag v0.1.0 -Ru
 
 Each build lands in `%USERPROFILE%\DeadTune-testing\<tag or commit>`, so older builds stay for comparison. The script checks the SHA-256 and unblocks the files.
 
+### Updates
+
+Every release (testing and versioned) also publishes `deadtune-windows-x64.exe`, its `.minisig` signature and `latest.json`. That is what the in-app updater downloads; it checks the signature against the key built into the app before replacing `deadtune.exe`. To test it, run an older build and publish a newer testing build. How releases are signed is in `docs/releasing.md`.
+
 ## What is in the zip
 
 | File | Use |

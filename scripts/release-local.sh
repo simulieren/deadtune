@@ -7,7 +7,8 @@
 #   scripts/release-local.sh first        publish the current version as its first release (no bump)
 # Versioning is minor-only for now: every release is 0.Y.0 (enforced by dt-core's version test).
 # Needs: brew install mingw-w64 minisign; rustup target add x86_64-pc-windows-gnu; gh auth login;
-# the release key at ~/.config/deadtune/release.key (or $DEADTUNE_RELEASE_KEY).
+# the release key at ~/.config/deadtune/release.key (or $DEADTUNE_RELEASE_KEY), matching
+# crates/dt-core/src/update/release.pub (or $DEADTUNE_RELEASE_PUB, only while rotating the key).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
@@ -18,9 +19,13 @@ case "$mode" in testing|--no-upload|minor|first) ;; *)
 esac
 
 key="${DEADTUNE_RELEASE_KEY:-$HOME/.config/deadtune/release.key}"
-pubkey="$root/crates/dt-core/src/update/release.pub"
+pubkey="${DEADTUNE_RELEASE_PUB:-$root/crates/dt-core/src/update/release.pub}"
 command -v minisign >/dev/null || { echo "minisign not found: brew install minisign" >&2; exit 1; }
 [ -f "$key" ] || { echo "release key $key not found (set DEADTUNE_RELEASE_KEY; see docs/releasing.md)" >&2; exit 1; }
+probe="$(mktemp -d)" && trap 'rm -rf "$probe"' EXIT
+echo probe > "$probe/f" && minisign -S -s "$key" -m "$probe/f" </dev/null >/dev/null \
+  && minisign -Vqm "$probe/f" -p "$pubkey" \
+  || { echo "$key does not match $pubkey (see docs/releasing.md)" >&2; exit 1; }
 
 version() { sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1; }
 
@@ -83,6 +88,8 @@ echo "DeadTune $ver, $branch $sha (local $target build)" > "$stage/BUILD.txt"
 rm -f "$out/$zip" && (cd "$stage" && zip -qr "$out/$zip" .)
 (cd "$out" && shasum -a 256 "$zip" > "$zip.sha256")
 
+update=("$out/$exe" "$out/$exe.minisig" "$out/latest.json")
+rm -f "${update[@]}"
 cp "$rel/deadtune.exe" "$out/$exe"
 minisign -S -s "$key" -m "$out/$exe" -x "$out/$exe.minisig" -t "deadtune $ver $sha windows-x64" </dev/null
 minisign -Vm "$out/$exe" -x "$out/$exe.minisig" -p "$pubkey" \
@@ -92,7 +99,6 @@ minisign -Vm "$out/$exe" -x "$out/$exe.minisig" -p "$pubkey" \
   --notes-url "https://github.com/simulieren/deadtune/releases/tag/$release" \
   --asset "windows-x64=https://github.com/simulieren/deadtune/releases/download/$release/$exe,$out/$exe,$out/$exe.minisig") \
   > "$out/latest.json"
-update=("$out/$exe" "$out/$exe.minisig" "$out/latest.json")
 ls -l "$out/$zip" "${update[@]}"
 
 case "$mode" in

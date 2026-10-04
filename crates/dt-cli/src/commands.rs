@@ -2,7 +2,9 @@
 
 use crate::args::{Args, CliResult};
 use crate::env::Env;
-use crate::{cmd_addons, cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_info, cmd_profile};
+use crate::{
+    cmd_addons, cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_info, cmd_profile, cmd_update,
+};
 
 pub struct Command {
     pub name: &'static str,
@@ -247,6 +249,14 @@ pub const COMMANDS: &[Command] = &[
         values: &["profile"],
         switches: &[],
         run: cmd_addons::build,
+    },
+    Command {
+        name: "self-update",
+        usage: "self-update [--check] [--channel stable|testing] [--exe <deadtune.exe>] [--yes]",
+        summary: "check for, verify and install a newer DeadTune (fetch feature)",
+        values: &["channel", "exe"],
+        switches: &["check", "yes"],
+        run: cmd_update::self_update,
     },
 ];
 

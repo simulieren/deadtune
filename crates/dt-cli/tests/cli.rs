@@ -158,9 +158,18 @@ fn help_and_usage_errors() {
         "ranked-safe",
         "bench compare",
         "hud apply",
+        "self-update",
     ] {
         assert!(top.contains(name), "{top}");
     }
+    assert!(
+        fake.ok(&["self-update", "--help"])
+            .contains("--channel stable|testing")
+    );
+    assert!(
+        fake.expect(&["self-update", "--channel", "beta"], 2)
+            .contains("--channel is stable or testing")
+    );
     assert!(fake.ok(&["apply", "--help"]).contains("--dry-run"));
     assert!(fake.ok(&["bench", "import", "-h"]).contains("--label"));
     assert!(fake.expect(&["frobnicate"], 2).contains("unknown command"));

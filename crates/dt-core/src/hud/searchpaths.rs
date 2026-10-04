@@ -45,7 +45,10 @@ pub fn ensure_addons(gameinfo: &str) -> Result<String, SearchPathsError> {
     if find_addons(&block) {
         return Ok(gameinfo.to_owned());
     }
-    let eol = if has_crlf(gameinfo) { "\r\n" } else { "\n" };
+    let eol = match crate::gi::detect_eol(gameinfo) {
+        crate::gi::Eol::CrLf => "\r\n",
+        crate::gi::Eol::Lf => "\n",
+    };
 
     let anchor = block.entries.iter().find(|e| e.key.eq_ignore_ascii_case("Game"));
     let (at, indent, key_gap) = match (anchor, block.entries.last()) {
@@ -71,11 +74,6 @@ fn find_addons(block: &Block) -> bool {
         .entries
         .iter()
         .any(|e| e.key.eq_ignore_ascii_case("Game") && e.value == ADDONS_LINE_VALUE)
-}
-
-fn has_crlf(text: &str) -> bool {
-    text.find('\n')
-        .is_some_and(|i| text.as_bytes()[..i].ends_with(b"\r"))
 }
 
 /// Whitespace between `Game` and the value, matching the first entry's style:
@@ -190,20 +188,6 @@ mod tests {
     const PRESET: &str =
         include_str!("../../../../research/configs/OptimizationLock/test_cfg/gameinfo.gi");
 
-    // gi::validate_braces is still a todo!() stub on this branch.
-    fn assert_balanced(text: &str) {
-        let mut depth = 0i32;
-        for c in text.chars() {
-            match c {
-                '{' => depth += 1,
-                '}' => depth -= 1,
-                _ => {}
-            }
-            assert!(depth >= 0);
-        }
-        assert_eq!(depth, 0);
-    }
-
     fn crlf(s: &str) -> String {
         s.replace("\r\n", "\n").replace('\n', "\r\n")
     }
@@ -248,7 +232,7 @@ mod tests {
         assert_eq!(out.lines().count(), VANILLA.lines().count() + 1);
         let added = out.lines().find(|l| l.contains(ADDONS_LINE_VALUE)).unwrap();
         assert_eq!(added, "            Game citadel/addons");
-        assert_balanced(&out);
+        crate::gi::validate_braces(&out).expect("balanced braces");
     }
 
     #[test]
@@ -258,7 +242,7 @@ mod tests {
         assert_eq!(has_addons(&out), Ok(true));
         assert_only_block_changed(&src, &out);
         assert_eq!(out.matches('\n').count(), out.matches("\r\n").count());
-        assert_balanced(&out);
+        crate::gi::validate_braces(&out).expect("balanced braces");
     }
 
     #[test]

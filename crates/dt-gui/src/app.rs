@@ -54,9 +54,11 @@ fn resolve_paths(game_dir: Option<&Path>) -> Result<GamePaths, String> {
 
 fn spawn_game_poll(ctx: egui::Context) -> Receiver<(bool, Option<SystemTime>)> {
     let (tx, rx) = channel();
+    // Screenshot lever: `DEADTUNE_FAKE_GAME=1` reports the game as running.
+    let fake = std::env::var_os("DEADTUNE_FAKE_GAME").is_some_and(|v| v == "1");
     std::thread::spawn(move || {
         loop {
-            let running = launch::is_game_running();
+            let running = fake || launch::is_game_running();
             let started = if running {
                 launch::game_started_at()
             } else {
@@ -142,6 +144,14 @@ impl App {
                         .map(|s| s.id);
                 }
                 self.startup_profile(&mut state);
+                // Screenshot lever: `DEADTUNE_SET=fps_max=144,r_shadows=true` edits after loading.
+                if let Ok(list) = std::env::var("DEADTUNE_SET") {
+                    for (name, value) in list.split(',').filter_map(|kv| kv.split_once('=')) {
+                        if let Err(e) = state.set_convar(name.trim(), value.trim().to_string()) {
+                            state.status = Some(Status::Error(e.to_string()));
+                        }
+                    }
+                }
                 self.screen = Screen::Main(Box::new(state));
             }
             Err(error) => {

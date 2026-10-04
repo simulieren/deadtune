@@ -965,5 +965,9 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
             ui,
             "Override model ported from OptimizationLock's gameinfo_updater.py (GPL-3.0).",
         );
+        widgets::hint(
+            ui,
+            "Inter typeface by The Inter Project Authors (rsms.me/inter), SIL Open Font License 1.1.",
+        );
     });
 }

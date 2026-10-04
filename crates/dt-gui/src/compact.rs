@@ -383,7 +383,12 @@ fn empty(ui: &mut Ui, body: Body, edits: &mut Vec<Edit>) {
     };
     theme::card().show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.label(RichText::new("Nothing pinned yet").size(15.0).strong());
+        ui.label(
+            RichText::new("Nothing pinned yet")
+                .size(15.0)
+                .strong()
+                .family(theme::semibold()),
+        );
         ui.add_space(2.0);
         ui.label(RichText::new(hint).color(WEAK));
         ui.add_space(8.0);
@@ -696,21 +701,5 @@ mod tests {
             matches("ai_foot_sweep_enable", "sweep"),
             "no friendly row, name still matches"
         );
-    }
-
-    /// The default fonts lack many symbols (an ellipsis once drew as a box); every
-    /// non-ASCII glyph this module draws must exist.
-    #[test]
-    fn every_glyph_renders_in_the_default_fonts() {
-        let mut fonts = egui::text::Fonts::new(
-            egui::epaint::text::TextOptions::default(),
-            egui::FontDefinitions::default(),
-        );
-        for text in ["·", "★"] {
-            assert!(
-                fonts.has_glyphs(&egui::FontId::proportional(13.0), text),
-                "{text:?} is missing from the default fonts"
-            );
-        }
     }
 }

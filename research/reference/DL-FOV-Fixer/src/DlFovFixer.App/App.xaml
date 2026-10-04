@@ -1,9 +1,0 @@
-<Application x:Class="DlFovFixer.App.App"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             ShutdownMode="OnExplicitShutdown">
-    <!--
-        App.xaml.cs merges DotNetLib.Tray's resources (WPF UI's themes and controls, then the kit's
-        Window style) once it holds the instance lock.
-    -->
-</Application>

@@ -96,7 +96,7 @@ pub fn recent_screenshots(dirs: &[PathBuf], limit: usize) -> Vec<PathBuf> {
         })
         .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
         .collect();
-    files.sort_by(|a, b| b.0.cmp(&a.0));
+    files.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
     files.into_iter().take(limit).map(|(_, p)| p).collect()
 }
 

@@ -212,11 +212,8 @@ pub fn start(ctx: egui::Context) -> Result<Remote, String> {
 pub fn sync(state: &mut AppState) {
     let Some(remote) = &state.remote else { return };
     let edits: Vec<(String, String)> = remote.rx.try_iter().collect();
-    let json = snapshot_json(state);
-    if let Some(remote) = &state.remote {
-        if let Ok(mut snap) = remote.snapshot.lock() {
-            *snap = json;
-        }
+    if let Ok(mut snap) = remote.snapshot.lock() {
+        *snap = snapshot_json(state);
     }
     for (name, value) in edits {
         if !state.settings.favourites.contains(&name) {

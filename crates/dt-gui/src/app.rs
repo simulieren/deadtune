@@ -24,7 +24,7 @@ pub enum Screen {
     Setup {
         input: String,
         error: Option<String>,
-        settings: Settings,
+        settings: Box<Settings>,
     },
     Main(Box<AppState>),
 }
@@ -82,7 +82,7 @@ impl App {
             screen: Screen::Setup {
                 input: String::new(),
                 error: None,
-                settings: settings.clone(),
+                settings: Box::new(settings.clone()),
             },
             data_dir,
             args,
@@ -127,7 +127,7 @@ impl App {
                         .map(|d| d.display().to_string())
                         .unwrap_or_default(),
                     error: Some(error),
-                    settings,
+                    settings: Box::new(settings),
                 };
             }
         }
@@ -158,11 +158,9 @@ impl App {
         };
         state.switch_profile(profile, true);
         let applied = state.preview.as_ref().is_ok_and(|p| !p.is_empty());
-        if applied {
-            if let Err(e) = state.apply() {
-                state.status = Some(Status::Error(format!("auto profile: {e}")));
-                return;
-            }
+        if applied && let Err(e) = state.apply() {
+            state.status = Some(Status::Error(format!("auto profile: {e}")));
+            return;
         }
         state.status = Some(Status::Info(format!(
             "{source:?} power: switched to {name}"
@@ -189,10 +187,10 @@ impl App {
                 wall: SystemTime::now(),
             });
             state.relaunch = next;
-            if action == Some(relaunch::Action::Launch) {
-                if let Err(e) = launch::launch(&state.settings.launch) {
-                    state.relaunch = Relaunch::Failed(e.to_string());
-                }
+            if action == Some(relaunch::Action::Launch)
+                && let Err(e) = launch::launch(&state.settings.launch)
+            {
+                state.relaunch = Relaunch::Failed(e.to_string());
             }
         }
         if let Some(result) = state.tick_live(Instant::now()) {
@@ -277,7 +275,7 @@ impl eframe::App for App {
             } => {
                 egui::CentralPanel::default().show(ui, |ui| {
                     if setup_ui(ui, input, error.as_deref()) {
-                        let mut settings = settings.clone();
+                        let mut settings = (**settings).clone();
                         settings.game_dir = Some(PathBuf::from(input.trim()));
                         reopen = Some(settings);
                     }

@@ -999,10 +999,10 @@ pub fn launch(ui: &mut egui::Ui, state: &mut AppState) {
     });
     ui.weak(launch::steam_url(&state.settings.launch));
     ui.horizontal(|ui| {
-        if ui.button("Launch game").clicked() {
-            if let Err(e) = launch::launch(&state.settings.launch) {
-                state.status = Some(Status::Error(e.to_string()));
-            }
+        if ui.button("Launch game").clicked()
+            && let Err(e) = launch::launch(&state.settings.launch)
+        {
+            state.status = Some(Status::Error(e.to_string()));
         }
         if ui
             .add_enabled(

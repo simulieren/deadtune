@@ -97,12 +97,17 @@ mod tests {
     #[test]
     fn round_trips_through_the_data_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let mut settings = Settings::default();
-        settings.game_dir = Some(PathBuf::from("/games/Deadlock"));
-        settings.favourites.insert("r_farz".into());
-        settings.bridge = BridgeKind::Netcon;
-        settings.power.enabled = true;
-        settings.power.battery = Some("Battery".into());
+        let settings = Settings {
+            game_dir: Some(PathBuf::from("/games/Deadlock")),
+            favourites: BTreeSet::from(["r_farz".to_string()]),
+            bridge: BridgeKind::Netcon,
+            power: PowerProfiles {
+                enabled: true,
+                ac: None,
+                battery: Some("Battery".into()),
+            },
+            ..Settings::default()
+        };
         settings.save(dir.path()).unwrap();
         assert_eq!(Settings::load(dir.path()), settings);
     }

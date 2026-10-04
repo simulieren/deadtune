@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Cross-compiles the Windows zip on this machine (MinGW, no Actions minutes) and publishes it.
+# Cross-compiles the Windows zip on this machine (MinGW, no Actions minutes) and publishes it,
+# together with the signed self-update payload (raw exe, .minisig, latest.json). See docs/releasing.md.
 #   scripts/release-local.sh              rolling `testing` prerelease from committed HEAD
-#   scripts/release-local.sh --no-upload  build the zip in target/release-local only
+#   scripts/release-local.sh --no-upload  build and sign everything in target/release-local only
 #   scripts/release-local.sh minor        semver release: bump 0.Y.0 -> 0.(Y+1).0, commit, tag, publish
 #   scripts/release-local.sh first        publish the current version as its first release (no bump)
 # Versioning is minor-only for now: every release is 0.Y.0 (enforced by dt-core's version test).
-# Needs: brew install mingw-w64; rustup target add x86_64-pc-windows-gnu; gh auth login.
+# Needs: brew install mingw-w64 minisign; rustup target add x86_64-pc-windows-gnu; gh auth login;
+# the release key at ~/.config/deadtune/release.key (or $DEADTUNE_RELEASE_KEY).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
@@ -14,6 +16,11 @@ mode="${1:-testing}"
 case "$mode" in testing|--no-upload|minor|first) ;; *)
   echo "usage: $0 [--no-upload|minor|first]  (only minor releases are allowed for now)" >&2; exit 2 ;;
 esac
+
+key="${DEADTUNE_RELEASE_KEY:-$HOME/.config/deadtune/release.key}"
+pubkey="$root/crates/dt-core/src/update/release.pub"
+command -v minisign >/dev/null || { echo "minisign not found: brew install minisign" >&2; exit 1; }
+[ -f "$key" ] || { echo "release key $key not found (set DEADTUNE_RELEASE_KEY; see docs/releasing.md)" >&2; exit 1; }
 
 version() { sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1; }
 
@@ -51,7 +58,11 @@ if [ "$mode" = testing ] && [ -z "$(git branch -r --contains "$sha" 2>/dev/null)
   exit 1
 fi
 [ -n "$(git status --porcelain --untracked-files=no)" ] && echo "note: uncommitted changes are not included; building $short"
-case "$mode" in minor|first) zip="deadtune-v$ver-windows-x64.zip" ;; *) zip=deadtune-windows-x64.zip ;; esac
+case "$mode" in
+minor|first) zip="deadtune-v$ver-windows-x64.zip" release="v$ver" channel=stable ;;
+*) zip=deadtune-windows-x64.zip release=testing channel=testing ;;
+esac
+exe=deadtune-windows-x64.exe
 
 out="$root/target/release-local"
 src="$out/src"
@@ -59,6 +70,7 @@ rm -rf "$src" && mkdir -p "$src"
 git archive "$sha" | tar -x -C "$src"
 export CARGO_TARGET_DIR="$out/cargo"
 export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
+export DEADTUNE_COMMIT="$sha"
 (cd "$src" && cargo build --release --target $target -p dt-gui -p dt-cli --features dt-gui/fetch,dt-cli/fetch \
   && cargo build --release --target $target -p dt-core --example hud_build)
 
@@ -70,13 +82,24 @@ cp "$rel/deadtune-cli.exe" "$rel/examples/hud_build.exe" "$src"/crates/dt-core/e
 echo "DeadTune $ver, $branch $sha (local $target build)" > "$stage/BUILD.txt"
 rm -f "$out/$zip" && (cd "$stage" && zip -qr "$out/$zip" .)
 (cd "$out" && shasum -a 256 "$zip" > "$zip.sha256")
-ls -l "$out/$zip"
+
+cp "$rel/deadtune.exe" "$out/$exe"
+minisign -S -s "$key" -m "$out/$exe" -x "$out/$exe.minisig" -t "deadtune $ver $sha windows-x64" </dev/null
+minisign -Vm "$out/$exe" -x "$out/$exe.minisig" -p "$pubkey" \
+  || { echo "signature does not verify with $pubkey: wrong release key?" >&2; exit 1; }
+(cd "$src" && cargo run -q -p dt-core --example make_manifest -- --channel "$channel" \
+  --version "$ver" --commit "$sha" --published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --notes-url "https://github.com/simulieren/deadtune/releases/tag/$release" \
+  --asset "windows-x64=https://github.com/simulieren/deadtune/releases/download/$release/$exe,$out/$exe,$out/$exe.minisig") \
+  > "$out/latest.json"
+update=("$out/$exe" "$out/$exe.minisig" "$out/latest.json")
+ls -l "$out/$zip" "${update[@]}"
 
 case "$mode" in
 --no-upload) exit 0 ;;
 testing)
   gh release delete testing --cleanup-tag --yes 2>/dev/null || true
-  gh release create testing "$out/$zip" "$out/$zip.sha256" --prerelease --target "$sha" \
+  gh release create testing "$out/$zip" "$out/$zip.sha256" "${update[@]}" --prerelease --target "$sha" \
     --title "Testing build $short (v$ver+, $branch, local)" \
     --notes "Untested in-between build of \`$branch\` at $sha, after v$ver. Get it on Windows with \`scripts/get-testing.ps1\`."
   echo "On Windows:  powershell -ExecutionPolicy Bypass -File scripts\\get-testing.ps1" ;;
@@ -84,6 +107,6 @@ minor|first)
   notes="$out/notes.md"
   { echo "DeadTune $tag for Windows x64. Download \`$zip\`, unzip, run \`deadtune.exe\`."; echo
     echo "## Changes"; git log --no-merges --format='- %s' ${prev:+$prev..}"$tag" | grep -v '^- Release v' | head -60; } > "$notes"
-  gh release create "$tag" "$out/$zip" "$out/$zip.sha256" --verify-tag --title "DeadTune $tag" --notes-file "$notes"
+  gh release create "$tag" "$out/$zip" "$out/$zip.sha256" "${update[@]}" --verify-tag --latest --title "DeadTune $tag" --notes-file "$notes"
   echo "On Windows:  powershell -ExecutionPolicy Bypass -File scripts\\get-testing.ps1 -Tag $tag" ;;
 esac

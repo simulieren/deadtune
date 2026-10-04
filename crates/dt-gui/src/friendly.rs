@@ -37,7 +37,10 @@ const LABELS: &[(&str, &str)] = &[
     ("r_particle_max_detail_level", "Effect detail"),
     ("r_particle_max_draw_distance", "Effect draw distance"),
     ("cl_particle_fallback_base", "Cheaper effects under load"),
-    ("cl_particle_fallback_multiplier", "Cheaper effects strength"),
+    (
+        "cl_particle_fallback_multiplier",
+        "Cheaper effects strength",
+    ),
     ("r_threaded_particles", "Effects on extra CPU threads"),
     ("r_farz", "View distance"),
     ("r_propsmaxdist", "Prop draw distance"),
@@ -55,26 +58,177 @@ const LABELS: &[(&str, &str)] = &[
 
 /// Short help per setting, written for players; falls back to the catalog notes.
 const HELP: &[(&str, &str)] = &[
-    ("fps_max", "Caps your frame rate. Set it near your monitor's refresh rate to save heat and battery."),
-    ("r_citadel_upscaling", "Renders at a lower resolution and upscales with DLSS or FSR. Big FPS win on most GPUs."),
-    ("r_citadel_antialiasing", "Smooths jagged edges. Off is a little faster and a little rougher."),
-    ("r_texture_stream_mip_bias", "Full keeps textures crisp. Lower levels blur them and use less video memory."),
-    ("r_texture_lod_scale", "Loads smaller textures. Half is hard to notice in a fight; Minimum looks muddy."),
-    ("r_shadows", "Turning shadows off is one of the biggest FPS wins, but the map looks flat."),
-    ("r_citadel_shadow_quality", "How sharp and far shadows are drawn."),
-    ("cl_globallight_shadow_mode", "Shadows cast by the sun. Off removes most shadow cost."),
-    ("lb_enable_dynamic_lights", "Lights from abilities and effects. Off also leaves hero portraits uncoloured in the shop."),
-    ("lb_enable_envmaps", "Reflections on wet and shiny surfaces. Off can make characters render black."),
-    ("r_ssao", "Soft contact shadows in corners. Off is a solid FPS win."),
-    ("cl_particle_max_count", "Caps how many particles are alive. Too low makes fights hard to read."),
-    ("r_particle_max_detail_level", "How detailed ability and hit effects are."),
-    ("r_farz", "How far the world is drawn. Shorter makes distant buildings pop in."),
-    ("sc_screen_size_lod_scale_override", "How soon models switch to cheaper versions. Lower makes heroes look worse."),
+    (
+        "fps_max",
+        "Caps your frame rate. Set it near your monitor's refresh rate to save heat and battery.",
+    ),
+    (
+        "r_citadel_upscaling",
+        "Renders at a lower resolution and upscales with DLSS or FSR. Big FPS win on most GPUs.",
+    ),
+    (
+        "r_citadel_antialiasing",
+        "Smooths jagged edges. Off is a little faster and a little rougher.",
+    ),
+    (
+        "r_texture_stream_mip_bias",
+        "Full keeps textures crisp. Lower levels blur them and use less video memory.",
+    ),
+    (
+        "r_texture_lod_scale",
+        "Loads smaller textures. Half is hard to notice in a fight; Minimum looks muddy.",
+    ),
+    (
+        "r_shadows",
+        "Turning shadows off is one of the biggest FPS wins, but the map looks flat.",
+    ),
+    (
+        "r_citadel_shadow_quality",
+        "How sharp and far shadows are drawn.",
+    ),
+    (
+        "cl_globallight_shadow_mode",
+        "Shadows cast by the sun. Off removes most shadow cost.",
+    ),
+    (
+        "lb_enable_dynamic_lights",
+        "Lights from abilities and effects. Off also leaves hero portraits uncoloured in the shop.",
+    ),
+    (
+        "lb_enable_envmaps",
+        "Reflections on wet and shiny surfaces. Off can make characters render black.",
+    ),
+    (
+        "r_ssao",
+        "Soft contact shadows in corners. Off is a solid FPS win.",
+    ),
+    (
+        "cl_particle_max_count",
+        "Caps how many particles are alive. Too low makes fights hard to read.",
+    ),
+    (
+        "r_particle_max_detail_level",
+        "How detailed ability and hit effects are.",
+    ),
+    (
+        "r_farz",
+        "How far the world is drawn. Shorter makes distant buildings pop in.",
+    ),
+    (
+        "sc_screen_size_lod_scale_override",
+        "How soon models switch to cheaper versions. Lower makes heroes look worse.",
+    ),
     ("r_grass_quality", "Grass density."),
-    ("sc_clutter_enable", "Small decorative props. Off also makes enemies easier to spot."),
+    (
+        "sc_clutter_enable",
+        "Small decorative props. Off also makes enemies easier to spot.",
+    ),
     ("panorama_max_fps", "Frame cap for menus and the shop."),
-    ("r_citadel_enable_pano_world_blur", "Blurs the world behind the shop. Off makes the shop much faster."),
-    ("thread_pool_option", "How work is spread over CPU cores. Presets disagree, so try both ways."),
+    (
+        "r_citadel_enable_pano_world_blur",
+        "Blurs the world behind the shop. Off makes the shop much faster.",
+    ),
+    (
+        "thread_pool_option",
+        "How work is spread over CPU cores. Presets disagree, so try both ways.",
+    ),
+    (
+        "csm_max_num_cascades_override",
+        "How much detail sun shadows keep at range. Auto lets the game decide.",
+    ),
+    (
+        "csm_max_shadow_dist_override",
+        "How far from you the sun still casts shadows. Auto lets the game decide.",
+    ),
+    (
+        "csm_max_visible_dist",
+        "Beyond this distance sun shadows are not drawn at all.",
+    ),
+    (
+        "csm_sst_max_visible_dist",
+        "How far away static shadows (buildings, props) are still drawn.",
+    ),
+    (
+        "lb_enable_shadow_casting",
+        "Lets lamps and ability lights cast shadows. Off is a solid FPS win.",
+    ),
+    (
+        "lb_dynamic_shadow_resolution",
+        "Lets the game lower shadow sharpness when it gets busy.",
+    ),
+    (
+        "lb_shadow_texture_width_override",
+        "Shadow sharpness. Auto picks a sensible size; tiny values look blocky.",
+    ),
+    (
+        "lb_shadow_texture_height_override",
+        "Shadow sharpness. Auto picks a sensible size; tiny values look blocky.",
+    ),
+    (
+        "r_citadel_distancefield_shadows",
+        "Soft, blurry-edged shadows. Off makes edges harder and saves GPU time.",
+    ),
+    (
+        "sc_disable_spotlight_shadows",
+        "Skips shadows from spotlights. On is a small FPS win.",
+    ),
+    (
+        "lb_max_visible_barn_lights_override",
+        "How many spotlights can be on screen at once.",
+    ),
+    (
+        "lb_max_visible_envmaps_override",
+        "How many reflective surfaces can be on screen at once.",
+    ),
+    (
+        "r_citadel_ssao_quality",
+        "How carefully contact shadows are drawn.",
+    ),
+    (
+        "r_effects_bloom",
+        "Glow around bright abilities and effects.",
+    ),
+    (
+        "r_enable_volume_fog",
+        "Light rays and hazy air. Off is a small FPS win.",
+    ),
+    ("r_citadel_fog_quality", "How carefully fog is drawn."),
+    (
+        "r_particle_max_draw_distance",
+        "Effects further away than this are skipped.",
+    ),
+    (
+        "cl_particle_fallback_base",
+        "How readily effects switch to cheaper versions when a fight gets busy.",
+    ),
+    (
+        "cl_particle_fallback_multiplier",
+        "How much cheaper effects get when a fight gets busy.",
+    ),
+    (
+        "r_threaded_particles",
+        "Simulates effects on spare CPU cores. Keep on unless you see stutter.",
+    ),
+    (
+        "r_propsmaxdist",
+        "How far away boxes and props are drawn. Too short hides breakables.",
+    ),
+    (
+        "r_size_cull_threshold",
+        "Hides objects smaller than this share of the screen. Higher also hides health bars sooner.",
+    ),
+    (
+        "sc_fade_distance_scale_override",
+        "How far away objects fade in. Auto lets the game decide.",
+    ),
+    (
+        "sc_instanced_mesh_lod_bias",
+        "Detail of grass, foliage and clutter in the distance.",
+    ),
+    (
+        "panorama_disable_blur",
+        "Skips the blur on menus. On is a small FPS win in the shop.",
+    ),
 ];
 
 /// Groups shown in the simple view, in display order. Each name is in `LABELS`.
@@ -151,10 +305,22 @@ pub const OPEN_GROUPS: usize = 3;
 
 /// The hero choices, from best looks to most FPS. Each maps to a community preset.
 pub const GOALS: &[(PresetId, &str, &str)] = &[
-    (PresetId::Vanilla, "Best looks", "The game as Valve ships it"),
+    (
+        PresetId::Vanilla,
+        "Best looks",
+        "The game as Valve ships it",
+    ),
     (PresetId::Sqooky, "Balanced", "More FPS, small visual cost"),
-    (PresetId::KaizMinspec, "More FPS", "Big FPS gain, looks worse"),
-    (PresetId::OptilockPotato, "Max FPS", "Everything off, for old PCs"),
+    (
+        PresetId::KaizMinspec,
+        "More FPS",
+        "Big FPS gain, looks worse",
+    ),
+    (
+        PresetId::OptilockPotato,
+        "Max FPS",
+        "Everything off, for old PCs",
+    ),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,8 +345,7 @@ pub enum Control {
     Levels(&'static [(&'static str, &'static str)]),
     Slider {
         unit: Unit,
-        /// Raw values with a name instead of a number, such as `0` for "Unlimited".
-        special: &'static [(f64, &'static str)],
+        special: Specials,
     },
 }
 
@@ -193,7 +358,12 @@ const LEVELS: &[(&str, &[(&str, &str)])] = &[
     ),
     (
         "r_texture_lod_scale",
-        &[("8", "Minimum"), ("4", "Quarter"), ("2", "Half"), ("1", "Full")],
+        &[
+            ("8", "Minimum"),
+            ("4", "Quarter"),
+            ("2", "Half"),
+            ("1", "Full"),
+        ],
     ),
     (
         "r_citadel_shadow_quality",
@@ -228,11 +398,21 @@ const LEVELS: &[(&str, &[(&str, &str)])] = &[
     ),
     (
         "cl_particle_fallback_base",
-        &[("0", "Off"), ("1", "Light"), ("5", "Medium"), ("10", "Strong")],
+        &[
+            ("0", "Off"),
+            ("1", "Light"),
+            ("5", "Medium"),
+            ("10", "Strong"),
+        ],
     ),
     (
         "cl_particle_fallback_multiplier",
-        &[("0", "Off"), ("2", "Light"), ("5", "Medium"), ("10", "Strong")],
+        &[
+            ("0", "Off"),
+            ("2", "Light"),
+            ("5", "Medium"),
+            ("10", "Strong"),
+        ],
     ),
     (
         "sc_instanced_mesh_lod_bias",
@@ -250,17 +430,25 @@ const LEVELS: &[(&str, &[(&str, &str)])] = &[
     ),
     (
         "thread_pool_option",
-        &[("-1", "Auto"), ("0", "Mode 0"), ("1", "Mode 1"), ("2", "Mode 2")],
+        &[
+            ("-1", "Auto"),
+            ("0", "Mode 0"),
+            ("1", "Mode 1"),
+            ("2", "Mode 2"),
+        ],
     ),
 ];
 
-const UNLIMITED_AT_ZERO: &[(f64, &str)] = &[(0.0, "Unlimited")];
-const UNLIMITED_AT_MINUS_ONE: &[(f64, &str)] = &[(-1.0, "Unlimited")];
-const AUTO_AT_MINUS_ONE: &[(f64, &str)] = &[(-1.0, "Auto")];
-const OFF_AT_ZERO: &[(f64, &str)] = &[(0.0, "Off")];
-const AUTO_OR_OFF: &[(f64, &str)] = &[(-1.0, "Auto"), (0.0, "Off")];
+/// Raw values with a name instead of a number, such as `0` for "Unlimited".
+pub type Specials = &'static [(f64, &'static str)];
 
-const SLIDERS: &[(&str, Unit, &[(f64, &str)])] = &[
+const UNLIMITED_AT_ZERO: Specials = &[(0.0, "Unlimited")];
+const UNLIMITED_AT_MINUS_ONE: Specials = &[(-1.0, "Unlimited")];
+const AUTO_AT_MINUS_ONE: Specials = &[(-1.0, "Auto")];
+const OFF_AT_ZERO: Specials = &[(0.0, "Off")];
+const AUTO_OR_OFF: Specials = &[(-1.0, "Auto"), (0.0, "Off")];
+
+const SLIDERS: &[(&str, Unit, Specials)] = &[
     ("fps_max", Unit::Fps, UNLIMITED_AT_ZERO),
     ("panorama_max_fps", Unit::Fps, &[]),
     ("cl_particle_max_count", Unit::Count, UNLIMITED_AT_ZERO),
@@ -364,6 +552,28 @@ pub fn slider_text(unit: Unit, special: &[(f64, &str)], value: f64) -> String {
         Unit::Scale => format!("{}%", (value * 100.0).round()),
         Unit::Percent => format!("{value}%"),
     }
+}
+
+/// Typed slider text back to a raw value: a special name, or a number in the unit shown.
+pub fn slider_parse(unit: Unit, special: &[(f64, &str)], text: &str) -> Option<f64> {
+    let text = text.trim();
+    if let Some((v, _)) = special
+        .iter()
+        .find(|(_, name)| name.eq_ignore_ascii_case(text))
+    {
+        return Some(*v);
+    }
+    let digits: String = text
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E'))
+        .collect();
+    let number: f64 = digits.parse().ok()?;
+    Some(match unit {
+        Unit::Metres if text.ends_with("km") => number * 1000.0 / 0.0254,
+        Unit::Metres => number / 0.0254,
+        Unit::Scale => number / 100.0,
+        Unit::Fps | Unit::Count | Unit::Pixels | Unit::Percent => number,
+    })
 }
 
 /// Curated settings for the simple view, in display order: labelled, impactful, not denylisted.
@@ -478,8 +688,7 @@ mod tests {
                         let v: f64 = raw.parse().unwrap();
                         assert!((lo..=hi).contains(&v), "{name} level {raw} outside range");
                     }
-                    let mut named: Vec<&str> =
-                        entry.presets.values().map(String::as_str).collect();
+                    let mut named: Vec<&str> = entry.presets.values().map(String::as_str).collect();
                     named.extend(entry.default.as_deref());
                     for raw in named {
                         if raw.starts_with("//") || raw.is_empty() {
@@ -515,6 +724,17 @@ mod tests {
             Some("High")
         );
         assert_eq!(level_label(&[("4", "Off")], "2"), None);
+        assert_eq!(
+            slider_parse(Unit::Fps, UNLIMITED_AT_ZERO, "unlimited"),
+            Some(0.0)
+        );
+        assert_eq!(slider_parse(Unit::Fps, &[], "144 FPS"), Some(144.0));
+        assert_eq!(
+            slider_parse(Unit::Metres, &[], "2 km").map(f64::round),
+            Some(78740.0)
+        );
+        assert_eq!(slider_parse(Unit::Scale, &[], "80%"), Some(0.8));
+        assert_eq!(slider_parse(Unit::Count, &[], "lots"), None);
     }
 
     #[test]

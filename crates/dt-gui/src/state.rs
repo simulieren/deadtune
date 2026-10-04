@@ -177,6 +177,8 @@ pub struct UiState {
     pub overrides_path: String,
     pub new_profile_name: String,
     pub hud_selected: Option<ElementId>,
+    /// The key-bind instructions card in the simple view, opened from the setup menu.
+    pub bind_help_open: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1092,7 +1094,10 @@ mod tests {
         state.comment_convar(CHEAT).unwrap();
         assert_eq!(state.changed_from_preset(), 3);
         assert!(state.is_changed(LIVE) && state.is_changed(CHEAT));
-        assert!(!state.is_changed("r_shadows"), "preset value is not a change");
+        assert!(
+            !state.is_changed("r_shadows"),
+            "preset value is not a change"
+        );
         state.revert_convar(CHEAT);
         assert_eq!(state.changed_from_preset(), 2);
         state.reset_to_preset();

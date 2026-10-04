@@ -6,6 +6,7 @@
 2. Double-click `deadtune.exe`.
 3. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. The app is not code-signed yet, so Windows shows this once per build.
 4. DeadTune finds Deadlock through Steam. If it can't, it asks you for the Deadlock folder, usually `C:\Program Files (x86)\Steam\steamapps\common\Deadlock`.
+5. On first launch, pick a starting preset (or "Keep my current settings") and press **Apply**. After that you land on the main screen: Overview with the goal cards, settings sections in the sidebar, HUD, and Safety & setup.
 
 DeadTune backs up `gameinfo.gi` and `video.txt` before it changes anything, and **Ranked-safe mode** puts the game back to stock in one click.
 
@@ -53,10 +54,72 @@ It cross-compiles with MinGW (`brew install mingw-w64`) and uses no GitHub Actio
 
 ## Developer: HUD test without the GUI (phase H0 in docs/plan-hud.md)
 
-Until the GUI's HUD tab lands, `tools\hud_build.exe` exercises the same code. Back up `game\citadel\gameinfo.gi` first.
+The HUD tab in the app is the normal way. `tools\hud_build.exe` runs the same code from the command line if you need to isolate a problem. Back up `game\citadel\gameinfo.gi` first.
 
 ```powershell
 .\tools\hud_build.exe "C:\Program Files (x86)\Steam\steamapps\common\Deadlock" tools\hud_layout.sample.toml --install
 ```
 
 It prints the planned change, installs `game\citadel\addons\pak77_dir.vpk`, and shows the one line `gameinfo.gi` needs (`Game citadel/addons`) if it is missing. Add that line, launch the game, and note what moved. Run it with a layout that has no edits to remove the addon again.
+
+## Verification checklist
+
+Work through this on the gaming PC, top to bottom. Each item is something we could not prove on the Mac. Tick it, or write what happened next to it. Phase 0 items from `PLAN.md` section 8 are marked **P0-n**, HUD spikes from `docs/plan-hud.md` are marked **H0-n**.
+
+### 1. Install and first launch
+- [ ] `deadtune.exe` starts from Explorer with no console window behind it.
+- [ ] Release `deadtune.exe` size (plan target: 5 MB or less).
+- [ ] DeadTune finds Deadlock on its own, including when the game is in a second Steam library.
+- [ ] Safety & setup > **Check setup** is all green, or every yellow/red row has a fix that makes sense. In particular "Game archive (HUD)" reads the real `pak01_dir.vpk`, and "Write cfg folder" passes under Program Files.
+- [ ] Byte check: an empty edit leaves the real stock `gameinfo.gi` identical (Check setup's "Lossless edit" row), and its line endings are reported as Windows (CRLF).
+
+### 2. First apply
+- [ ] Pick a goal card (e.g. More FPS), press Apply. `gameinfo.gi` and `video.txt` change; the backups list in Advanced > Backups shows the originals.
+- [ ] Both files still use CRLF line endings after Apply.
+- [ ] Deadlock launches and the change is visible in game (e.g. lower view distance). The game does not reset `video.txt` and keeps its VendorID / DeviceID / Version lines.
+- [ ] Switching to a preset drops the stock nested `rate { min default max }` block from ConVars when the preset lacks it. Check nothing network-related misbehaves (open question).
+- [ ] Undo last change and Restore original game files both bring the files back byte for byte.
+
+### 3. Live changes while playing
+- [ ] **P0-1**: Safety & setup > key bind: paste `bind F8 "exec deadtune_live"` in the console (F7). Change the FPS limit in DeadTune (or the mini window's **Send now (F8)**), press F8 in game: the value changes and the console shows `DeadTune: applied N`. Also check that `autoexec.cfg` runs.
+- [ ] The Copy button's text pastes into the F7 console.
+- [ ] Writing `deadtune_live.cfg` while the game has it open works (or fails with a clear message).
+- [ ] **P0-2**: launch with `-netconport 2121` (no `-tools`). Advanced > Settings > netcon **Probe**: does it connect? Does a push arrive? Repeat with `-tools`.
+- [ ] **P0-4**: in Hideout, tick Sandbox and push 3 or 4 "Cheat" convars. Which apply live? Do "Restart" ones get rejected?
+- [ ] **P0-6**: change a menu video setting in game. Does the game re-read `video.txt` without a restart?
+- [ ] Mini window: opens from the sidebar's "Mini window", stays on top of a borderless-windowed game, and Expand returns to the main window.
+
+### 4. Ranked
+- [ ] **P0-3**: with modified ConVars, can you queue matchmaking? With Ranked-safe mode on? With only the HUD addon installed (**H0-4**)?
+
+### 5. Restart loop
+- [ ] Apply + relaunch (Advanced): closes `deadlock.exe`, starts it through Steam, the countdown runs and "restart pending" clears.
+- [ ] Launch options with spaces or `+` survive the `steam://run` URL; note whether Steam shows a "launch with these options?" dialog.
+- [ ] **P0-5**: is there a `+map <name>` launch option that drops straight into sandbox/hideout?
+- [ ] DeadTune shows "Deadlock running" / "closed" correctly.
+
+### 6. Game updates
+- [ ] After a Steam update or "Verify integrity of game files", DeadTune shows the "Deadlock updated" banner and Re-apply works.
+
+### 7. HUD (`docs/plan-hud.md` phase H0)
+- [ ] **H0-1**: move the minimap in the HUD tab, Apply, launch. Does the generated `hud.vcss_c` load at all?
+- [ ] **H0-2, H0-7, H0-8**: do moves, scale and the ammo panel take effect; does the minimap scale hold in matches?
+- [ ] **H0-3**: with QoL Lite or QOL Lock installed too, which addon wins? Check setup should warn about the conflict.
+- [ ] **H0-5, H0-6**: crosshair convars live from console; which state shows `#hud_signature`.
+- [ ] **H0-9**: screenshot the vanilla HUD at 1920x1080 and compare with the HUD tab's preview boxes.
+
+### 8. Benchmark
+- [ ] **P0-7**: capture 3 identical 60 s runs with PresentMon, import each in Advanced > Bench. Variance under 3%? Note which CSV columns your PresentMon version writes (`MsBetweenPresents` or `FrameTime`).
+
+### 9. Edge cases
+- [ ] Apply while the game is running (writes go to disk for next launch; message says so).
+- [ ] Apply while antivirus or the game holds `gameinfo.gi` open: a friendly "Access is denied" style message, and no half-written file.
+- [ ] Advanced > Settings "Open folder" buttons open Explorer at backups, data and screenshots.
+- [ ] Laptop: power source shows AC vs battery correctly, and the auto power profile switches before launch.
+- [ ] Phone remote (built with `--features remote`): reachable from a phone through Windows Firewall, on the right network adapter.
+
+### 10. Developer checks (repo checkout on Windows)
+- [ ] `cargo test --workspace --all-features` passes, including the Windows-only `push_uses_crlf_on_windows`.
+- [ ] With `core.autocrlf=true`, a fresh clone still passes the catalog drift test.
+- [ ] `cargo test -p dt-core --features fetch -- --ignored fetch_latest` downloads every preset.
+- [ ] `tools\deadtune-cli.exe doctor` matches the GUI's Check setup; its y/N confirm prompt works in cmd and PowerShell.

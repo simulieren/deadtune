@@ -96,6 +96,8 @@ pub enum Mode {
     Compact,
 }
 
+/// A new tab (e.g. HUD) is one variant here, an entry in `ALL` and `label`, and one arm in
+/// `app::full_ui`; the compiler flags `label` and `full_ui`, not `ALL`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Tab {
     #[default]

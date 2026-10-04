@@ -419,11 +419,26 @@ pub fn plan(
         }
         let action = match info(id).kind {
             Kind::Textures => Action::Build,
-            _ => match (prepared.make)()? {
-                Some(build) => Action::Write(build),
+            _ => match (prepared.make)() {
+                Ok(Some(build)) => Action::Write(build),
                 // Nothing left to override (every particle group kept): same as off.
-                None => {
+                Ok(None) => {
                     addons.extend(rec.map(remove));
+                    continue;
+                }
+                // One addon failing to build must not block the others; an installed
+                // copy stays in place.
+                Err(e) => {
+                    addons.push(AddonPlan {
+                        id,
+                        path: rec.map_or_else(
+                            || dir.join(format!("pak{:02}_dir.vpk", info(id).slot)),
+                            |r| dir.join(&r.file),
+                        ),
+                        action: Action::Unavailable(Blocker::GameFiles(e.to_string())),
+                        input: None,
+                        ships: Vec::new(),
+                    });
                     continue;
                 }
             },
@@ -779,6 +794,28 @@ pub(crate) mod tests {
             .unwrap_or_default();
         names.sort();
         names
+    }
+
+    #[test]
+    fn an_addon_that_fails_to_build_only_blocks_itself() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        let broken = BTreeMap::from([(
+            blur::STYLE.to_string(),
+            b"not a compiled stylesheet".to_vec(),
+        )]);
+        std::fs::write(paths.citadel_dir.join(GAME_PAK), vpk::write(&broken)).unwrap();
+        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
+        let config = enabled(&[AddonId::BlurDisabler, AddonId::SinnerLightFix]);
+        let plan = plan(&paths, &config, &state).expect("plan survives one broken addon");
+        assert!(matches!(
+            action(&plan, AddonId::BlurDisabler),
+            Action::Unavailable(Blocker::GameFiles(_))
+        ));
+        assert!(matches!(
+            action(&plan, AddonId::SinnerLightFix),
+            Action::Write(_)
+        ));
     }
 
     #[test]

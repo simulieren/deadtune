@@ -33,8 +33,9 @@ const HEADER_VERSION: u16 = 12;
 const TABLE_START: usize = 16;
 const ENTRY_LEN: usize = 12;
 const ALIGN: usize = 16;
-/// DATA layout: u32 hash prefix, u16 name count (always 0 for stylesheets), then text.
-const DATA_TEXT_OFFSET: usize = 6;
+/// DATA layout (ValveResourceFormat `Panorama.Read`): u32 CRC, u16 image count, then per image a
+/// NUL-terminated name, u16 width, u16 height and, from resource version 3, a u32 CRC; then text.
+const DATA_IMAGES_OFFSET: usize = 6;
 
 fn malformed(msg: &str) -> ResourceError {
     ResourceError::Malformed(msg.to_string())
@@ -144,30 +145,47 @@ fn data_block(res: &Resource) -> Result<&Block, ResourceError> {
         .ok_or(ResourceError::MissingBlock("DATA"))
 }
 
-fn data_text(data: &[u8]) -> Result<&str, ResourceError> {
-    let text = data
-        .get(DATA_TEXT_OFFSET..)
-        .ok_or_else(|| malformed("DATA block shorter than its 6-byte prefix"))?;
+/// Byte offset of the stylesheet text inside DATA, past the image table.
+fn text_offset(data: &[u8], type_version: u16) -> Result<usize, ResourceError> {
+    let images =
+        u16_at(data, 4).map_err(|_| malformed("DATA block shorter than its 6-byte prefix"))?;
+    let mut pos = DATA_IMAGES_OFFSET;
+    for _ in 0..images {
+        let nul = data
+            .get(pos..)
+            .and_then(|rest| rest.iter().position(|&b| b == 0))
+            .ok_or_else(|| malformed("DATA image name not terminated"))?;
+        pos += nul + 1 + 4 + if type_version >= 3 { 4 } else { 0 };
+    }
+    if pos > data.len() {
+        return Err(malformed("DATA image table runs past the block"));
+    }
+    Ok(pos)
+}
+
+fn data_text(data: &[u8], type_version: u16) -> Result<&str, ResourceError> {
+    let text = &data[text_offset(data, type_version)?..];
     std::str::from_utf8(text).map_err(|_| ResourceError::NotUtf8)
 }
 
-/// The CSS text of a compiled stylesheet (`DATA[6..]`).
+/// The CSS text of a compiled stylesheet (DATA after the CRC and image table).
 pub fn style_text(res: &Resource) -> Result<&str, ResourceError> {
-    data_text(&data_block(res)?.data)
+    data_text(&data_block(res)?.data, res.type_version)
 }
 
-/// Replaces the stylesheet text and recomputes the DATA prefix as
+/// Replaces the stylesheet text, keeping the image table, and recomputes the DATA prefix as
 /// `source_crc ^ crc32(text)`, where `source_crc = old_prefix ^ crc32(old_text)`.
 pub fn with_style_text(res: &Resource, text: &str) -> Result<Resource, ResourceError> {
     let old = &data_block(res)?.data;
-    let old_text = data_text(old)?;
+    let offset = text_offset(old, res.type_version)?;
+    let old_text = data_text(old, res.type_version)?;
     let old_prefix = u32_at(old, 0)?;
     let source_crc = old_prefix ^ crc32(old_text.as_bytes());
     let prefix = source_crc ^ crc32(text.as_bytes());
 
-    let mut data = Vec::with_capacity(DATA_TEXT_OFFSET + text.len());
+    let mut data = Vec::with_capacity(offset + text.len());
     data.extend_from_slice(&prefix.to_le_bytes());
-    data.extend_from_slice(&0u16.to_le_bytes());
+    data.extend_from_slice(&old[4..offset]);
     data.extend_from_slice(text.as_bytes());
 
     let mut out = res.clone();
@@ -191,6 +209,49 @@ mod tests {
 
     const VANILLA: &[u8] = include_bytes!("../../tests/fixtures/hud/hud_vanilla.vcss_c");
     const SMALL: &[u8] = include_bytes!("../../tests/fixtures/hud/hud_abilities_small.vcss_c");
+
+    /// The live game's base stylesheet lists images before its text; Sqooky's copy didn't.
+    fn with_images(bytes: &[u8]) -> Resource {
+        let mut res = Resource::parse(bytes).unwrap();
+        let version = res.type_version;
+        let data = &mut res
+            .blocks
+            .iter_mut()
+            .find(|b| &b.name == b"DATA")
+            .unwrap()
+            .data;
+        let mut table = vec![];
+        table.extend_from_slice(&2u16.to_le_bytes());
+        for name in ["file://{images}/a.png", "file://{images}/b\u{e9}.svg"] {
+            table.extend_from_slice(name.as_bytes());
+            table.push(0);
+            table.extend_from_slice(&[0xff, 0x00, 0x40, 0x80]);
+            if version >= 3 {
+                table.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+            }
+        }
+        data.splice(4..6, table);
+        res
+    }
+
+    #[test]
+    fn reads_and_rewrites_text_after_an_image_table() {
+        let plain = Resource::parse(VANILLA).unwrap();
+        let res = with_images(VANILLA);
+        assert_eq!(style_text(&res).unwrap(), style_text(&plain).unwrap());
+        let out = with_style_text(&res, "#x{}").unwrap();
+        assert_eq!(style_text(&out).unwrap(), "#x{}");
+        let (old, new) = (
+            &res.block(b"DATA").unwrap().data,
+            &out.block(b"DATA").unwrap().data,
+        );
+        let offset = text_offset(old, res.type_version).unwrap();
+        assert_eq!(
+            old[4..offset],
+            new[4..offset],
+            "image table kept byte for byte"
+        );
+    }
 
     #[test]
     fn round_trips_fixtures() {

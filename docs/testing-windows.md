@@ -102,6 +102,7 @@ Work through this on the gaming PC, top to bottom. Each item is something we cou
 - [ ] After a Steam update or "Verify integrity of game files", DeadTune shows the "Deadlock updated" banner and Re-apply works.
 
 ### 7. HUD (`docs/plan-hud.md` phase H0)
+- [ ] DeadTune's addon paks leave the VPK MD5 section zeroed (QoL Lite ships the same way). Confirm the game mounts them; Source2Viewer's verify step will report a checksum mismatch, which is expected.
 - [ ] **H0-1**: move the minimap in the HUD tab, Apply, launch. Does the generated `hud.vcss_c` load at all?
 - [ ] **H0-2, H0-7, H0-8**: do moves, scale and the ammo panel take effect; does the minimap scale hold in matches?
 - [ ] **H0-3**: with QoL Lite or QOL Lock installed too, which addon wins? Check setup should warn about the conflict.

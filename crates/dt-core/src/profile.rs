@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use serde::de::{Error as _, IntoDeserializer};
 
+use crate::addons::AddonsConfig;
 use crate::gi::{Override, Overrides};
 use crate::hud::HudLayout;
 use crate::preset::PresetId;
@@ -37,6 +38,8 @@ pub struct Profile {
     pub video: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "HudLayout::is_vanilla")]
     pub hud: HudLayout,
+    #[serde(default, skip_serializing_if = "AddonsConfig::is_default")]
+    pub addons: AddonsConfig,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -219,6 +222,7 @@ pub fn builtin_suggestions() -> Vec<Profile> {
             convars: ConVarEdits::default(),
             video: BTreeMap::new(),
             hud: HudLayout::default(),
+            addons: AddonsConfig::default(),
         },
         Profile {
             name: "Battery".into(),
@@ -239,6 +243,7 @@ pub fn builtin_suggestions() -> Vec<Profile> {
                 ("setting.r_particle_max_detail_level", "0"),
             ]),
             hud: HudLayout::default(),
+            addons: AddonsConfig::default(),
         },
     ]
 }
@@ -287,6 +292,7 @@ names = ["citadel_camera_hero_fov"]
             ]
             .into(),
             hud: HudLayout::default(),
+            addons: AddonsConfig::default(),
         }
     }
 
@@ -306,6 +312,7 @@ names = ["citadel_camera_hero_fov"]
             convars: ConVarEdits::default(),
             video: BTreeMap::new(),
             hud: HudLayout::default(),
+            addons: AddonsConfig::default(),
         });
         for p in profiles {
             let text = p.to_toml().unwrap();

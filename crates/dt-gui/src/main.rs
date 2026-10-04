@@ -1,5 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod addons_view;
 mod advanced;
 mod app;
 mod bench;

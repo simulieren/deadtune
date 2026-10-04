@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant, SystemTime};
 
+use dt_core::addons::AddonId;
 use dt_core::launch;
 use dt_core::locate::{self, GamePaths};
 use dt_core::profile::Profile;
@@ -152,6 +153,16 @@ impl App {
                         .map(|s| s.id);
                 }
                 self.startup_profile(&mut state);
+                // `DEADTUNE_ADDONS=particle_disabler,blur_disabler` turns addons on after loading;
+                // `DEADTUNE_ADDON_EXPAND=particle_disabler` unfolds that card's options.
+                if let Ok(list) = std::env::var("DEADTUNE_ADDONS") {
+                    for id in list.split(',').filter_map(|s| AddonId::parse(s.trim())) {
+                        state.set_addon_enabled(id, true);
+                    }
+                }
+                if let Ok(id) = std::env::var("DEADTUNE_ADDON_EXPAND") {
+                    state.ui.addon_expanded = AddonId::parse(id.trim());
+                }
                 // Screenshot lever: `DEADTUNE_SET=fps_max=144,r_shadows=true` edits after loading.
                 if let Ok(list) = std::env::var("DEADTUNE_SET") {
                     for (name, value) in list.split(',').filter_map(|kv| kv.split_once('=')) {
@@ -213,6 +224,11 @@ impl App {
             return;
         };
         state.poll_watch();
+        state.poll_checks();
+        state.poll_build();
+        if state.texture_build.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(200));
+        }
         let polls: Vec<_> = self
             .game_poll
             .as_ref()

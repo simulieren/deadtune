@@ -28,34 +28,39 @@ pub struct Check {
     pub detail: String,
     /// A plain-English next step for a player; set whenever the status is not `Pass`.
     pub fix: Option<String>,
+    /// A Windows Settings page (`ms-settings:` URI) where the player can make the change.
+    pub link: Option<&'static str>,
 }
 
 const VERIFY_FILES: &str = "In Steam, right-click Deadlock > Properties > Installed Files > Verify integrity of game files.";
 
-fn pass(name: &'static str, detail: impl Into<String>) -> Check {
+pub(crate) fn pass(name: &'static str, detail: impl Into<String>) -> Check {
     Check {
         name,
         status: CheckStatus::Pass,
         detail: detail.into(),
         fix: None,
+        link: None,
     }
 }
 
-fn warn(name: &'static str, detail: impl Into<String>, fix: &str) -> Check {
+pub(crate) fn warn(name: &'static str, detail: impl Into<String>, fix: &str) -> Check {
     Check {
         name,
         status: CheckStatus::Warn,
         detail: detail.into(),
         fix: Some(fix.to_string()),
+        link: None,
     }
 }
 
-fn fail(name: &'static str, detail: impl Into<String>, fix: &str) -> Check {
+pub(crate) fn fail(name: &'static str, detail: impl Into<String>, fix: &str) -> Check {
     Check {
         name,
         status: CheckStatus::Fail,
         detail: detail.into(),
         fix: Some(fix.to_string()),
+        link: None,
     }
 }
 
@@ -116,6 +121,7 @@ pub fn run(paths: Option<&GamePaths>, data_dir: &Path) -> Vec<Check> {
             "no"
         },
     ));
+    checks.extend(crate::winfps::checks(paths));
     checks
 }
 
@@ -177,6 +183,64 @@ fn game_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
     });
 
     hud_checks(paths, data_dir, checks);
+    addon_checks(paths, data_dir, checks);
+}
+
+fn addon_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
+    use crate::addons::{self, InstalledState as Addon};
+    let states = match addons::install::installed_state(paths, data_dir) {
+        Ok(states) => states,
+        Err(e) => {
+            checks.push(warn(
+                "Performance addons",
+                e.to_string(),
+                "DeadTune could not read its addons record. Turn every addon off, Apply, then turn them on again.",
+            ));
+            return;
+        }
+    };
+    let name = |id: &addons::AddonId| addons::info(*id).name;
+    let current: Vec<&str> = states
+        .iter()
+        .filter(|(_, s)| matches!(s, Addon::Current(_)))
+        .map(|(id, _)| name(id))
+        .collect();
+    let stale: Vec<&str> = states
+        .iter()
+        .filter(|(_, s)| matches!(s, Addon::Stale(_)))
+        .map(|(id, _)| name(id))
+        .collect();
+    let foreign: Vec<String> = states
+        .iter()
+        .filter_map(|(id, s)| match s {
+            Addon::Foreign(file) => Some(format!("{} ({file})", name(id))),
+            _ => None,
+        })
+        .collect();
+    checks.push(
+        if current.is_empty() && stale.is_empty() && foreign.is_empty() {
+            pass("Performance addons", "none installed")
+        } else {
+            pass(
+                "Performance addons",
+                format!("installed: {}", current.join(", ")),
+            )
+        },
+    );
+    if !stale.is_empty() {
+        checks.push(warn(
+            "Addons after update",
+            format!("built for an older game version: {}", stale.join(", ")),
+            "The game updated. Press Apply (or Build for the texture downscaler) to rebuild them from the new game files.",
+        ));
+    }
+    if !foreign.is_empty() {
+        checks.push(warn(
+            "Addon files",
+            format!("not what DeadTune wrote: {}", foreign.join(", ")),
+            "Another program replaced an addon file DeadTune installed. DeadTune will not touch it; delete it by hand if you want DeadTune's version back.",
+        ));
+    }
 }
 
 fn gameinfo_checks(text: &str, checks: &mut Vec<Check>) {

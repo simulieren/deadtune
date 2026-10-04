@@ -9,6 +9,10 @@ rust-version.workspace = true
 name = "deadtune-cli"
 path = "src/main.rs"
 
+[features]
+default = []
+fetch = ["dt-core/fetch"]
+
 [dependencies]
 dt-core.workspace = true
 anyhow.workspace = true

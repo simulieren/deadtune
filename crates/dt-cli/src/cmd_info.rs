@@ -74,6 +74,9 @@ pub fn status(env: &Env, args: &Args) -> CliResult {
     for line in cmd_hud::report_lines(env, &paths) {
         println!("{line}");
     }
+    for line in crate::cmd_addons::report_lines(env, &paths) {
+        println!("{line}");
+    }
     if let Some(file) = args.value("profile") {
         let profile = env::load_profile(Path::new(file))?;
         println!("pending for profile {:?}:", profile.name);
@@ -136,6 +139,9 @@ pub fn doctor(env: &Env, args: &Args) -> CliResult {
         println!("{tag}  {:<24} {}", c.name, c.detail);
         if let Some(fix) = &c.fix {
             println!("      fix: {fix}");
+        }
+        if let Some(link) = c.link {
+            println!("      settings: {link}");
         }
     }
     if checks.iter().any(|c| c.status == CheckStatus::Fail) {

@@ -47,6 +47,7 @@ fn reconcile(env: &Env, args: &Args, layout: &HudLayout) -> CliResult {
         video: None,
         denied: Vec::new(),
         hud: Some(hud),
+        addons: None,
     };
     let plan = apply::plan(
         &paths,

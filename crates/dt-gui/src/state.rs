@@ -6,6 +6,10 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Instant, SystemTime};
 
+use dt_core::addons::install::{Action, AddonsPlan, InstalledState};
+use dt_core::addons::textures::Progress;
+use dt_core::addons::{self, AddonId, AddonsConfig};
+use dt_core::addons::{TextureDownscale, TextureStats};
 use dt_core::apply::{
     self, ApplyContext, ApplyError, ApplyPlan, ApplyReport, BaseTexts, FileWrite,
 };
@@ -169,11 +173,12 @@ pub enum Section {
     World,
     Performance,
     Hud,
+    Addons,
     Safety,
 }
 
 impl Section {
-    pub const ALL: [Section; 8] = [
+    pub const ALL: [Section; 9] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -181,6 +186,7 @@ impl Section {
         Section::World,
         Section::Performance,
         Section::Hud,
+        Section::Addons,
         Section::Safety,
     ];
 
@@ -193,6 +199,7 @@ impl Section {
             Section::World => "World detail",
             Section::Performance => "Performance",
             Section::Hud => "HUD",
+            Section::Addons => "Addons",
             Section::Safety => "Safety & setup",
         }
     }
@@ -206,6 +213,9 @@ impl Section {
             Section::World => "How far and how detailed the world is drawn.",
             Section::Performance => "Frame rate caps, menus and CPU.",
             Section::Hud => "Move and resize parts of the in-game HUD.",
+            Section::Addons => {
+                "Community performance mods, rebuilt by DeadTune so they survive game updates."
+            }
             Section::Safety => "Undo, restore, ranked-safe mode and instant changes.",
         }
     }
@@ -234,7 +244,7 @@ pub enum Pending {
     },
     /// Settings edited since the last Apply on the same preset.
     Tweaks(usize),
-    /// HUD or video edits only.
+    /// HUD, addon or video edits only.
     Other,
 }
 
@@ -285,6 +295,7 @@ impl PlanSummary {
             queued: plan.queued_cheat.len(),
             next_launch: plan.restart.len()
                 + plan.video_changes.len()
+                + plan.addon_changes()
                 + (plan.live.len() - live_now),
             refused: plan.denied.len(),
         }
@@ -334,6 +345,10 @@ pub struct UiState {
     pub query: String,
     /// Narrows the mini window's list.
     pub mini_filter: String,
+    /// The addon card whose options are unfolded.
+    pub addon_expanded: Option<AddonId>,
+    /// Path typed into the addons page's Import box.
+    pub addon_import_path: String,
 }
 
 /// Starting layouts on the HUD tab. Each is plain `HudLayout` values, so a user
@@ -406,6 +421,25 @@ pub enum Status {
     Error(String),
 }
 
+enum BuildMsg {
+    Progress(Progress),
+    Done(Result<TextureStats, String>),
+}
+
+pub struct TextureBuild {
+    rx: Receiver<BuildMsg>,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub progress: Progress,
+}
+
+impl TextureBuild {
+    /// The build thread stops after the texture it is on and removes its output.
+    pub fn cancel(&self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 /// Result of an Apply click, for the caller to finish what needs a window.
 #[derive(Debug, Default)]
 pub struct Applied {
@@ -442,10 +476,18 @@ pub struct AppState {
     /// HUD plan for the layout it was built from; building reads the game archive, so it is
     /// rebuilt only when the layout changes or files on disk do.
     hud_cache: Option<(HudLayout, Result<Option<HudPlan>, String>)>,
+    /// Same for the addons plan, keyed by the config it was built from.
+    addons_cache: Option<(AddonsConfig, Result<Option<AddonsPlan>, String>)>,
+    /// A texture downscaler build running on its own thread.
+    pub texture_build: Option<TextureBuild>,
+    /// What the last finished build did, for the card.
+    pub last_texture_build: Option<Result<TextureStats, String>>,
     /// Creation time of the backup the last Undo restored; cleared by Apply.
     pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
     pub checks: Option<Vec<Check>>,
+    /// Doctor runs off the UI thread: on Windows it shells out to PowerShell for RAM info.
+    checks_rx: Option<Receiver<Vec<Check>>>,
     #[cfg(feature = "remote")]
     pub remote: Option<crate::remote::Remote>,
     watch: Option<(Watcher, Receiver<Vec<Change>>)>,
@@ -463,6 +505,7 @@ pub fn default_profile() -> Profile {
         convars: ConVarEdits::default(),
         video: BTreeMap::new(),
         hud: HudLayout::default(),
+        addons: AddonsConfig::default(),
     }
 }
 
@@ -532,8 +575,12 @@ impl AppState {
             status: None,
             welcome: None,
             hud_cache: None,
+            addons_cache: None,
+            texture_build: None,
+            last_texture_build: None,
             undo_cursor: None,
             checks: None,
+            checks_rx: None,
             #[cfg(feature = "remote")]
             remote: None,
             watch: None,
@@ -588,7 +635,28 @@ impl AppState {
     }
 
     pub fn run_checks(&mut self) {
-        self.checks = Some(dt_core::doctor::run(Some(&self.paths), &self.data_dir));
+        let (tx, rx) = channel();
+        let (paths, data_dir) = (self.paths.clone(), self.data_dir.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(dt_core::doctor::run(Some(&paths), &data_dir));
+        });
+        self.checks_rx = Some(rx);
+    }
+
+    pub fn checks_running(&self) -> bool {
+        self.checks_rx.is_some()
+    }
+
+    pub fn poll_checks(&mut self) {
+        let Some(rx) = &self.checks_rx else { return };
+        match rx.try_recv() {
+            Ok(checks) => {
+                self.checks = Some(checks);
+                self.checks_rx = None;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.checks_rx = None,
+        }
     }
 
     /// Restores the newest gameinfo.gi backup older than the last one undone (and different
@@ -653,6 +721,20 @@ impl AppState {
         // A HUD that cannot be built (missing game archive, foreign addon) must not block
         // convar changes; the HUD tab shows the reason instead.
         let hud = hud.unwrap_or(None);
+        let config = match self.settings.source {
+            TargetSource::Profile => &self.profile.addons,
+            TargetSource::RankedSafe => &AddonsConfig::default(),
+        };
+        let addons = match &self.addons_cache {
+            Some((cached, plan)) if cached == config => plan.clone(),
+            _ => {
+                let plan =
+                    apply::addons_plan(&self.paths, config, &self.store).map_err(|e| e.to_string());
+                self.addons_cache = Some((config.clone(), plan.clone()));
+                plan
+            }
+        };
+        let addons = addons.unwrap_or(None);
         let target = match self.settings.source {
             TargetSource::Profile => match &self.base {
                 Ok(base) => apply::target(
@@ -662,6 +744,7 @@ impl AppState {
                     &self.profile,
                     self.catalog,
                     hud,
+                    addons,
                 ),
                 Err(e) => {
                     self.preview = Err(e.clone());
@@ -670,7 +753,7 @@ impl AppState {
                 }
             },
             TargetSource::RankedSafe => {
-                apply::ranked_safe_target(&self.live.gameinfo, &self.store, hud)
+                apply::ranked_safe_target(&self.live.gameinfo, &self.store, hud, addons)
             }
         };
         self.preview = target
@@ -952,6 +1035,147 @@ impl AppState {
         self.known_gameinfo_sha = new_sha;
         self.live = new;
         self.hud_cache = None;
+        self.addons_cache = None;
+        self.refresh_preview();
+    }
+
+    /// Why the addons cannot be planned right now, if they cannot.
+    pub fn addons_error(&self) -> Option<&str> {
+        match &self.addons_cache {
+            Some((_, Err(e))) => Some(e),
+            _ => None,
+        }
+    }
+
+    /// What Apply would do for an addon, from the previewed plan.
+    pub fn addon_action(&self, id: AddonId) -> Option<&Action> {
+        self.preview
+            .as_ref()
+            .ok()?
+            .addons
+            .as_ref()?
+            .get(id)
+            .map(|a| &a.action)
+    }
+
+    pub fn addon_conflicts(&self, id: AddonId) -> Vec<&addons::Conflict> {
+        self.preview
+            .as_ref()
+            .ok()
+            .and_then(|p| p.addons.as_ref())
+            .map(|a| a.conflicts.iter().filter(|c| c.id == id).collect())
+            .unwrap_or_default()
+    }
+
+    /// Install state per addon the record knows, read fresh (one small file plus stats).
+    pub fn addon_states(&self) -> BTreeMap<AddonId, InstalledState> {
+        addons::install::installed_state(&self.paths, &self.store.root).unwrap_or_default()
+    }
+
+    pub fn addons_enabled_count(&self) -> usize {
+        self.profile.addons.enabled.len()
+    }
+
+    pub fn set_addon_enabled(&mut self, id: AddonId, on: bool) {
+        self.profile.addons.set_enabled(id, on);
+        self.refresh_preview();
+    }
+
+    /// `visible` keeps the particle group on screen while the disabler is on.
+    pub fn set_particle_group(&mut self, group: &str, visible: bool) {
+        if visible {
+            self.profile.addons.keep_particles.insert(group.to_string());
+        } else {
+            self.profile.addons.keep_particles.remove(group);
+        }
+        self.refresh_preview();
+    }
+
+    pub fn set_blur(&mut self, hud: bool, menu: bool) {
+        self.profile.addons.blur = addons::BlurOptions { hud, menu };
+        self.refresh_preview();
+    }
+
+    pub fn set_textures(&mut self, cfg: TextureDownscale) {
+        self.profile.addons.textures = cfg;
+        self.refresh_preview();
+    }
+
+    /// Takes a downloaded upstream file (or a folder of them) into the cache.
+    pub fn import_addon(&mut self, path: &std::path::Path) -> Result<Vec<AddonId>, String> {
+        let cache = addons::sources::cache_dir(&self.store.root);
+        let ids = addons::sources::import(&cache, path).map_err(|e| e.to_string())?;
+        self.addons_cache = None;
+        self.refresh_preview();
+        Ok(ids)
+    }
+
+    #[cfg(feature = "fetch")]
+    pub fn fetch_addon(&mut self, id: AddonId) -> Result<(), String> {
+        let cache = addons::sources::cache_dir(&self.store.root);
+        addons::sources::fetch(&cache, id).map_err(|e| e.to_string())?;
+        self.addons_cache = None;
+        self.refresh_preview();
+        Ok(())
+    }
+
+    /// Starts the texture downscaler build on a thread; `poll_build` picks up the result.
+    pub fn start_texture_build(&mut self) {
+        if self.texture_build.is_some() {
+            return;
+        }
+        let (tx, rx) = channel();
+        let paths = self.paths.clone();
+        let config = self.profile.addons.clone();
+        let state_dir = self.store.root.clone();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop = cancel.clone();
+        std::thread::spawn(move || {
+            let progress_tx = tx.clone();
+            let result = addons::install::build_textures(&paths, &config, &state_dir, &mut |p| {
+                let _ = progress_tx.send(BuildMsg::Progress(p));
+                if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::ops::ControlFlow::Break(())
+                } else {
+                    std::ops::ControlFlow::Continue(())
+                }
+            })
+            .map_err(|e| e.to_string());
+            let _ = tx.send(BuildMsg::Done(result));
+        });
+        self.last_texture_build = None;
+        self.texture_build = Some(TextureBuild {
+            rx,
+            cancel,
+            progress: Progress::default(),
+        });
+    }
+
+    /// Drains build messages; on completion the plan is refreshed and the status set.
+    pub fn poll_build(&mut self) {
+        let Some(build) = &mut self.texture_build else {
+            return;
+        };
+        let mut done = None;
+        for msg in build.rx.try_iter() {
+            match msg {
+                BuildMsg::Progress(p) => build.progress = p,
+                BuildMsg::Done(result) => done = Some(result),
+            }
+        }
+        let Some(result) = done else {
+            return;
+        };
+        self.texture_build = None;
+        self.status = Some(match &result {
+            Ok(stats) => Status::Info(format!(
+                "Texture pak built: {}. Takes effect next time you start Deadlock.",
+                addons::textures::summary(stats)
+            )),
+            Err(e) => Status::Error(format!("texture build: {e}")),
+        });
+        self.last_texture_build = Some(result);
+        self.addons_cache = None;
         self.refresh_preview();
     }
 
@@ -1068,6 +1292,7 @@ impl AppState {
         self.banner = None;
         self.undo_cursor = None;
         self.hud_cache = None;
+        self.addons_cache = None;
         self.refresh_preview();
         Ok(applied)
     }
@@ -1173,6 +1398,7 @@ impl AppState {
         self.store.restore(entry, live)?;
         self.live = LiveFiles::read(&self.paths)?;
         self.hud_cache = None;
+        self.addons_cache = None;
         self.known_gameinfo_sha = sha256_hex(self.live.gameinfo.as_bytes());
         self.refresh_preview();
         Ok(())
@@ -1674,6 +1900,20 @@ mod tests {
         assert!(!state.settings.favourites.contains(LIVE));
         state.toggle_pin(LIVE);
         assert!(!state.is_pinned(LIVE));
+    }
+
+    #[test]
+    fn checks_run_in_the_background_and_land_on_poll() {
+        let (_dir, mut state) = state();
+        state.run_checks();
+        assert!(state.checks_running());
+        let deadline = Instant::now() + std::time::Duration::from_secs(10);
+        while state.checks_running() && Instant::now() < deadline {
+            state.poll_checks();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let checks = state.checks.as_ref().expect("checks arrived");
+        assert!(!checks.is_empty());
     }
 
     #[test]

@@ -18,3 +18,4 @@ pub mod profile;
 pub mod texture;
 pub mod video;
 pub mod watch;
+pub mod winfps;

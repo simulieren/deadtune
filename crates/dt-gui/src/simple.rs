@@ -1599,5 +1599,13 @@ pub fn check_setup(ui: &mut Ui, state: &mut AppState, plain: bool) {
         {
             ui.label(format!("    What to do: {fix}"));
         }
+        if check.status != CheckStatus::Pass
+            && let Some(uri) = check.link
+        {
+            ui.horizontal(|ui| {
+                ui.add_space(24.0);
+                ui.hyperlink_to("Open Windows Settings", uri);
+            });
+        }
     }
 }

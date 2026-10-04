@@ -140,6 +140,9 @@ pub fn doctor(env: &Env, args: &Args) -> CliResult {
         if let Some(fix) = &c.fix {
             println!("      fix: {fix}");
         }
+        if let Some(link) = c.link {
+            println!("      settings: {link}");
+        }
     }
     if checks.iter().any(|c| c.status == CheckStatus::Fail) {
         Err(fail("doctor found failures"))

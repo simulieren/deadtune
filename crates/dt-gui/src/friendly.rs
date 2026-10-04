@@ -1,12 +1,13 @@
-//! Plain-language copy for the simple view: setting labels, preset blurbs, human errors.
+//! Plain-language copy for the simple view: setting labels, named levels, groups, goals,
+//! preset blurbs and human errors.
 
-use dt_core::catalog::{Catalog, Impact};
+use dt_core::catalog::{Catalog, Impact, Kind};
 use dt_core::preset::PresetId;
 
-/// Friendly labels for the curated high/medium-impact convars, in display order.
+/// Friendly labels for the curated high/medium-impact convars.
 const LABELS: &[(&str, &str)] = &[
     ("fps_max", "FPS limit"),
-    ("r_citadel_upscaling", "Upscaling (DLSS / FSR)"),
+    ("r_citadel_upscaling", "Upscaling"),
     ("r_citadel_antialiasing", "Anti-aliasing"),
     ("r_texture_stream_mip_bias", "Texture sharpness"),
     ("r_texture_lod_scale", "Texture size"),
@@ -18,14 +19,11 @@ const LABELS: &[(&str, &str)] = &[
     ("csm_max_visible_dist", "Sun shadow distance"),
     ("csm_sst_max_visible_dist", "Static shadow distance"),
     ("lb_enable_shadow_casting", "Light shadows"),
-    (
-        "lb_dynamic_shadow_resolution",
-        "Automatic shadow resolution",
-    ),
+    ("lb_dynamic_shadow_resolution", "Adaptive shadow resolution"),
     ("lb_shadow_texture_width_override", "Shadow map width"),
     ("lb_shadow_texture_height_override", "Shadow map height"),
     ("r_citadel_distancefield_shadows", "Soft shadows"),
-    ("sc_disable_spotlight_shadows", "Turn off spotlight shadows"),
+    ("sc_disable_spotlight_shadows", "Skip spotlight shadows"),
     ("lb_enable_dynamic_lights", "Ability lighting"),
     ("lb_enable_envmaps", "Reflections"),
     ("lb_max_visible_barn_lights_override", "Spotlight limit"),
@@ -39,10 +37,7 @@ const LABELS: &[(&str, &str)] = &[
     ("r_particle_max_detail_level", "Effect detail"),
     ("r_particle_max_draw_distance", "Effect draw distance"),
     ("cl_particle_fallback_base", "Cheaper effects under load"),
-    (
-        "cl_particle_fallback_multiplier",
-        "Cheaper effects strength",
-    ),
+    ("cl_particle_fallback_multiplier", "Cheaper effects strength"),
     ("r_threaded_particles", "Effects on extra CPU threads"),
     ("r_farz", "View distance"),
     ("r_propsmaxdist", "Prop draw distance"),
@@ -53,20 +48,329 @@ const LABELS: &[(&str, &str)] = &[
     ("r_grass_quality", "Grass"),
     ("sc_clutter_enable", "Small clutter"),
     ("panorama_max_fps", "Menu FPS limit"),
-    ("panorama_disable_blur", "Turn off menu blur"),
+    ("panorama_disable_blur", "Skip menu blur"),
     ("r_citadel_enable_pano_world_blur", "Blur behind the shop"),
     ("thread_pool_option", "CPU thread mode"),
+];
+
+/// Short help per setting, written for players; falls back to the catalog notes.
+const HELP: &[(&str, &str)] = &[
+    ("fps_max", "Caps your frame rate. Set it near your monitor's refresh rate to save heat and battery."),
+    ("r_citadel_upscaling", "Renders at a lower resolution and upscales with DLSS or FSR. Big FPS win on most GPUs."),
+    ("r_citadel_antialiasing", "Smooths jagged edges. Off is a little faster and a little rougher."),
+    ("r_texture_stream_mip_bias", "Full keeps textures crisp. Lower levels blur them and use less video memory."),
+    ("r_texture_lod_scale", "Loads smaller textures. Half is hard to notice in a fight; Minimum looks muddy."),
+    ("r_shadows", "Turning shadows off is one of the biggest FPS wins, but the map looks flat."),
+    ("r_citadel_shadow_quality", "How sharp and far shadows are drawn."),
+    ("cl_globallight_shadow_mode", "Shadows cast by the sun. Off removes most shadow cost."),
+    ("lb_enable_dynamic_lights", "Lights from abilities and effects. Off also leaves hero portraits uncoloured in the shop."),
+    ("lb_enable_envmaps", "Reflections on wet and shiny surfaces. Off can make characters render black."),
+    ("r_ssao", "Soft contact shadows in corners. Off is a solid FPS win."),
+    ("cl_particle_max_count", "Caps how many particles are alive. Too low makes fights hard to read."),
+    ("r_particle_max_detail_level", "How detailed ability and hit effects are."),
+    ("r_farz", "How far the world is drawn. Shorter makes distant buildings pop in."),
+    ("sc_screen_size_lod_scale_override", "How soon models switch to cheaper versions. Lower makes heroes look worse."),
+    ("r_grass_quality", "Grass density."),
+    ("sc_clutter_enable", "Small decorative props. Off also makes enemies easier to spot."),
+    ("panorama_max_fps", "Frame cap for menus and the shop."),
+    ("r_citadel_enable_pano_world_blur", "Blurs the world behind the shop. Off makes the shop much faster."),
+    ("thread_pool_option", "How work is spread over CPU cores. Presets disagree, so try both ways."),
+];
+
+/// Groups shown in the simple view, in display order. Each name is in `LABELS`.
+pub const GROUPS: &[(&str, &[&str])] = &[
+    ("Frame rate", &["fps_max", "panorama_max_fps"]),
+    (
+        "Image quality",
+        &[
+            "r_citadel_upscaling",
+            "r_citadel_antialiasing",
+            "r_texture_stream_mip_bias",
+            "r_texture_lod_scale",
+        ],
+    ),
+    (
+        "Shadows",
+        &[
+            "r_shadows",
+            "r_citadel_shadow_quality",
+            "cl_globallight_shadow_mode",
+            "csm_max_num_cascades_override",
+            "csm_max_shadow_dist_override",
+            "csm_max_visible_dist",
+            "csm_sst_max_visible_dist",
+            "lb_enable_shadow_casting",
+            "lb_dynamic_shadow_resolution",
+            "lb_shadow_texture_width_override",
+            "lb_shadow_texture_height_override",
+            "r_citadel_distancefield_shadows",
+            "sc_disable_spotlight_shadows",
+        ],
+    ),
+    (
+        "Lighting & effects",
+        &[
+            "lb_enable_dynamic_lights",
+            "lb_enable_envmaps",
+            "r_ssao",
+            "r_citadel_ssao_quality",
+            "r_effects_bloom",
+            "r_enable_volume_fog",
+            "r_citadel_fog_quality",
+            "lb_max_visible_barn_lights_override",
+            "lb_max_visible_envmaps_override",
+            "cl_particle_max_count",
+            "r_particle_max_detail_level",
+            "r_particle_max_draw_distance",
+            "cl_particle_fallback_base",
+            "cl_particle_fallback_multiplier",
+        ],
+    ),
+    (
+        "World detail",
+        &[
+            "r_farz",
+            "r_propsmaxdist",
+            "sc_screen_size_lod_scale_override",
+            "sc_instanced_mesh_lod_bias",
+            "r_grass_quality",
+            "sc_clutter_enable",
+            "r_size_cull_threshold",
+            "sc_fade_distance_scale_override",
+        ],
+    ),
+    (
+        "Menus & shop",
+        &["panorama_disable_blur", "r_citadel_enable_pano_world_blur"],
+    ),
+    ("CPU", &["thread_pool_option", "r_threaded_particles"]),
+];
+
+/// How many groups start expanded.
+pub const OPEN_GROUPS: usize = 3;
+
+/// The hero choices, from best looks to most FPS. Each maps to a community preset.
+pub const GOALS: &[(PresetId, &str, &str)] = &[
+    (PresetId::Vanilla, "Best looks", "The game as Valve ships it"),
+    (PresetId::Sqooky, "Balanced", "More FPS, small visual cost"),
+    (PresetId::KaizMinspec, "More FPS", "Big FPS gain, looks worse"),
+    (PresetId::OptilockPotato, "Max FPS", "Everything off, for old PCs"),
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unit {
+    Fps,
+    Count,
+    /// Source units, shown as metres (1 unit = 1 inch).
+    Metres,
+    Pixels,
+    /// A 0..1 scale shown as a percentage.
+    Scale,
+    /// Already a percentage.
+    Percent,
+}
+
+/// How the simple view edits a setting. Raw numbers never reach the screen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Control {
+    Toggle,
+    /// `(raw value, label)` from lowest to highest quality. Labels may repeat for aliases;
+    /// the first entry with a label is what clicking it sets.
+    Levels(&'static [(&'static str, &'static str)]),
+    Slider {
+        unit: Unit,
+        /// Raw values with a name instead of a number, such as `0` for "Unlimited".
+        special: &'static [(f64, &'static str)],
+    },
+}
+
+const LEVELS: &[(&str, &[(&str, &str)])] = &[
+    ("r_citadel_upscaling", &[("0", "Off"), ("4", "DLSS / FSR")]),
+    ("r_citadel_antialiasing", &[("0", "Off"), ("1", "On")]),
+    (
+        "r_texture_stream_mip_bias",
+        &[("8", "Lowest"), ("3", "Reduced"), ("0", "Full")],
+    ),
+    (
+        "r_texture_lod_scale",
+        &[("8", "Minimum"), ("4", "Quarter"), ("2", "Half"), ("1", "Full")],
+    ),
+    (
+        "r_citadel_shadow_quality",
+        &[("0", "Low"), ("1", "Medium"), ("2", "High"), ("3", "Ultra")],
+    ),
+    (
+        "cl_globallight_shadow_mode",
+        &[("0", "Off"), ("1", "Basic"), ("2", "Full")],
+    ),
+    (
+        "csm_max_num_cascades_override",
+        &[
+            ("0", "Lowest"),
+            ("1", "Low"),
+            ("2", "Medium"),
+            ("3", "High"),
+            ("4", "Max"),
+            ("-1", "Auto"),
+        ],
+    ),
+    (
+        "r_citadel_ssao_quality",
+        &[("0", "Low"), ("1", "Medium"), ("2", "High"), ("3", "Ultra")],
+    ),
+    (
+        "r_citadel_fog_quality",
+        &[("0", "Low"), ("1", "Medium"), ("2", "High")],
+    ),
+    (
+        "r_particle_max_detail_level",
+        &[("0", "Low"), ("1", "Medium"), ("2", "High"), ("3", "Ultra")],
+    ),
+    (
+        "cl_particle_fallback_base",
+        &[("0", "Off"), ("1", "Light"), ("5", "Medium"), ("10", "Strong")],
+    ),
+    (
+        "cl_particle_fallback_multiplier",
+        &[("0", "Off"), ("2", "Light"), ("5", "Medium"), ("10", "Strong")],
+    ),
+    (
+        "sc_instanced_mesh_lod_bias",
+        &[("15", "Low"), ("3", "Medium"), ("1.25", "High")],
+    ),
+    (
+        "r_grass_quality",
+        &[
+            ("0", "Off"),
+            ("1", "Low"),
+            ("2", "Medium"),
+            ("3", "High"),
+            ("4", "Ultra"),
+        ],
+    ),
+    (
+        "thread_pool_option",
+        &[("-1", "Auto"), ("0", "Mode 0"), ("1", "Mode 1"), ("2", "Mode 2")],
+    ),
+];
+
+const UNLIMITED_AT_ZERO: &[(f64, &str)] = &[(0.0, "Unlimited")];
+const UNLIMITED_AT_MINUS_ONE: &[(f64, &str)] = &[(-1.0, "Unlimited")];
+const AUTO_AT_MINUS_ONE: &[(f64, &str)] = &[(-1.0, "Auto")];
+const OFF_AT_ZERO: &[(f64, &str)] = &[(0.0, "Off")];
+const AUTO_OR_OFF: &[(f64, &str)] = &[(-1.0, "Auto"), (0.0, "Off")];
+
+const SLIDERS: &[(&str, Unit, &[(f64, &str)])] = &[
+    ("fps_max", Unit::Fps, UNLIMITED_AT_ZERO),
+    ("panorama_max_fps", Unit::Fps, &[]),
+    ("cl_particle_max_count", Unit::Count, UNLIMITED_AT_ZERO),
+    (
+        "lb_max_visible_barn_lights_override",
+        Unit::Count,
+        UNLIMITED_AT_MINUS_ONE,
+    ),
+    (
+        "lb_max_visible_envmaps_override",
+        Unit::Count,
+        UNLIMITED_AT_MINUS_ONE,
+    ),
+    (
+        "lb_shadow_texture_width_override",
+        Unit::Pixels,
+        AUTO_AT_MINUS_ONE,
+    ),
+    (
+        "lb_shadow_texture_height_override",
+        Unit::Pixels,
+        AUTO_AT_MINUS_ONE,
+    ),
+    ("csm_max_shadow_dist_override", Unit::Metres, AUTO_OR_OFF),
+    ("csm_max_visible_dist", Unit::Metres, OFF_AT_ZERO),
+    ("csm_sst_max_visible_dist", Unit::Metres, OFF_AT_ZERO),
+    ("r_farz", Unit::Metres, AUTO_AT_MINUS_ONE),
+    ("r_propsmaxdist", Unit::Metres, &[]),
+    ("r_particle_max_draw_distance", Unit::Metres, &[]),
+    (
+        "sc_screen_size_lod_scale_override",
+        Unit::Scale,
+        AUTO_AT_MINUS_ONE,
+    ),
+    (
+        "sc_fade_distance_scale_override",
+        Unit::Percent,
+        AUTO_AT_MINUS_ONE,
+    ),
+    ("r_size_cull_threshold", Unit::Percent, &[]),
 ];
 
 pub fn label(name: &str) -> Option<&'static str> {
     LABELS.iter().find(|(n, _)| *n == name).map(|(_, l)| *l)
 }
 
+pub fn help<'a>(name: &str, catalog: &'a Catalog) -> &'a str {
+    HELP.iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, h)| *h)
+        .or_else(|| catalog.get(name).map(|e| e.notes.as_str()))
+        .unwrap_or("")
+}
+
+/// The control for a curated setting; `None` for anything the simple view must not show raw.
+pub fn control(name: &str, kind: &Kind) -> Option<Control> {
+    if let Some((_, levels)) = LEVELS.iter().find(|(n, _)| *n == name) {
+        return Some(Control::Levels(levels));
+    }
+    if let Some((_, unit, special)) = SLIDERS.iter().find(|(n, _, _)| *n == name) {
+        return Some(Control::Slider {
+            unit: *unit,
+            special,
+        });
+    }
+    matches!(kind, Kind::Bool).then_some(Control::Toggle)
+}
+
+/// Whether two raw texts name the same number (`1.25` vs `1.250`, `1e+06` vs `1000000`).
+fn same_number(a: &str, b: &str) -> bool {
+    match (a.trim().parse::<f64>(), b.trim().parse::<f64>()) {
+        (Ok(x), Ok(y)) => (x - y).abs() < 1e-9,
+        _ => a.trim() == b.trim(),
+    }
+}
+
+/// The level label for a raw value, if the table names it.
+pub fn level_label(levels: &[(&str, &'static str)], raw: &str) -> Option<&'static str> {
+    levels
+        .iter()
+        .find(|(v, _)| same_number(v, raw))
+        .map(|(_, l)| *l)
+}
+
+pub fn slider_text(unit: Unit, special: &[(f64, &str)], value: f64) -> String {
+    if let Some((_, name)) = special.iter().find(|(v, _)| (v - value).abs() < 1e-9) {
+        return (*name).to_string();
+    }
+    match unit {
+        Unit::Fps => format!("{} FPS", value.round()),
+        Unit::Count => format!("{}", value.round()),
+        Unit::Metres => {
+            let metres = value * 0.0254;
+            if metres >= 1000.0 {
+                format!("{:.1} km", metres / 1000.0)
+            } else {
+                format!("{} m", metres.round())
+            }
+        }
+        Unit::Pixels => format!("{} px", value.round()),
+        Unit::Scale => format!("{}%", (value * 100.0).round()),
+        Unit::Percent => format!("{value}%"),
+    }
+}
+
 /// Curated settings for the simple view, in display order: labelled, impactful, not denylisted.
 pub fn simple_rows(catalog: &Catalog) -> Vec<&'static str> {
-    LABELS
+    GROUPS
         .iter()
-        .map(|(n, _)| *n)
+        .flat_map(|(_, names)| names.iter().copied())
         .filter(|n| {
             catalog
                 .get(n)
@@ -145,6 +449,84 @@ mod tests {
     }
 
     #[test]
+    fn every_label_is_in_exactly_one_group() {
+        for (name, _) in LABELS {
+            let count = GROUPS
+                .iter()
+                .flat_map(|(_, names)| names.iter())
+                .filter(|n| *n == name)
+                .count();
+            assert_eq!(count, 1, "{name} appears in {count} groups");
+        }
+        for name in GROUPS.iter().flat_map(|(_, names)| names.iter()) {
+            assert!(label(name).is_some(), "{name} is grouped but has no label");
+        }
+    }
+
+    #[test]
+    fn every_row_has_a_control_without_raw_numbers() {
+        let catalog = Catalog::embedded();
+        for name in simple_rows(catalog) {
+            let entry = catalog.get(name).unwrap();
+            let control = control(name, &entry.kind)
+                .unwrap_or_else(|| panic!("{name} would show a raw {:?}", entry.kind));
+            match control {
+                Control::Toggle => assert_eq!(entry.kind, Kind::Bool, "{name}"),
+                Control::Levels(levels) => {
+                    let [lo, hi] = entry.range.unwrap_or_else(|| panic!("{name} has no range"));
+                    for (raw, _) in levels {
+                        let v: f64 = raw.parse().unwrap();
+                        assert!((lo..=hi).contains(&v), "{name} level {raw} outside range");
+                    }
+                    let mut named: Vec<&str> =
+                        entry.presets.values().map(String::as_str).collect();
+                    named.extend(entry.default.as_deref());
+                    for raw in named {
+                        if raw.starts_with("//") || raw.is_empty() {
+                            continue;
+                        }
+                        assert!(
+                            level_label(levels, raw).is_some(),
+                            "{name}: preset value {raw} has no named level"
+                        );
+                    }
+                }
+                Control::Slider { .. } => {
+                    assert!(
+                        matches!(entry.kind, Kind::Int | Kind::Float) && entry.range.is_some(),
+                        "{name} is not a ranged number"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn slider_text_names_units_and_specials() {
+        assert_eq!(slider_text(Unit::Fps, UNLIMITED_AT_ZERO, 0.0), "Unlimited");
+        assert_eq!(slider_text(Unit::Fps, UNLIMITED_AT_ZERO, 144.0), "144 FPS");
+        assert_eq!(slider_text(Unit::Metres, AUTO_AT_MINUS_ONE, -1.0), "Auto");
+        assert_eq!(slider_text(Unit::Metres, &[], 8000.0), "203 m");
+        assert_eq!(slider_text(Unit::Metres, &[], 1e6), "25.4 km");
+        assert_eq!(slider_text(Unit::Scale, &[], 0.8), "80%");
+        assert_eq!(slider_text(Unit::Pixels, &[], 2048.0), "2048 px");
+        assert_eq!(
+            level_label(&[("1.25", "High"), ("4", "Off")], "1.250"),
+            Some("High")
+        );
+        assert_eq!(level_label(&[("4", "Off")], "2"), None);
+    }
+
+    #[test]
+    fn goals_are_blurbed_presets_ordered_by_fps() {
+        for (id, _, _) in GOALS {
+            assert!(preset_blurb(*id).is_some(), "{id:?}");
+        }
+        assert_eq!(GOALS.first().unwrap().0, PresetId::Vanilla);
+        assert_eq!(GOALS.last().unwrap().0, PresetId::OptilockPotato);
+    }
+
+    #[test]
     fn simple_copy_avoids_jargon() {
         let blurbs = dt_core::preset::all()
             .iter()
@@ -155,9 +537,15 @@ mod tests {
             "x",
         ]
         .map(human_error);
+        let levels = LEVELS
+            .iter()
+            .flat_map(|(_, l)| l.iter().map(|(_, label)| label.to_string()));
         for text in LABELS
             .iter()
             .map(|(_, l)| l.to_string())
+            .chain(HELP.iter().map(|(_, h)| h.to_string()))
+            .chain(GOALS.iter().map(|(_, g, s)| format!("{g} {s}")))
+            .chain(levels)
             .chain(blurbs.map(str::to_string))
             .chain(errors)
         {

@@ -6,15 +6,14 @@ use std::time::{Duration, Instant, SystemTime};
 
 use dt_core::launch;
 use dt_core::locate::{self, GamePaths};
-use dt_core::preset;
 use dt_core::profile::Profile;
-use eframe::egui::{self, Color32, RichText, ViewportCommand};
+use eframe::egui::{self, ViewportCommand};
 
 use crate::live::PushOutcome;
 use crate::relaunch::{self, Relaunch};
-use crate::settings::{Settings, TargetSource, View};
+use crate::settings::{Settings, View};
 use crate::state::{AppState, Mode, Section, Status, Tab};
-use crate::{Args, compact, profiles, simple, views};
+use crate::{Args, advanced, compact, profiles, simple, views};
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
 const GAME_POLL: Duration = Duration::from_secs(2);
@@ -131,6 +130,15 @@ impl App {
                         .find(|s| s.label().to_lowercase().starts_with(&name.to_lowercase()))
                 {
                     state.ui.section = section;
+                }
+                // `DEADTUNE_TAB=video` opens the advanced view on that tab.
+                if let Ok(name) = std::env::var("DEADTUNE_TAB")
+                    && let Some(tab) = Tab::ALL
+                        .into_iter()
+                        .find(|t| t.label().to_lowercase().starts_with(&name.to_lowercase()))
+                {
+                    state.settings.view = View::Advanced;
+                    state.ui.tab = tab;
                 }
                 if let Ok(query) = std::env::var("DEADTUNE_SEARCH") {
                     state.ui.query = query;
@@ -320,7 +328,7 @@ impl eframe::App for App {
             Screen::Main(state) => match (state.ui.mode, state.settings.view) {
                 (Mode::Compact, _) => compact::ui(ui, state),
                 (Mode::Full, View::Simple) => simple::simple(ui, state),
-                (Mode::Full, View::Advanced) => full_ui(ui, state, &mut reopen),
+                (Mode::Full, View::Advanced) => advanced::full_ui(ui, state, &mut reopen),
             },
         }
         if let Some(settings) = reopen {
@@ -328,165 +336,4 @@ impl eframe::App for App {
         }
         self.screenshot(&ctx);
     }
-}
-
-fn full_ui(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Settings>) {
-    egui::Panel::top("top").show(ui, |ui| top_bar(ui, state));
-    if state.banner.is_some() {
-        egui::Panel::top("banner").show(ui, |ui| banner(ui, state));
-    }
-    egui::Panel::bottom("footer").show(ui, |ui| footer(ui, state));
-    match state.ui.tab {
-        Tab::ConVars => {
-            egui::Panel::left("categories")
-                .default_size(200.0)
-                .show(ui, |ui| views::categories(ui, state));
-            egui::Panel::right("pending")
-                .default_size(380.0)
-                .show(ui, |ui| views::pending(ui, state));
-            egui::CentralPanel::default().show(ui, |ui| views::convar_list(ui, state));
-        }
-        Tab::Video => {
-            egui::Panel::right("pending")
-                .default_size(380.0)
-                .show(ui, |ui| views::pending(ui, state));
-            egui::CentralPanel::default().show(ui, |ui| views::video(ui, state));
-        }
-        tab => {
-            egui::CentralPanel::default().show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| match tab {
-                    Tab::Hud => crate::hud_view::hud(ui, state),
-                    Tab::Profiles => views::profiles(ui, state),
-                    Tab::Backups => views::backups(ui, state),
-                    Tab::Bench => views::bench(ui, state),
-                    Tab::Launch => views::launch(ui, state),
-                    Tab::Settings => views::settings(ui, state, reopen),
-                    Tab::ConVars | Tab::Video => {}
-                })
-            });
-        }
-    }
-}
-
-fn top_bar(ui: &mut egui::Ui, state: &mut AppState) {
-    ui.add_space(4.0);
-    ui.horizontal_wrapped(|ui| {
-        ui.heading("DeadTune");
-        ui.separator();
-        views::profile_picker(ui, state);
-        views::base_picker(ui, state);
-        ui.separator();
-        let ranked = state.settings.source == TargetSource::RankedSafe;
-        let label = if ranked { "Ranked-safe: ON" } else { "Ranked-safe: off" };
-        let button = egui::Button::new(label).selected(ranked);
-        if ui
-            .add(button)
-            .on_hover_text("One click restores the stock ConVars block (video.txt kept); one click goes back to your profile.")
-            .clicked()
-        {
-            match state.toggle_ranked_safe() {
-                Ok(_) => {
-                    let msg = if ranked { "profile restored" } else { "stock ConVars restored (ranked-safe)" };
-                    state.status = Some(Status::Info(msg.into()));
-                }
-                Err(e) => state.status = Some(Status::Error(e)),
-            }
-        }
-        let mut sandbox = state.ctx.in_sandbox;
-        if ui
-            .checkbox(&mut sandbox, "In hideout/sandbox")
-            .on_hover_text("Cheat-flagged convars are console-settable in hideout and sandbox, not in matchmaking.")
-            .changed()
-        {
-            state.set_in_sandbox(sandbox);
-        }
-        ui.separator();
-        if state.ctx.game_running {
-            ui.colored_label(Color32::LIGHT_GREEN, "Game running");
-        } else {
-            ui.weak("Game not running");
-        }
-        if let Some(pending) = &state.pending_restart {
-            ui.colored_label(Color32::GOLD, format!("Restart pending ({})", pending.names.len()))
-                .on_hover_text(pending.names.join("\n"));
-        }
-        if let Some(elapsed) = state.relaunch.elapsed(Instant::now()) {
-            ui.colored_label(Color32::GOLD, format!("Relaunching... {}s", elapsed.as_secs()));
-        }
-        if let Relaunch::Failed(e) = &state.relaunch {
-            ui.colored_label(Color32::LIGHT_RED, format!("Relaunch failed: {e}"));
-        }
-        ui.separator();
-        if ui.button("Simple view").clicked() {
-            state.settings.view = View::Simple;
-        }
-        if ui.button("Compact").on_hover_text("Small always-on-top window with favourites").clicked() {
-            compact::enter(ui.ctx(), state);
-        }
-    });
-    ui.horizontal(|ui| {
-        for tab in Tab::ALL {
-            ui.selectable_value(&mut state.ui.tab, tab, tab.label());
-        }
-    });
-    ui.add_space(2.0);
-}
-
-fn banner(ui: &mut egui::Ui, state: &mut AppState) {
-    let Some(banner) = state.banner.clone() else {
-        return;
-    };
-    egui::Frame::new()
-        .fill(Color32::from_rgb(90, 60, 10))
-        .inner_margin(8.0)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let text = match &banner.build {
-                    Some((_, to)) => format!(
-                        "Game updated (build {}), your config was overwritten. Re-apply?",
-                        to.as_deref().unwrap_or("?")
-                    ),
-                    None => "gameinfo.gi was changed outside DeadTune. Re-apply?".to_string(),
-                };
-                ui.label(RichText::new(text).strong().color(Color32::WHITE));
-                if ui.button("Re-apply").clicked() {
-                    match state.apply() {
-                        Ok(_) => state.status = Some(Status::Info("re-applied".into())),
-                        Err(e) => state.status = Some(Status::Error(e)),
-                    }
-                }
-                if ui.button("Dismiss").clicked() {
-                    state.banner = None;
-                }
-            });
-            egui::CollapsingHeader::new("What changed").show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .max_height(200.0)
-                    .show(ui, |ui| views::diff_view(ui, &banner.diff));
-            });
-        });
-}
-
-fn footer(ui: &mut egui::Ui, state: &AppState) {
-    ui.horizontal_wrapped(|ui| {
-        let mut authors: Vec<&str> = preset::all()
-            .iter()
-            .map(|p| p.author)
-            .filter(|a| !a.is_empty())
-            .collect();
-        authors.sort();
-        authors.dedup();
-        ui.weak(format!(
-            "DeadTune {} | GPL-3.0 | Presets by {}",
-            env!("CARGO_PKG_VERSION"),
-            authors.join(", ")
-        ));
-        if let Some(status) = &state.status {
-            ui.separator();
-            match status {
-                Status::Info(m) => ui.label(m),
-                Status::Error(m) => ui.colored_label(Color32::LIGHT_RED, m),
-            };
-        }
-    });
 }

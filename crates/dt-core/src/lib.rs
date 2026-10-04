@@ -16,3 +16,4 @@ pub mod preset;
 pub mod profile;
 pub mod video;
 pub mod watch;
+pub mod winfps;

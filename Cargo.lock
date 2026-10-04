@@ -591,6 +591,7 @@ dependencies = [
  "dt-core",
  "eframe",
  "serde",
+ "skrifa",
  "tempfile",
  "tiny_http",
  "toml",

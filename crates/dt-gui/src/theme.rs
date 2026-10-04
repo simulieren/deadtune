@@ -1,7 +1,10 @@
 //! DeadTune's look: a warm dark theme with one amber accent, applied to every screen.
 
+use std::sync::Arc;
+
 use eframe::egui::{
-    self, Color32, CornerRadius, FontFamily, FontId, Stroke, TextStyle, Theme, Visuals,
+    self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
+    Theme, Visuals,
 };
 
 pub const RAIL: Color32 = Color32::from_rgb(14, 15, 18);
@@ -23,28 +26,59 @@ pub fn title() -> TextStyle {
     TextStyle::Name("title".into())
 }
 
+/// Inter SemiBold, for headings, page titles and the selected rail entry.
+pub fn semibold() -> FontFamily {
+    FontFamily::Name("semibold".into())
+}
+
+/// Inter (subset by `scripts/subset-inter.sh`) ahead of egui's defaults, which stay as
+/// fallbacks for scripts and emoji the subset lacks; Hack stays the monospace font.
+pub fn fonts() -> FontDefinitions {
+    let mut fonts = FontDefinitions::default();
+    let fallbacks = fonts.families[&FontFamily::Proportional].clone();
+    for (name, family, bytes) in [
+        (
+            "Inter-Regular",
+            FontFamily::Proportional,
+            &include_bytes!("../assets/fonts/Inter-Regular.ttf")[..],
+        ),
+        (
+            "Inter-SemiBold",
+            semibold(),
+            &include_bytes!("../assets/fonts/Inter-SemiBold.ttf")[..],
+        ),
+    ] {
+        fonts
+            .font_data
+            .insert(name.into(), Arc::new(FontData::from_static(bytes)));
+        let list = std::iter::once(name.to_string())
+            .chain(fallbacks.iter().cloned())
+            .collect();
+        fonts.families.insert(family, list);
+    }
+    fonts
+}
+
 pub fn install(ctx: &egui::Context) {
     ctx.set_theme(Theme::Dark);
+    ctx.set_fonts(fonts());
     ctx.all_styles_mut(|style| {
         style.text_styles = [
             (
                 TextStyle::Small,
-                FontId::new(11.5, FontFamily::Proportional),
+                FontId::new(11.0, FontFamily::Proportional),
             ),
-            (TextStyle::Body, FontId::new(13.5, FontFamily::Proportional)),
+            (TextStyle::Body, FontId::new(13.0, FontFamily::Proportional)),
             (
                 TextStyle::Button,
-                FontId::new(13.5, FontFamily::Proportional),
+                FontId::new(13.0, FontFamily::Proportional),
             ),
-            (
-                TextStyle::Heading,
-                FontId::new(16.5, FontFamily::Proportional),
-            ),
+            (TextStyle::Heading, FontId::new(15.5, semibold())),
             (
                 TextStyle::Monospace,
                 FontId::new(12.5, FontFamily::Monospace),
             ),
-            (title(), FontId::new(22.0, FontFamily::Proportional)),
+            (title(), FontId::new(20.0, semibold())),
         ]
         .into();
         let s = &mut style.spacing;
@@ -113,4 +147,52 @@ pub fn card() -> egui::Frame {
         .stroke(Stroke::new(1.0, BORDER))
         .corner_radius(CornerRadius::same(RADIUS))
         .inner_margin(egui::Margin::symmetric(14, 12))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+    use std::path::Path;
+
+    use super::*;
+
+    fn non_ascii_chars(dir: &Path, out: &mut BTreeSet<char>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                non_ascii_chars(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                out.extend(text.chars().filter(|c| !c.is_ascii()));
+            }
+        }
+    }
+
+    /// The Inter subset is cut to a codepoint list, and a dropped glyph silently falls back
+    /// to another font or draws as a box (an ellipsis once did). Every non-ASCII char in
+    /// the GUI and core sources (where the labels live) must be in the primary font itself;
+    /// egui's `has_glyphs` can't tell, since any fallback face satisfies it.
+    #[test]
+    fn every_glyph_renders_in_inter() {
+        use skrifa::MetadataProvider;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut chars = BTreeSet::new();
+        non_ascii_chars(&root.join("src"), &mut chars);
+        non_ascii_chars(&root.join("../dt-core/src"), &mut chars);
+        assert!(chars.contains(&'·'), "source scan found nothing");
+        let defs = fonts();
+        for family in [FontFamily::Proportional, semibold()] {
+            let name = &defs.families[&family][0];
+            assert!(name.starts_with("Inter-"), "{family:?} starts with {name}");
+            let font = skrifa::FontRef::new(&defs.font_data[name].font).unwrap();
+            let charmap = font.charmap();
+            for c in chars.iter().copied().chain('A'..='z') {
+                assert!(
+                    charmap.map(c).is_some(),
+                    "{c:?} (U+{:04X}) is missing from {name}; add it to scripts/subset-inter.sh",
+                    c as u32
+                );
+            }
+        }
+    }
 }

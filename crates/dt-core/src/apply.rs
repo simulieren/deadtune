@@ -10,6 +10,8 @@ use crate::backup::{BackupStore, FileKind, atomic_write};
 use crate::bridge::{Bridge, BridgeError, ConsoleCmd};
 use crate::catalog::{ApplyClass, Catalog};
 use crate::gi::{self, GiError, Overrides};
+use crate::hud::install::{self as hud_install, HudAction, HudError, HudPlan, InstalledState};
+use crate::hud::{HudLayout, searchpaths};
 use crate::locate::GamePaths;
 use crate::preset::{self, PresetId};
 use crate::profile::{BaseRef, Profile};
@@ -54,6 +56,8 @@ pub struct Target {
     pub video: Option<String>,
     /// Profile edits dropped because the convar is on the denylist.
     pub denied: Vec<String>,
+    /// The HUD addon to write or remove, from [`hud_plan`].
+    pub hud: Option<HudPlan>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -69,11 +73,18 @@ pub struct ApplyPlan {
     pub gameinfo: Option<FileWrite>,
     pub video: Option<FileWrite>,
     pub video_changes: BTreeMap<String, String>,
+    pub hud: Option<HudPlan>,
 }
 
 impl ApplyPlan {
     pub fn is_empty(&self) -> bool {
-        self.gameinfo.is_none() && self.video.is_none() && self.live.is_empty()
+        self.gameinfo.is_none()
+            && self.video.is_none()
+            && self.live.is_empty()
+            && self
+                .hud
+                .as_ref()
+                .is_none_or(|h| h.action == HudAction::Nothing)
     }
 }
 
@@ -86,6 +97,8 @@ pub struct ApplyReport {
     /// Set when the files were written but the bridge push failed. The writes stand, so this
     /// is a report field rather than an `Err`; the live changes take effect next launch.
     pub bridge_error: Option<String>,
+    /// The HUD addon was written or removed.
+    pub hud_changed: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -98,6 +111,8 @@ pub enum ApplyError {
     Io(#[from] std::io::Error),
     #[error("bridge: {0}")]
     Bridge(#[from] BridgeError),
+    #[error("hud: {0}")]
+    Hud(#[from] HudError),
     #[error("{0} changed on disk since the plan was made; re-plan before applying")]
     Stale(PathBuf),
     #[error("base file {0}: {1}")]
@@ -121,21 +136,45 @@ pub fn resolve_base(profile: &Profile) -> Result<BaseTexts, ApplyError> {
     }
 }
 
+/// The HUD addon plan for `layout`, or `None` when there is nothing of ours to touch: a vanilla
+/// layout with no DeadTune addon installed. That keeps a foreign file at our addon path from
+/// blocking a convar-only apply. The install record lives in `store.root`.
+pub fn hud_plan(
+    paths: &GamePaths,
+    layout: &HudLayout,
+    store: &BackupStore,
+) -> Result<Option<HudPlan>, ApplyError> {
+    if layout.is_vanilla()
+        && matches!(
+            hud_install::installed_state(paths, &store.root)?,
+            InstalledState::None | InstalledState::Foreign
+        )
+    {
+        return Ok(None);
+    }
+    Ok(Some(hud_install::plan(paths, layout, &store.root)?))
+}
+
 /// Base ConVars block swapped into the live gameinfo (so SearchPaths edits survive), then the
 /// profile's convar overrides minus denylisted names; base video settings + profile video edits.
+/// When the HUD plan needs it, `Game citadel/addons` is added to SearchPaths.
 pub fn target(
     live_gameinfo: &str,
     live_video: Option<&str>,
     base: &BaseTexts,
     profile: &Profile,
     catalog: &Catalog,
+    hud: Option<HudPlan>,
 ) -> Result<Target, ApplyError> {
     let (denied, allowed): (Overrides, Overrides) = profile
         .overrides()
         .into_iter()
         .partition(|(name, _)| catalog.is_denied(name));
     let swapped = gi::replace_convars_block(live_gameinfo, &base.gameinfo)?;
-    let gameinfo = gi::apply_overrides(&swapped, &allowed)?.text;
+    let mut gameinfo = gi::apply_overrides(&swapped, &allowed)?.text;
+    if hud.as_ref().is_some_and(|h| h.needs_search_path) {
+        gameinfo = searchpaths::ensure_addons(&gameinfo).map_err(HudError::from)?;
+    }
     let video = live_video
         .map(|live| {
             let swapped = match &base.video {
@@ -149,6 +188,7 @@ pub fn target(
         gameinfo,
         video,
         denied: denied.into_keys().collect(),
+        hud,
     })
 }
 
@@ -166,6 +206,7 @@ pub fn plan(
     let wanted = gi::effective_values(&target.gameinfo)?;
     let mut plan = ApplyPlan {
         denied: target.denied.clone(),
+        hud: target.hud.clone(),
         ..ApplyPlan::default()
     };
 
@@ -218,7 +259,13 @@ fn file_write(path: &Path, before: &str, after: &str) -> Option<FileWrite> {
 }
 
 /// Ranked-safe target: the original (or vanilla preset) ConVars block, video.txt untouched.
-pub fn ranked_safe_target(live_gameinfo: &str, store: &BackupStore) -> Result<Target, ApplyError> {
+/// Pass `hud_plan(paths, &HudLayout::default(), store)` as `hud` to remove our addon too;
+/// SearchPaths is left as is, so a `Game citadel/addons` line stays (harmless, see `execute`).
+pub fn ranked_safe_target(
+    live_gameinfo: &str,
+    store: &BackupStore,
+    hud: Option<HudPlan>,
+) -> Result<Target, ApplyError> {
     let stock = match store.original(FileKind::GameInfo) {
         Some(entry) => fs::read_to_string(&entry.path)?,
         None => preset::info(PresetId::Vanilla).pinned_gameinfo.to_string(),
@@ -227,14 +274,15 @@ pub fn ranked_safe_target(live_gameinfo: &str, store: &BackupStore) -> Result<Ta
         gameinfo: gi::replace_convars_block(live_gameinfo, &stock)?,
         video: None,
         denied: Vec::new(),
+        hud,
     })
 }
 
-/// Checks every write against disk, snapshots originals, backs up, writes atomically, then
-/// pushes `live` through the bridge.
+/// Checks every write against disk, snapshots originals, backs up, writes atomically, installs
+/// or removes the HUD addon, then pushes `live` through the bridge.
 ///
-/// Anything failing before or during the file writes is an `Err`. A bridge failure after the
-/// writes is not: the report says what was written and carries the error in `bridge_error`.
+/// Anything failing before or during the file and addon writes is an `Err`. A bridge failure
+/// after them is not: the report says what was written and carries the error in `bridge_error`.
 pub fn execute(
     paths: &GamePaths,
     plan: &ApplyPlan,
@@ -266,10 +314,21 @@ pub fn execute(
         store.backup(*kind, &write.path)?;
         atomic_write(&write.path, write.after.as_bytes())?;
     }
+    let mut hud_changed = false;
+    if let Some(hud) = &plan.hud {
+        hud_install::execute(hud, paths, &store.root)?;
+        hud_changed = hud.action != HudAction::Nothing;
+        // A mounted search path whose directory is missing is a state we cannot vouch for in
+        // game, so the addons dir outlives our addon.
+        if searchpaths::has_addons(&fs::read_to_string(&paths.gameinfo)?).unwrap_or(false) {
+            fs::create_dir_all(hud_install::addons_dir(paths))?;
+        }
+    }
 
     let mut report = ApplyReport {
         wrote_gameinfo: plan.gameinfo.is_some(),
         wrote_video: plan.video.is_some(),
+        hud_changed,
         ..ApplyReport::default()
     };
     if let (Some(bridge), false) = (bridge, plan.live.is_empty()) {
@@ -281,6 +340,7 @@ pub fn execute(
     report.needs_restart = !plan.restart.is_empty()
         || !plan.queued_cheat.is_empty()
         || report.wrote_video
+        || report.hud_changed
         || report.pushed_live < plan.live.len();
     Ok(report)
 }

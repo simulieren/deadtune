@@ -9,6 +9,9 @@ use dt_core::backup::{BackupStore, FileKind};
 use dt_core::bridge::{Bridge, BridgeError, ConsoleCmd};
 use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::gi::{effective_values, read_convars};
+use dt_core::hud::install::{ADDON_FILE, GAME_PAK, HudAction, addons_dir};
+use dt_core::hud::searchpaths::has_addons;
+use dt_core::hud::{ElementEdit, ElementId, HudLayout};
 use dt_core::locate::{GamePaths, from_game_root};
 use dt_core::preset::{self, PresetId};
 use dt_core::profile::{BaseRef, ConVarEdits, Profile};
@@ -42,6 +45,7 @@ fn kaiz_profile() -> Profile {
             comment: vec![LIVE_COMMENTED.to_string()],
         },
         video: BTreeMap::new(),
+        hud: HudLayout::default(),
     }
 }
 
@@ -108,7 +112,15 @@ fn plan_for(install: &FakeInstall, profile: &Profile, ctx: ApplyContext) -> Appl
     let live = read(&install.paths.gameinfo);
     let live_video = read_opt(&install.paths.video);
     let base = resolve_base(profile).unwrap();
-    let tgt = target(&live, live_video.as_deref(), &base, profile, catalog()).unwrap();
+    let tgt = target(
+        &live,
+        live_video.as_deref(),
+        &base,
+        profile,
+        catalog(),
+        None,
+    )
+    .unwrap();
     plan(
         &install.paths,
         &live,
@@ -158,7 +170,7 @@ fn resolve_base_uses_pinned_preset_text_or_the_base_file() {
 fn target_takes_base_block_plus_edits_and_keeps_live_outside_convars() {
     let profile = kaiz_profile();
     let base = resolve_base(&profile).unwrap();
-    let tgt = target(VANILLA, None, &base, &profile, catalog()).unwrap();
+    let tgt = target(VANILLA, None, &base, &profile, catalog(), None).unwrap();
 
     let effective = effective_values(&tgt.gameinfo).unwrap();
     let base_effective = effective_values(KAIZ).unwrap();
@@ -195,7 +207,7 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
         ..kaiz_profile()
     };
     let base = resolve_base(&profile).unwrap();
-    let tgt = target(VANILLA, Some(LIVE_VIDEO), &base, &profile, catalog()).unwrap();
+    let tgt = target(VANILLA, Some(LIVE_VIDEO), &base, &profile, catalog(), None).unwrap();
     let video = tgt.video.unwrap();
     let settings: BTreeMap<_, _> = dt_core::video::read_settings(&video)
         .unwrap()
@@ -224,6 +236,7 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
         &base,
         &kaiz_video_edit,
         catalog(),
+        None,
     )
     .unwrap();
     let video = tgt.video.unwrap();
@@ -241,7 +254,7 @@ fn plan_buckets_follow_catalog_apply_classes() {
     let live_eff = effective_values(VANILLA).unwrap();
     let base = resolve_base(&profile).unwrap();
     let target_eff = effective_values(
-        &target(VANILLA, None, &base, &profile, catalog())
+        &target(VANILLA, None, &base, &profile, catalog(), None)
             .unwrap()
             .gameinfo,
     )
@@ -330,7 +343,7 @@ fn commenting_out_a_live_convar_pushes_its_catalog_default() {
         ..kaiz_profile()
     };
     let base = resolve_base(&profile).unwrap();
-    let applied = target(VANILLA, None, &base, &profile, catalog()).unwrap();
+    let applied = target(VANILLA, None, &base, &profile, catalog(), None).unwrap();
     let install = fake_install(&applied.gameinfo, None);
 
     let unknown_restart = read_convars(&applied.gameinfo)
@@ -412,6 +425,7 @@ fn execute_writes_backs_up_snapshots_and_pushes_then_reapply_is_a_no_op() {
             pushed_live: plan.live.len(),
             needs_restart: true,
             bridge_error: None,
+            hud_changed: false,
         }
     );
     assert_eq!(bridge.pushed, plan.live);
@@ -522,10 +536,10 @@ fn ranked_safe_restores_stock_block_and_keeps_modified_search_paths() {
     );
     let profile = kaiz_profile();
     let base = resolve_base(&profile).unwrap();
-    let tuned = target(&modded, None, &base, &profile, catalog()).unwrap();
+    let tuned = target(&modded, None, &base, &profile, catalog(), None).unwrap();
     let install = fake_install(&tuned.gameinfo, None);
 
-    let safe = ranked_safe_target(&tuned.gameinfo, &install.store).unwrap();
+    let safe = ranked_safe_target(&tuned.gameinfo, &install.store, None).unwrap();
     assert_eq!(safe.video, None);
     assert!(safe.gameinfo.contains("citadel/addons // mod manager"));
     assert_eq!(
@@ -552,7 +566,7 @@ fn ranked_safe_restores_stock_block_and_keeps_modified_search_paths() {
         .store
         .snapshot_original(FileKind::GameInfo, &original)
         .unwrap();
-    let safe = ranked_safe_target(&tuned.gameinfo, &install.store).unwrap();
+    let safe = ranked_safe_target(&tuned.gameinfo, &install.store, None).unwrap();
     assert_eq!(
         effective_values(&safe.gameinfo).unwrap(),
         effective_values(&custom_stock).unwrap(),
@@ -571,4 +585,123 @@ fn unified_diff_shows_changed_lines() {
     let diff = write.unified_diff();
     assert!(diff.contains("-b\n") && diff.contains("+B\n"), "{diff}");
     assert!(diff.contains("gameinfo.gi"));
+}
+
+fn with_game_pak(install: &FakeInstall) {
+    let hud = fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hud/hud_vanilla.vcss_c"),
+    )
+    .unwrap();
+    let files = BTreeMap::from([("panorama/styles/hud.vcss_c".to_string(), hud)]);
+    fs::write(
+        install.paths.citadel_dir.join(GAME_PAK),
+        dt_core::hud::vpk::write(&files),
+    )
+    .unwrap();
+}
+
+fn hud_profile() -> Profile {
+    let mut profile = kaiz_profile();
+    profile.hud.elements.insert(
+        ElementId::Minimap,
+        ElementEdit {
+            scale_pct: 120,
+            ..ElementEdit::default()
+        },
+    );
+    profile
+}
+
+fn plan_with_hud(install: &FakeInstall, profile: &Profile) -> ApplyPlan {
+    let live = read(&install.paths.gameinfo);
+    let hud = hud_plan(&install.paths, &profile.hud, &install.store).unwrap();
+    let base = resolve_base(profile).unwrap();
+    let tgt = target(&live, None, &base, profile, catalog(), hud).unwrap();
+    plan(
+        &install.paths,
+        &live,
+        None,
+        &tgt,
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn vanilla_hud_without_our_addon_plans_nothing_even_next_to_a_foreign_pak77() {
+    let install = fake_install(VANILLA, None);
+    assert_eq!(
+        hud_plan(&install.paths, &HudLayout::default(), &install.store).unwrap(),
+        None
+    );
+
+    let addons = addons_dir(&install.paths);
+    fs::create_dir_all(&addons).unwrap();
+    fs::write(addons.join(ADDON_FILE), b"someone else's mod").unwrap();
+    assert_eq!(
+        hud_plan(&install.paths, &HudLayout::default(), &install.store).unwrap(),
+        None,
+        "a foreign file at our path never blocks a convar-only apply"
+    );
+}
+
+#[test]
+fn hud_layout_installs_addon_and_mounts_addons_search_path_then_converges() {
+    let install = fake_install(VANILLA, None);
+    with_game_pak(&install);
+    let profile = hud_profile();
+    let plan = plan_with_hud(&install, &profile);
+    let hud = plan.hud.as_ref().unwrap();
+    assert!(matches!(hud.action, HudAction::Write(_)));
+    assert!(hud.needs_search_path);
+    let after = &plan.gameinfo.as_ref().unwrap().after;
+    assert!(has_addons(after).unwrap(), "target mounts citadel/addons");
+
+    let report = execute(&install.paths, &plan, &install.store, None).unwrap();
+    assert!(report.hud_changed && report.wrote_gameinfo);
+    assert!(addons_dir(&install.paths).join(ADDON_FILE).is_file());
+    assert!(has_addons(&read(&install.paths.gameinfo)).unwrap());
+
+    let again = plan_with_hud(&install, &profile);
+    assert!(
+        again.is_empty(),
+        "second apply has nothing to do: {again:?}"
+    );
+    assert_eq!(again.hud.unwrap().action, HudAction::Nothing);
+}
+
+#[test]
+fn ranked_safe_removes_our_addon_and_keeps_the_search_path_line() {
+    let install = fake_install(VANILLA, None);
+    with_game_pak(&install);
+    let applied = plan_with_hud(&install, &hud_profile());
+    execute(&install.paths, &applied, &install.store, None).unwrap();
+
+    let live = read(&install.paths.gameinfo);
+    let hud = hud_plan(&install.paths, &HudLayout::default(), &install.store).unwrap();
+    assert_eq!(hud.as_ref().unwrap().action, HudAction::Remove);
+    let safe = ranked_safe_target(&live, &install.store, hud).unwrap();
+    let plan = plan(
+        &install.paths,
+        &live,
+        None,
+        &safe,
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap();
+    let report = execute(&install.paths, &plan, &install.store, None).unwrap();
+
+    assert!(report.hud_changed);
+    assert!(!addons_dir(&install.paths).join(ADDON_FILE).exists());
+    let gameinfo = read(&install.paths.gameinfo);
+    assert_eq!(
+        effective_values(&gameinfo).unwrap(),
+        effective_values(VANILLA).unwrap()
+    );
+    assert!(
+        has_addons(&gameinfo).unwrap() && addons_dir(&install.paths).is_dir(),
+        "the mount line stays and points at an existing, now empty, addons dir"
+    );
 }

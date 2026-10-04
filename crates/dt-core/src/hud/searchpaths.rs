@@ -1,6 +1,7 @@
 //! Addon VPKs only mount when `gameinfo.gi` SearchPaths lists `Game citadel/addons`.
 //! Pure text edits; the apply pipeline decides when to write. Touches nothing but
-//! the `SearchPaths` block, preserving EOL style and indentation.
+//! the `SearchPaths` block, preserving EOL style and indentation. The line goes
+//! right before the first plain `Game` entry, so language paths stay mounted first.
 
 pub const ADDONS_LINE_VALUE: &str = "citadel/addons";
 
@@ -35,8 +36,10 @@ pub fn has_addons(gameinfo: &str) -> Result<bool, SearchPathsError> {
     Ok(find_addons(&parse_block(gameinfo)?))
 }
 
-/// Inserts `Game citadel/addons` as the first line of SearchPaths (addons must win
-/// over `Game citadel`). Returns the input unchanged if already present.
+/// Inserts `Game citadel/addons` immediately before the first plain `Game` entry, after
+/// the language, low-violence, `Mod` and `Write` entries (the layout DMM and community
+/// presets use), so addons win over `Game citadel`. With no plain `Game` entry it goes
+/// before the closing brace. Returns the input unchanged if already present.
 pub fn ensure_addons(gameinfo: &str) -> Result<String, SearchPathsError> {
     let block = parse_block(gameinfo)?;
     if find_addons(&block) {
@@ -44,17 +47,15 @@ pub fn ensure_addons(gameinfo: &str) -> Result<String, SearchPathsError> {
     }
     let eol = if has_crlf(gameinfo) { "\r\n" } else { "\n" };
 
-    let (at, indent, key_gap) = match block.entries.first() {
-        Some(first) => (first.start, first.indent, key_gap_for(first)),
-        None => (block.close_line_start, "", "\t\t\t\t".to_owned()),
-    };
-    // With no entries, indent one level deeper than the closing brace.
-    let empty_indent;
-    let indent = if block.entries.is_empty() {
-        empty_indent = format!("{}    ", block.close_indent);
-        empty_indent.as_str()
-    } else {
-        indent
+    let anchor = block.entries.iter().find(|e| e.key.eq_ignore_ascii_case("Game"));
+    let (at, indent, key_gap) = match (anchor, block.entries.last()) {
+        (Some(e), _) => (e.start, e.indent.to_owned(), key_gap_for(e)),
+        (None, Some(last)) => (block.close_line_start, last.indent.to_owned(), key_gap_for(last)),
+        (None, None) => (
+            block.close_line_start,
+            format!("{}    ", block.close_indent),
+            "\t\t\t\t".to_owned(),
+        ),
     };
 
     let line = format!("{indent}Game{key_gap}{ADDONS_LINE_VALUE}{eol}");
@@ -246,7 +247,7 @@ mod tests {
         assert!(!out.contains('\r'));
         assert_eq!(out.lines().count(), VANILLA.lines().count() + 1);
         let added = out.lines().find(|l| l.contains(ADDONS_LINE_VALUE)).unwrap();
-        assert!(added.starts_with("            Game "), "{added:?}");
+        assert_eq!(added, "            Game citadel/addons");
         assert_balanced(&out);
     }
 
@@ -261,11 +262,13 @@ mod tests {
     }
 
     #[test]
-    fn inserted_line_precedes_first_entry_and_follows_comments() {
+    fn inserted_line_sits_between_low_violence_and_game_citadel() {
         let out = ensure_addons(VANILLA).unwrap();
         let lines: Vec<&str> = out.lines().collect();
         let i = lines.iter().position(|l| l.contains(ADDONS_LINE_VALUE)).unwrap();
-        assert!(lines[i + 1].contains("Game_UILanguage"));
+        assert!(lines[i - 2].contains("Game_LowViolence"));
+        assert!(lines[i - 1].trim().is_empty());
+        assert_eq!(lines[i + 1].trim(), "Game \"citadel\"");
     }
 
     #[test]
@@ -276,12 +279,12 @@ mod tests {
 
     #[test]
     fn commented_out_counts_as_absent() {
-        let src = "FileSystem\n{\n\tSearchPaths\n\t{\n\t\t// Game citadel/addons\n\t\tGame\t\tcitadel\n\t}\n}\n";
+        let src = "FileSystem\n{\n\tSearchPaths\n\t{\n\t\t// Game citadel/addons\n\t\tMod\t\tcitadel\n\t\tGame\t\tcitadel\n\t}\n}\n";
         assert_eq!(has_addons(src), Ok(false));
         let out = ensure_addons(src).unwrap();
         assert_eq!(
             out,
-            "FileSystem\n{\n\tSearchPaths\n\t{\n\t\t// Game citadel/addons\n\t\tGame\t\t\t\tcitadel/addons\n\t\tGame\t\tcitadel\n\t}\n}\n"
+            "FileSystem\n{\n\tSearchPaths\n\t{\n\t\t// Game citadel/addons\n\t\tMod\t\tcitadel\n\t\tGame\t\t\t\tcitadel/addons\n\t\tGame\t\tcitadel\n\t}\n}\n"
         );
     }
 
@@ -320,6 +323,16 @@ mod tests {
     fn empty_block_gets_default_style() {
         let out = ensure_addons("SearchPaths\n{\n}\n").unwrap();
         assert_eq!(out, "SearchPaths\n{\n    Game\t\t\t\tcitadel/addons\n}\n");
+    }
+
+    #[test]
+    fn no_plain_game_entry_inserts_before_closing_brace() {
+        let src = "SearchPaths\n{\n  Mod  citadel\n  Game_Language  x\n}\n";
+        let out = ensure_addons(src).unwrap();
+        assert_eq!(
+            out,
+            "SearchPaths\n{\n  Mod  citadel\n  Game_Language  x\n  Game           citadel/addons\n}\n"
+        );
     }
 
     #[test]

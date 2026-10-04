@@ -9,6 +9,7 @@ use std::path::Path;
 
 use super::install::read_record;
 use super::{AddonId, Kind, blur, info, particles, sources};
+use crate::hud::crc32::crc32;
 use crate::hud::install::{ADDON_FILE as HUD_ADDON_FILE, GAME_PAK, addons_dir};
 use crate::hud::resource::{self, Resource};
 use crate::hud::vpk::VpkDir;
@@ -30,6 +31,9 @@ pub struct Verified {
     pub bytes: u64,
     /// `path: reason`, one per failing entry.
     pub problems: Vec<String>,
+    /// `path: facts` for every compiled stylesheet, failing or not: block sizes, image
+    /// table size, the DATA prefix and the CRCs it could be, for the diagnostic report.
+    pub notes: Vec<String>,
 }
 
 impl Verified {
@@ -74,11 +78,43 @@ pub fn verify(pak: &VpkDir, expect: &Expect) -> Verified {
             ));
             continue;
         }
+        if path.ends_with(".vcss_c")
+            && let Ok(note) = style_facts(&data)
+        {
+            out.notes.push(format!("{path}: {note}"));
+        }
         if let Err(reason) = check_content(path, &data, expect) {
             out.problems.push(format!("{path}: {reason}"));
         }
     }
     out
+}
+
+fn style_facts(data: &[u8]) -> Result<String, String> {
+    let res = Resource::parse(data).map_err(|e| e.to_string())?;
+    let blocks: Vec<String> = res
+        .blocks
+        .iter()
+        .map(|b| format!("{}:{}", String::from_utf8_lossy(&b.name), b.data.len()))
+        .collect();
+    let d = &res.block(b"DATA").ok_or("no DATA block")?.data;
+    if d.len() < 6 {
+        return Err("DATA shorter than its prefix".into());
+    }
+    let prefix = u32::from_le_bytes([d[0], d[1], d[2], d[3]]);
+    let images = u16::from_le_bytes([d[4], d[5]]);
+    let text = resource::style_text(&res).map_err(|e| e.to_string())?;
+    let table = resource::image_table(&res).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "v{} blocks [{}] images {images} (table {} bytes) text {} bytes prefix {prefix:08x} crc32(text) {:08x} crc32(table+text) {:08x} source {:08x}",
+        res.type_version,
+        blocks.join(" "),
+        table.len(),
+        text.len(),
+        crc32(text.as_bytes()),
+        crc32(&d[4..]),
+        prefix ^ crc32(text.as_bytes())
+    ))
 }
 
 fn check_content(path: &str, data: &[u8], expect: &Expect) -> Result<(), String> {
@@ -209,7 +245,13 @@ pub struct PakReport {
 impl fmt::Display for PakReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.result {
-            Ok(v) => write!(f, "{} ({}): {v}", self.label, self.file),
+            Ok(v) => {
+                write!(f, "{} ({}): {v}", self.label, self.file)?;
+                for note in &v.notes {
+                    write!(f, "\n    {note}")?;
+                }
+                Ok(())
+            }
             Err(e) => write!(f, "{} ({}): unreadable: {e}", self.label, self.file),
         }
     }
@@ -487,6 +529,13 @@ mod tests {
         assert!(
             text[0].starts_with("UI blur disabler (pak72_dir.vpk): ok"),
             "{text:?}"
+        );
+        let facts: Vec<&str> = text[0].lines().skip(1).collect();
+        assert_eq!(facts.len(), 2, "one fact line per stylesheet: {text:?}");
+        assert!(
+            facts[0].contains("base/citadel_base_styles.vcss_c: v3 blocks [RED2:787 DATA:98558 SrMa:97775] images 0 (table 2 bytes)")
+                && facts[0].contains("prefix a14d7c62 crc32(text) 40574f7b"),
+            "{facts:?}"
         );
 
         std::fs::write(addons_dir(&paths).join("pak73_dir.vpk"), b"broken").unwrap();

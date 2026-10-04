@@ -103,7 +103,10 @@ Use `cargo run -p dt-core --example hud_build -- <game root> <layout.toml>` to p
 3. Which addon number wins when two addons override the same file (pak77 vs pak01)?
 4. Does a mounted addon (no ConVar changes) still allow matchmaking?
 5. Crosshair ConVars: live from console or not?
-6. Which game state shows `#hud_signature`?
+6. Which game state shows `#hud_signature`? Vanilla collapses both it and `#hud_passive_items` with the same rule and reveals both via `.viewing_as_player` / `.ShowGoldAndAPOnHud`, which contradicts "passives are hidden in vanilla".
+7. Do rules in `hud.vcss_c` reach `#ammo_panel`? It lives in `element_gun.xml` under `#crosshair` and may need `element_gun.vcss_c`.
+8. Minimap scale: vanilla animates `pre-transform-scale2d` (`.InHideout` sets 0.9). Check that our value holds in matches. State rules with higher specificity (`.InHideout`, `.deathReplayActive`, `.gDetailView`) will win over ours by design.
+9. The preview boxes for the top bar, ability, item, ammo, kill feed and chat panels are estimates (`notes` in `hud::elements`). Take a screenshot with the HUD in vanilla and correct the table rows.
 
 ### Phase H1: core (this branch)
 

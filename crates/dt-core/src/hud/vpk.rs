@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use super::crc32::crc32;
@@ -232,11 +232,47 @@ fn parse_header(b: &[u8]) -> Result<(usize, usize), VpkError> {
     }
 }
 
+/// Where an entry's bytes come from when writing.
+#[derive(Clone, Debug)]
+pub enum Data<'a> {
+    Bytes(&'a [u8]),
+    /// An entry of another archive, streamed through without being held with the rest.
+    Copy { from: &'a VpkDir, path: &'a str },
+}
+
+impl Data<'_> {
+    fn crc_len(&self) -> Result<(u32, u32), VpkError> {
+        match self {
+            Data::Bytes(b) => Ok((crc32(b), b.len() as u32)),
+            Data::Copy { from, path } => {
+                let e = from
+                    .entries
+                    .get(*path)
+                    .ok_or_else(|| VpkError::Missing(path.to_string()))?;
+                Ok((e.crc, e.length + e.preload.len() as u32))
+            }
+        }
+    }
+}
+
 /// Builds a single-file VPK v2. Deterministic: same input, same bytes. The MD5
 /// section is zero-filled (QoL Lite ships this way and loads).
 pub fn write(files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
+    let data: BTreeMap<String, Data> = files
+        .iter()
+        .map(|(p, b)| (p.clone(), Data::Bytes(b)))
+        .collect();
+    let mut out = Vec::new();
+    write_with(&data, &mut out).expect("in-memory entries always resolve");
+    out
+}
+
+/// [`write`] for entries that may be copied from another archive. The tree lists
+/// every entry before any data, so copies are read twice: once for the tree (their
+/// crc and length come from the source tree) and once while streaming.
+pub fn write_with(files: &BTreeMap<String, Data>, out: &mut impl Write) -> Result<(), VpkError> {
     // ext -> dir -> [(name, data)], BTreeMap keeps tree order sorted.
-    type Dirs<'a> = BTreeMap<&'a str, BTreeMap<&'a str, &'a [u8]>>;
+    type Dirs<'a, 'b> = BTreeMap<&'a str, BTreeMap<&'a str, &'a Data<'b>>>;
     let mut tree: BTreeMap<&str, Dirs> = BTreeMap::new();
     for (path, data) in files {
         let (dir, file) = path.rsplit_once('/').unwrap_or((BLANK, path));
@@ -253,7 +289,8 @@ pub fn write(files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
     }
 
     let mut t: Vec<u8> = Vec::new();
-    let mut data: Vec<u8> = Vec::new();
+    let mut order: Vec<&Data> = Vec::new();
+    let mut total: u64 = 0;
     let cstr = |t: &mut Vec<u8>, s: &str| {
         t.extend_from_slice(s.as_bytes());
         t.push(0);
@@ -262,30 +299,40 @@ pub fn write(files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
         cstr(&mut t, ext);
         for (dir, names) in dirs {
             cstr(&mut t, dir);
-            for (name, bytes) in names {
+            for (name, data) in names {
+                let (crc, len) = data.crc_len()?;
+                let offset = u32::try_from(total)
+                    .map_err(|_| VpkError::BadTree("data section exceeds 4 GiB".into()))?;
                 cstr(&mut t, name);
-                t.extend_from_slice(&crc32(bytes).to_le_bytes());
+                t.extend_from_slice(&crc.to_le_bytes());
                 t.extend_from_slice(&0u16.to_le_bytes());
                 t.extend_from_slice(&EMBEDDED.to_le_bytes());
-                t.extend_from_slice(&(data.len() as u32).to_le_bytes());
-                t.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                t.extend_from_slice(&offset.to_le_bytes());
+                t.extend_from_slice(&len.to_le_bytes());
                 t.extend_from_slice(&TERMINATOR.to_le_bytes());
-                data.extend_from_slice(bytes);
+                total += u64::from(len);
+                order.push(data);
             }
             t.push(0);
         }
         t.push(0);
     }
     t.push(0);
+    let data_len = u32::try_from(total)
+        .map_err(|_| VpkError::BadTree("data section exceeds 4 GiB".into()))?;
 
-    let mut out = Vec::with_capacity(HEADER_V2 + t.len() + data.len() + 48);
-    for v in [SIGNATURE, 2, t.len() as u32, data.len() as u32, 0, 48, 0] {
-        out.extend_from_slice(&v.to_le_bytes());
+    for v in [SIGNATURE, 2, t.len() as u32, data_len, 0, 48, 0] {
+        out.write_all(&v.to_le_bytes())?;
     }
-    out.extend_from_slice(&t);
-    out.extend_from_slice(&data);
-    out.extend_from_slice(&[0u8; 48]);
-    out
+    out.write_all(&t)?;
+    for data in order {
+        match data {
+            Data::Bytes(b) => out.write_all(b)?,
+            Data::Copy { from, path } => out.write_all(&from.read(path)?)?,
+        }
+    }
+    out.write_all(&[0u8; 48])?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -324,6 +371,51 @@ mod tests {
                 assert_eq!(&vpk.read(path).unwrap(), data, "{path}");
             }
         }
+    }
+
+    #[test]
+    fn copies_entries_from_another_archive_byte_for_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let src_path = dir.path().join("src_dir.vpk");
+        std::fs::write(&src_path, write(&sample())).unwrap();
+        let src = VpkDir::open(&src_path).unwrap();
+        let own = b"fresh".to_vec();
+        let files = BTreeMap::from([
+            (
+                "a/b/c/deep.vcss_c".to_string(),
+                Data::Copy {
+                    from: &src,
+                    path: "a/b/c/deep.vcss_c",
+                },
+            ),
+            ("new/own.txt".to_string(), Data::Bytes(&own)),
+            (
+                "empty.bin".to_string(),
+                Data::Copy {
+                    from: &src,
+                    path: "empty.bin",
+                },
+            ),
+        ]);
+        let mut out = Vec::new();
+        write_with(&files, &mut out).unwrap();
+        let expected = write(&BTreeMap::from([
+            ("a/b/c/deep.vcss_c".to_string(), vec![7u8; 1000]),
+            ("new/own.txt".to_string(), own),
+            ("empty.bin".to_string(), Vec::new()),
+        ]));
+        assert_eq!(out, expected);
+        let missing = BTreeMap::from([(
+            "x".to_string(),
+            Data::Copy {
+                from: &src,
+                path: "nope",
+            },
+        )]);
+        assert!(matches!(
+            write_with(&missing, &mut Vec::new()),
+            Err(VpkError::Missing(_))
+        ));
     }
 
     #[test]

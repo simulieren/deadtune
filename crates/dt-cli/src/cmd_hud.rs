@@ -1,12 +1,12 @@
 //! hud apply | remove | status
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use dt_core::apply::{self, ApplyContext, Target};
 use dt_core::catalog::Catalog;
+use dt_core::doctor;
 use dt_core::hud::elements::HUD_STYLE;
-use dt_core::hud::install::{self, ADDON_FILE, GAME_PAK, InstalledState};
-use dt_core::hud::vpk::VpkDir;
+use dt_core::hud::install::{self, ADDON_FILE, InstalledState};
 use dt_core::hud::{HudLayout, layout, searchpaths};
 use dt_core::locate::GamePaths;
 
@@ -119,46 +119,11 @@ pub fn report_lines(env: &Env, paths: &GamePaths) -> Vec<String> {
         Some(false) => "HUD search path: absent (added on first HUD apply)".to_string(),
         None => "HUD search path: SearchPaths block unreadable".to_string(),
     });
-    for addon in conflicting_addons(paths) {
+    for addon in doctor::hud_conflicts(paths) {
         lines.push(format!(
             "HUD conflict: {} overrides {HUD_STYLE}",
             addon.display()
         ));
     }
     lines
-}
-
-/// Other addons that ship their own `hud.vcss_c`; only one of them can win.
-pub fn conflicting_addons(paths: &GamePaths) -> Vec<PathBuf> {
-    let Ok(dir) = std::fs::read_dir(install::addons_dir(paths)) else {
-        return Vec::new();
-    };
-    let mut found: Vec<PathBuf> = dir
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.ends_with("_dir.vpk") && n != ADDON_FILE)
-        })
-        .filter(|p| VpkDir::open(p).is_ok_and(|v| v.contains(HUD_STYLE)))
-        .collect();
-    found.sort();
-    found
-}
-
-/// `Ok(None)` when the game pak is absent (HUD editing unavailable), `Err` when it is unreadable.
-pub fn game_pak_check(paths: &GamePaths) -> Result<Option<String>, String> {
-    let pak = paths.citadel_dir.join(GAME_PAK);
-    if !pak.is_file() {
-        return Ok(None);
-    }
-    let dir = VpkDir::open(&pak).map_err(|e| format!("{}: {e}", pak.display()))?;
-    dir.read(HUD_STYLE)
-        .map(|bytes| {
-            Some(format!(
-                "{GAME_PAK} has {HUD_STYLE} ({} bytes)",
-                bytes.len()
-            ))
-        })
-        .map_err(|e| format!("{GAME_PAK}: {HUD_STYLE}: {e}"))
 }

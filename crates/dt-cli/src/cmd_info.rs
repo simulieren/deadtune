@@ -2,12 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use dt_core::backup::{FileKind, sha256_hex};
-use dt_core::bridge::netcon::{DEFAULT_PORT, NetconBridge};
+use dt_core::backup::FileKind;
 use dt_core::catalog::Catalog;
-use dt_core::gi::{self, Eol, Overrides};
+use dt_core::doctor::{self, CheckStatus};
 use dt_core::locate::{GamePaths, parse_buildid};
-use dt_core::{launch, power, preset, video, watch};
+use dt_core::{launch, power, preset, watch};
 
 use crate::args::{Args, CliResult, fail};
 use crate::cmd_hud;
@@ -115,201 +114,34 @@ pub fn catalog(_: &Env, args: &Args) -> CliResult {
     Ok(())
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Status {
-    Pass,
-    Fail,
-    Info,
-}
-
-struct Doctor {
-    failed: bool,
-}
-
-impl Doctor {
-    fn line(&mut self, status: Status, check: &str, detail: impl AsRef<str>) {
-        let tag = match status {
-            Status::Pass => "PASS",
-            Status::Fail => "FAIL",
-            Status::Info => "INFO",
-        };
-        self.failed |= status == Status::Fail;
-        println!("{tag}  {check:<26} {}", detail.as_ref());
-    }
-
-    fn result<T>(
-        &mut self,
-        check: &str,
-        result: Result<T, String>,
-        ok: impl FnOnce(&T) -> String,
-    ) -> Option<T> {
-        match result {
-            Ok(value) => {
-                self.line(Status::Pass, check, ok(&value));
-                Some(value)
-            }
-            Err(e) => {
-                self.line(Status::Fail, check, e);
-                None
-            }
-        }
-    }
-}
-
-/// Writes and deletes a scratch file in `dir`.
-fn probe_writable(dir: &Path) -> Result<PathBuf, String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let probe = dir.join(".deadtune_doctor.tmp");
-    std::fs::write(&probe, b"deadtune").map_err(|e| format!("write: {e}"))?;
-    std::fs::remove_file(&probe).map_err(|e| format!("delete: {e}"))?;
-    Ok(dir.to_path_buf())
-}
-
-/// Read-only self test for a new machine. The only writes are scratch files it deletes again.
+/// Prints the shared `dt_core::doctor` checks; exits 1 if any failed.
 pub fn doctor(env: &Env, args: &Args) -> CliResult {
     args.positionals::<0>("no positional arguments")?;
-    let mut d = Doctor { failed: false };
     println!(
         "deadtune-cli {} doctor on {}",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS
     );
-
-    let paths = d.result("locate", env.paths().map_err(|e| e.message()), |p| {
-        p.game_root.display().to_string()
-    });
-    if let Some(paths) = &paths {
-        game_checks(&mut d, env, paths);
+    let paths = env
+        .paths()
+        .map_err(|e| eprintln!("locate: {}", e.message()))
+        .ok();
+    let checks = doctor::run(paths.as_ref(), &env.data_dir);
+    for c in &checks {
+        let tag = match c.status {
+            CheckStatus::Pass => "PASS",
+            CheckStatus::Warn => "WARN",
+            CheckStatus::Fail => "FAIL",
+        };
+        println!("{tag}  {:<24} {}", c.name, c.detail);
+        if let Some(fix) = &c.fix {
+            println!("      fix: {fix}");
+        }
     }
-
-    d.result("data dir writable", probe_writable(&env.data_dir), |p| {
-        p.display().to_string()
-    });
-    d.result(
-        "backups dir",
-        env.store()
-            .map_err(|_| "cannot open".to_string())
-            .and_then(|s| {
-                let n = s.list(FileKind::GameInfo).map_err(|e| e.to_string())?.len();
-                let original = s.original(FileKind::GameInfo).is_some();
-                Ok(format!(
-                    "{}  original={}  gameinfo backups={n}",
-                    s.root.display(),
-                    if original { "yes" } else { "no" }
-                ))
-            }),
-        |s| s.clone(),
-    );
-    let netcon = if NetconBridge::probe(DEFAULT_PORT) {
-        format!("something is listening on 127.0.0.1:{DEFAULT_PORT}")
-    } else {
-        format!(
-            "nothing on 127.0.0.1:{DEFAULT_PORT} (needs -netconport {DEFAULT_PORT}; exec-file bridge works without it)"
-        )
-    };
-    d.line(Status::Info, "netcon probe", netcon);
-    d.line(
-        Status::Info,
-        "game running",
-        if launch::is_game_running() {
-            "yes"
-        } else {
-            "no"
-        },
-    );
-
-    if d.failed {
+    if checks.iter().any(|c| c.status == CheckStatus::Fail) {
         Err(fail("doctor found failures"))
     } else {
-        println!("All checks passed.");
+        println!("No failures.");
         Ok(())
-    }
-}
-
-fn game_checks(d: &mut Doctor, env: &Env, paths: &GamePaths) {
-    let gameinfo = d.result(
-        "gameinfo readable",
-        std::fs::read_to_string(&paths.gameinfo).map_err(|e| e.to_string()),
-        |t| format!("{} bytes", t.len()),
-    );
-    if let Some(text) = &gameinfo {
-        let eol = match gi::detect_eol(text) {
-            Eol::CrLf => "CRLF",
-            Eol::Lf => "LF",
-        };
-        d.line(Status::Pass, "detect_eol", eol);
-        d.result(
-            "validate_braces",
-            gi::validate_braces(text).map_err(|e| e.to_string()),
-            |_| "balanced".into(),
-        );
-        d.result(
-            "no-op apply is lossless",
-            gi::apply_overrides(text, &Overrides::new())
-                .map_err(|e| e.to_string())
-                .and_then(|o| {
-                    if o.text == *text {
-                        Ok(())
-                    } else {
-                        Err("apply_overrides(empty) changed bytes".into())
-                    }
-                }),
-            |_| "byte-identical".into(),
-        );
-        d.result(
-            "read_convars",
-            gi::read_convars(text).map_err(|e| e.to_string()),
-            |v| {
-                format!(
-                    "{} convars, {} active",
-                    v.len(),
-                    v.iter().filter(|e| !e.commented).count()
-                )
-            },
-        );
-    }
-    match std::fs::read_to_string(&paths.video) {
-        Ok(text) => {
-            d.line(
-                Status::Pass,
-                "video readable",
-                format!("{} bytes", text.len()),
-            );
-            d.result(
-                "video read_settings",
-                video::read_settings(&text).map_err(|e| e.to_string()),
-                |s| format!("{} settings", s.len()),
-            );
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => d.line(
-            Status::Info,
-            "video readable",
-            "no video.txt yet (the game writes it on first launch)",
-        ),
-        Err(e) => d.line(Status::Fail, "video readable", e.to_string()),
-    }
-    d.result(
-        "appmanifest buildid",
-        buildid(paths).ok_or_else(|| format!("no buildid in {}", opt_path(&paths.appmanifest))),
-        |b| b.clone(),
-    );
-    d.result("cfg dir writable", probe_writable(&paths.cfg_dir), |p| {
-        p.display().to_string()
-    });
-    match cmd_hud::game_pak_check(paths) {
-        Ok(Some(detail)) => d.line(Status::Pass, "game pak", detail),
-        Ok(None) => d.line(
-            Status::Info,
-            "game pak",
-            "no pak01_dir.vpk; HUD editing unavailable",
-        ),
-        Err(e) => d.line(Status::Fail, "game pak", e),
-    }
-    for line in cmd_hud::report_lines(env, paths) {
-        let (check, detail) = line.split_once(": ").unwrap_or(("HUD", &line));
-        d.line(Status::Info, check, detail);
-    }
-    if let Ok(bytes) = std::fs::read(&paths.gameinfo) {
-        d.line(Status::Info, "gameinfo sha256", &sha256_hex(&bytes)[..16]);
     }
 }

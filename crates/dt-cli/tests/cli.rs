@@ -125,13 +125,13 @@ fn doctor_passes_on_the_fake_install_and_writes_nothing_into_the_game() {
     let out = fake.ok(&["doctor"]);
     assert!(!out.contains("FAIL"), "{out}");
     for check in [
-        "PASS  locate",
-        "PASS  no-op apply is lossless",
-        "PASS  appmanifest buildid        20261004",
-        "PASS  cfg dir writable",
-        "PASS  game pak",
-        "INFO  netcon probe",
-        "All checks passed",
+        "PASS  Find Deadlock",
+        "PASS  Lossless edit",
+        "PASS  Game build id            20261004",
+        "PASS  Write cfg folder",
+        "PASS  Game archive (HUD)",
+        "PASS  Live console (netcon)",
+        "No failures",
     ] {
         assert!(out.contains(check), "missing {check:?} in\n{out}");
     }
@@ -145,7 +145,7 @@ fn doctor_fails_without_a_game() {
     let fake = Fake::new();
     fs::remove_file(fake.gameinfo()).unwrap();
     let out = fake.expect(&["doctor"], 1);
-    assert!(out.contains("FAIL  locate"), "{out}");
+    assert!(out.contains("FAIL  Find Deadlock"), "{out}");
 }
 
 #[test]

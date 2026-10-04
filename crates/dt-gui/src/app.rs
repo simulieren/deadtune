@@ -213,6 +213,7 @@ impl App {
             return;
         };
         state.poll_watch();
+        state.poll_checks();
         let polls: Vec<_> = self
             .game_poll
             .as_ref()

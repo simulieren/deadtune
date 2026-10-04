@@ -1565,15 +1565,19 @@ pub fn check_setup(ui: &mut Ui, state: &mut AppState, plain: bool) {
                 .text_style(egui::TextStyle::Heading)
                 .strong(),
         );
-        if ui
-            .button(if state.checks.is_some() {
-                "Check again"
-            } else {
-                "Run checks"
-            })
-            .clicked()
-        {
+        let running = state.checks_running();
+        let label = match (running, state.checks.is_some()) {
+            (true, _) => "Checking…",
+            (false, true) => "Check again",
+            (false, false) => "Run checks",
+        };
+        if ui.add_enabled(!running, egui::Button::new(label)).clicked() {
             state.run_checks();
+        }
+        if running {
+            ui.spinner();
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
         }
     });
     let Some(checks) = &state.checks else { return };

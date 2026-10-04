@@ -446,6 +446,8 @@ pub struct AppState {
     pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
     pub checks: Option<Vec<Check>>,
+    /// Doctor runs off the UI thread: on Windows it shells out to PowerShell for RAM info.
+    checks_rx: Option<Receiver<Vec<Check>>>,
     #[cfg(feature = "remote")]
     pub remote: Option<crate::remote::Remote>,
     watch: Option<(Watcher, Receiver<Vec<Change>>)>,
@@ -534,6 +536,7 @@ impl AppState {
             hud_cache: None,
             undo_cursor: None,
             checks: None,
+            checks_rx: None,
             #[cfg(feature = "remote")]
             remote: None,
             watch: None,
@@ -588,7 +591,28 @@ impl AppState {
     }
 
     pub fn run_checks(&mut self) {
-        self.checks = Some(dt_core::doctor::run(Some(&self.paths), &self.data_dir));
+        let (tx, rx) = channel();
+        let (paths, data_dir) = (self.paths.clone(), self.data_dir.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(dt_core::doctor::run(Some(&paths), &data_dir));
+        });
+        self.checks_rx = Some(rx);
+    }
+
+    pub fn checks_running(&self) -> bool {
+        self.checks_rx.is_some()
+    }
+
+    pub fn poll_checks(&mut self) {
+        let Some(rx) = &self.checks_rx else { return };
+        match rx.try_recv() {
+            Ok(checks) => {
+                self.checks = Some(checks);
+                self.checks_rx = None;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.checks_rx = None,
+        }
     }
 
     /// Restores the newest gameinfo.gi backup older than the last one undone (and different
@@ -1674,6 +1698,20 @@ mod tests {
         assert!(!state.settings.favourites.contains(LIVE));
         state.toggle_pin(LIVE);
         assert!(!state.is_pinned(LIVE));
+    }
+
+    #[test]
+    fn checks_run_in_the_background_and_land_on_poll() {
+        let (_dir, mut state) = state();
+        state.run_checks();
+        assert!(state.checks_running());
+        let deadline = Instant::now() + std::time::Duration::from_secs(10);
+        while state.checks_running() && Instant::now() < deadline {
+            state.poll_checks();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let checks = state.checks.as_ref().expect("checks arrived");
+        assert!(!checks.is_empty());
     }
 
     #[test]

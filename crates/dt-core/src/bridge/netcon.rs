@@ -4,7 +4,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::time::Duration;
 
-use super::{Bridge, BridgeError, ConsoleCmd};
+use super::{Bridge, BridgeError};
 
 pub const DEFAULT_PORT: u16 = 2121;
 
@@ -52,8 +52,8 @@ impl Bridge for NetconBridge {
         "netcon"
     }
 
-    fn push(&mut self, cmds: &[ConsoleCmd]) -> Result<(), BridgeError> {
-        let payload: String = super::lines(cmds)?.into_iter().map(|l| l + "\n").collect();
+    fn send(&mut self, lines: &[String]) -> Result<(), BridgeError> {
+        let payload: String = lines.iter().map(|l| l.clone() + "\n").collect();
         self.drain()?;
         self.stream.write_all(payload.as_bytes())?;
         Ok(())
@@ -101,7 +101,17 @@ mod tests {
         bridge.push(&[cmd("c", "3")]).unwrap();
         drop(bridge);
         let got = String::from_utf8(server.join().unwrap()).unwrap();
-        assert_eq!(got, "fps_max \"240\"\nr_name \"a b\"\nc \"3\"\n");
+        let lines: Vec<&str> = got.lines().collect();
+        assert_eq!(
+            &lines[..3],
+            [
+                "con_logfile deadtune_console.log",
+                "fps_max \"240\"",
+                "r_name \"a b\""
+            ]
+        );
+        assert!(lines.contains(&"c \"3\""), "{got}");
+        assert!(got.ends_with("\n"), "{got:?}");
     }
 
     #[test]

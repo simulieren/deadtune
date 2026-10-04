@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::bridge::netcon::NetconBridge;
-use dt_core::bridge::{Bridge, BridgeError, ConsoleCmd, clipboard};
+use dt_core::bridge::{Bridge, BridgeError, ConsoleCmd, Receipt, clipboard};
 
 pub const DEBOUNCE: Duration = Duration::from_millis(150);
 const NETCON_TIMEOUT: Duration = Duration::from_millis(500);
@@ -46,7 +46,7 @@ impl BridgeKind {
 pub enum PushOutcome {
     Sent {
         bridge: &'static str,
-        count: usize,
+        receipt: Receipt,
     },
     /// The caller copies this to the system clipboard (egui owns clipboard access).
     Copy(String),
@@ -77,14 +77,19 @@ impl BridgeTarget<'_> {
 
     pub fn push(&self, cmds: &[ConsoleCmd]) -> Result<PushOutcome, BridgeError> {
         match self.open()? {
-            Some(mut bridge) => {
-                bridge.push(cmds)?;
-                Ok(PushOutcome::Sent {
-                    bridge: bridge.name(),
-                    count: cmds.len(),
-                })
-            }
+            Some(mut bridge) => Ok(PushOutcome::Sent {
+                bridge: bridge.name(),
+                receipt: bridge.push(cmds)?,
+            }),
             None => Ok(PushOutcome::Copy(clipboard::batch_string(cmds)?)),
+        }
+    }
+
+    /// A batch that only queries `name`; `None` for the clipboard, which has no reply to read.
+    pub fn probe(&self, name: &str) -> Result<Option<Receipt>, BridgeError> {
+        match self.open()? {
+            Some(mut bridge) => Ok(Some(bridge.probe(name)?)),
+            None => Ok(None),
         }
     }
 }
@@ -166,12 +171,23 @@ mod tests {
             name: "fps_max".into(),
             value: "120".into(),
         }];
-        assert!(matches!(
-            target.push(&cmds).unwrap(),
-            PushOutcome::Sent { count: 1, .. }
-        ));
+        let PushOutcome::Sent { receipt, .. } = target.push(&cmds).unwrap() else {
+            panic!("exec file sends")
+        };
+        assert_eq!(receipt.queries, ["fps_max"]);
         let cfg = std::fs::read_to_string(dir.path().join("deadtune_live.cfg")).unwrap();
         assert!(cfg.contains(r#"fps_max "120""#), "{cfg}");
+        assert!(
+            cfg.contains(&format!("DEADTUNE_ACK {} 1", receipt.nonce)),
+            "{cfg}"
+        );
+        let probe = target.probe("fps_max").unwrap().expect("exec file probes");
+        assert!(probe.sent.is_empty());
+        let clipboard = BridgeTarget {
+            kind: BridgeKind::Clipboard,
+            ..target
+        };
+        assert_eq!(clipboard.probe("fps_max").unwrap(), None);
     }
 
     #[test]

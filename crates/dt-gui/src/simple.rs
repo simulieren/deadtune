@@ -1,6 +1,7 @@
 //! The default, plain-language screens: find the game, welcome flow, and the simple view
 //! (a left rail of sections, the selected section's settings as cards, an Apply bar).
 
+use dt_core::bridge::ack::PushStatus;
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::catalog::{CatalogEntry, Impact, Kind};
 use dt_core::doctor::CheckStatus;
@@ -13,6 +14,7 @@ use eframe::egui::{
 
 use crate::friendly::{self, Control, human_error};
 use crate::live::BridgeKind;
+use crate::live_status;
 use crate::settings::{TargetSource, View};
 use crate::state::{
     AppState, Pending, Section, StartChoice, Status, Timing, Welcome, bool_text, fmt_num,
@@ -459,11 +461,9 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
         if state.settings.source == TargetSource::RankedSafe {
             dot_label(ui, WARN, "Ranked-safe mode on");
         }
-        if state.ctx.game_running {
-            dot_label(ui, GOOD, "Deadlock is running");
-        } else {
-            dot_label(ui, WEAK, "Deadlock is closed");
-        }
+        ui.horizontal(|ui| {
+            live_status::launch_control(ui, state, live_status::Fit::Wide);
+        });
     });
 }
 
@@ -838,19 +838,42 @@ fn status_card(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
                 edits.push(Edit::Go(Section::Safety));
             }
         });
-        if state.settings.bridge == BridgeKind::ExecFile {
-            let ready = state.settings.bind_helper_dismissed;
-            status_item(ui, if ready { GOOD } else { WEAK }, |ui| {
-                if ready {
-                    ui.label(format!(
-                        "Instant changes: press {} in game",
-                        state.settings.bind_key
-                    ));
-                } else {
-                    ui.label("Instant changes are not set up");
-                    if ui.small_button("Set up (1 minute)").clicked() {
-                        edits.push(Edit::Go(Section::Safety));
-                    }
+        if state.settings.bridge != BridgeKind::Clipboard {
+            let key = &state.settings.bind_key;
+            let (color, text, action) = match state.ack.status() {
+                PushStatus::Confirmed { at, .. } => (
+                    GOOD,
+                    format!(
+                        "Instant changes confirmed by Deadlock at {}",
+                        live_status::clock(*at)
+                    ),
+                    None,
+                ),
+                PushStatus::Waiting { .. } => (
+                    ACCENT,
+                    format!("Instant changes: waiting for you to press {key} in game"),
+                    None,
+                ),
+                _ if state.settings.live_verified => {
+                    (GOOD, format!("Instant changes: press {key} in game"), None)
+                }
+                _ if state.ack.boot.is_some() => (
+                    ACCENT,
+                    format!("Instant changes ready: press {key} once in game to test"),
+                    Some("Test"),
+                ),
+                _ => (
+                    WEAK,
+                    "Instant changes are not set up".to_string(),
+                    Some("Set up (1 minute)"),
+                ),
+            };
+            status_item(ui, color, |ui| {
+                ui.label(text);
+                if let Some(label) = action
+                    && ui.small_button(label).clicked()
+                {
+                    edits.push(Edit::Go(Section::Safety));
                 }
             });
         }
@@ -1290,6 +1313,7 @@ fn apply_bar(ui: &mut Ui, state: &mut AppState) {
                 _ => when,
             };
             ui.label(RichText::new(detail).small().color(WEAK));
+            live_status::push_status(ui, state, false);
         });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if accent_button(ui, ready, "Apply").clicked() {
@@ -1494,10 +1518,10 @@ fn safety(ui: &mut Ui, state: &mut AppState) {
         ranked(ui, state);
     }
     ui.add_space(12.0);
-    if state.settings.bridge == BridgeKind::ExecFile {
+    if state.settings.bridge != BridgeKind::Clipboard {
         theme::card().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            bind_helper(ui, state);
+            instant_changes(ui, state);
         });
         ui.add_space(12.0);
     }
@@ -1518,45 +1542,113 @@ fn safety(ui: &mut Ui, state: &mut AppState) {
     });
 }
 
-fn bind_helper(ui: &mut Ui, state: &mut AppState) {
-    card_title(ui, "Instant changes (one-time setup)");
+fn mono_box(ui: &mut Ui, text: &str) {
+    egui::Frame::new()
+        .fill(RAIL)
+        .corner_radius(CornerRadius::same(6))
+        .inner_margin(Margin::symmetric(10, 6))
+        .show(ui, |ui| ui.monospace(text));
+}
+
+/// Two steps with live ticks: the boot cfg ran (seen in the console log), and a push came back.
+fn instant_changes(ui: &mut Ui, state: &mut AppState) {
+    card_title(ui, "Instant changes");
     let key = state.settings.bind_key.clone();
-    if state.settings.bind_helper_dismissed {
-        ui.label(format!(
-            "Done. After you Apply, press {key} in game to load changes like the FPS limit."
-        ));
-        if ui.small_button("Show the steps again").clicked() {
-            state.settings.bind_helper_dismissed = false;
-        }
-        return;
-    }
     ui.label(
         RichText::new(
-            "Some settings, like the FPS limit, can change while you play. Do this once:",
+            "Some settings, like the FPS limit, change while you play. DeadTune sends them to the \
+             game and reads its console log to confirm each one.",
         )
         .color(WEAK),
     );
-    ui.label("1. In Deadlock, open the console (F7) and paste this line:");
-    let line = ExecFileBridge::bind_hint(&key);
+    ui.add_space(8.0);
+    let booted = state.ack.boot.is_some();
+    ui.horizontal_top(|ui| {
+        live_status::step_mark(ui, 1, booted);
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Start Deadlock from DeadTune").strong());
+                if !state.ctx.game_running {
+                    live_status::launch_control(ui, state, live_status::Fit::Chip);
+                }
+            });
+            ui.label(
+                RichText::new(if booted {
+                    "Deadlock loaded DeadTune's boot file."
+                } else {
+                    "Or, if you start the game from Steam: right-click Deadlock > Properties > \
+                     General > Launch Options, and paste:"
+                })
+                .small()
+                .color(WEAK),
+            );
+            if !booted {
+                let text =
+                    dt_core::bridge::boot::steam_launch_options(state.settings.console_window);
+                ui.horizontal(|ui| {
+                    mono_box(ui, &text);
+                    if ui.button("Copy").clicked() {
+                        ui.ctx().copy_text(text.clone());
+                        state.status = Some(Status::Info(
+                            "Copied. Paste it into Deadlock's Launch Options in Steam.".into(),
+                        ));
+                    }
+                });
+            }
+        });
+    });
+    ui.add_space(6.0);
+    let verified = state.settings.live_verified;
+    ui.horizontal_top(|ui| {
+        live_status::step_mark(ui, 2, verified);
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("Press {key} once in game to test")).strong());
+                let send = ui
+                    .add_enabled(!state.ack.is_waiting(), egui::Button::new("Send test"))
+                    .on_hover_text(
+                        "Writes a harmless batch that only asks the game for its FPS limit, then \
+                         waits for the reply in the console log.",
+                    );
+                if send.clicked()
+                    && let Err(e) = state.send_test()
+                {
+                    state.status = Some(Status::Error(e));
+                }
+            });
+            if !live_status::push_status(ui, state, false) {
+                ui.label(
+                    RichText::new(if verified {
+                        "Verified: the game answered a push from DeadTune."
+                    } else {
+                        "Click Send test, then press the key in game. The tick appears when the \
+                         game answers."
+                    })
+                    .small()
+                    .color(WEAK),
+                );
+            }
+        });
+    });
+    ui.add_space(8.0);
     ui.horizontal(|ui| {
-        egui::Frame::new()
-            .fill(RAIL)
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(Margin::symmetric(10, 6))
-            .show(ui, |ui| ui.monospace(&line));
-        if ui.button("Copy").clicked() {
-            ui.ctx().copy_text(line.clone());
-            state.status = Some(Status::Info(
-                "Copied. Paste it into the Deadlock console.".into(),
-            ));
+        if switch(ui, state.settings.console_window).clicked() {
+            state.settings.console_window = !state.settings.console_window;
+        }
+        ui.label(RichText::new("Also open the game console (-console)").small());
+    });
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new("Key bind, in case you want it by hand (console, F7):")
+                .small()
+                .color(WEAK),
+        );
+        let line = ExecFileBridge::bind_hint(&key);
+        ui.label(RichText::new(&line).monospace().size(11.0));
+        if ui.small_button("Copy").clicked() {
+            ui.ctx().copy_text(line);
         }
     });
-    ui.label(format!(
-        "2. After changing a setting here, press {key} in game to load it."
-    ));
-    if ui.button("Done, hide this").clicked() {
-        state.settings.bind_helper_dismissed = true;
-    }
 }
 
 /// `plain` hides the technical detail behind a tooltip.

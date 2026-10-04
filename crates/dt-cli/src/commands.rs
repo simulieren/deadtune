@@ -122,9 +122,9 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "push",
-        usage: "push name=value ... [--bridge execfile|netcon[:port]|clipboard]",
-        summary: "send console commands now",
-        values: &["bridge"],
+        usage: "push name=value ... [--bridge execfile|netcon[:port]|clipboard] [--wait <secs>]",
+        summary: "send console commands now; --wait reads the game's reply from its console log",
+        values: &["bridge", "wait"],
         switches: &[],
         run: cmd_apply::push,
     },
@@ -138,10 +138,10 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "launch",
-        usage: "launch [-- args...]",
-        summary: "start Deadlock through Steam",
-        values: &[],
-        switches: &[],
+        usage: "launch [--profile <file>] [--console] [-- args...]",
+        summary: "start Deadlock through Steam with +exec deadtune_boot -condebug",
+        values: &["profile"],
+        switches: &["console"],
         run: cmd_game::launch,
     },
     Command {

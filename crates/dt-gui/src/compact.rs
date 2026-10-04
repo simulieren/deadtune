@@ -11,9 +11,10 @@ use eframe::egui::{
 
 use crate::friendly::{self, human_error};
 use crate::live::BridgeKind;
+use crate::live_status;
 use crate::settings::View;
 use crate::state::{AppState, Mode, Pending, Status, Timing};
-use crate::theme::{self, ACCENT, BAD, BORDER, CARD_HOVER, GOOD, ON_ACCENT, RAIL, TEXT, WEAK};
+use crate::theme::{self, ACCENT, BAD, BORDER, CARD_HOVER, ON_ACCENT, RAIL, TEXT, WEAK};
 use crate::{app, simple, views};
 
 pub const SIZE: [f32; 2] = [340.0, 560.0];
@@ -190,7 +191,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
     }
 }
 
-fn header(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+fn header(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.label(RichText::new("Dead").size(16.0).strong().color(TEXT));
@@ -202,14 +203,8 @@ fn header(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
                 edits.push(Edit::Expand);
             }
             ui.add_space(8.0);
-            let (running, text) = if state.ctx.game_running {
-                (GOOD, "Deadlock is running")
-            } else {
-                (WEAK, "Deadlock is closed")
-            };
-            let (rect, response) = ui.allocate_exact_size(vec2(12.0, 16.0), Sense::hover());
-            ui.painter().circle_filled(rect.center(), 4.0, running);
-            response.on_hover_text(text);
+            ui.spacing_mut().item_spacing.x = 6.0;
+            live_status::launch_control(ui, state, live_status::Fit::Dot);
         });
     });
 }
@@ -528,6 +523,7 @@ fn footer(ui: &mut Ui, state: &mut AppState, body: Body) {
         }
     };
     ui.label(RichText::new(when).small().color(WEAK));
+    live_status::push_status(ui, state, true);
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

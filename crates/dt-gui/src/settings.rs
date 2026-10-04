@@ -57,7 +57,10 @@ pub struct Settings {
     /// False until the welcome flow finished once.
     pub onboarded: bool,
     pub view: View,
-    pub bind_helper_dismissed: bool,
+    /// A live push was confirmed by the console log at least once, so the setup is known to work.
+    pub live_verified: bool,
+    /// Launch with `-console`, so the game opens its console window.
+    pub console_window: bool,
     pub game_dir: Option<PathBuf>,
     pub last_profile: Option<String>,
     pub bridge: BridgeKind,
@@ -77,7 +80,8 @@ impl Default for Settings {
         Settings {
             onboarded: false,
             view: View::default(),
-            bind_helper_dismissed: false,
+            live_verified: false,
+            console_window: false,
             game_dir: None,
             last_profile: None,
             bridge: BridgeKind::default(),

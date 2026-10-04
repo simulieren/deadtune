@@ -43,6 +43,27 @@ pub fn steam_url(opts: &LaunchOptions) -> String {
     format!("steam://run/{APP_ID}//{encoded}/")
 }
 
+/// The user's options plus what the ack loop needs: `+exec deadtune_boot`, `-condebug`, and
+/// `-console` when asked. Arguments the user already lists are not repeated.
+pub fn with_boot(opts: &LaunchOptions, console: bool) -> LaunchOptions {
+    let mut args = opts.args.clone();
+    let has_exec_boot = args
+        .windows(2)
+        .any(|w| w[0] == "+exec" && w[1].trim_end_matches(".cfg") == "deadtune_boot");
+    if !has_exec_boot {
+        args.extend(["+exec".to_string(), "deadtune_boot".to_string()]);
+    }
+    for flag in ["-condebug"]
+        .into_iter()
+        .chain(console.then_some("-console"))
+    {
+        if !args.iter().any(|a| a == flag) {
+            args.push(flag.to_string());
+        }
+    }
+    LaunchOptions { args }
+}
+
 pub fn is_game_running() -> bool {
     game_processes(&process_snapshot()).next().is_some()
 }
@@ -164,6 +185,31 @@ mod tests {
         assert_eq!(
             steam_url(&opts(&["+exec", "my cfg.cfg", "a/b&c"])),
             "steam://run/1422450//%2Bexec%20%22my%20cfg.cfg%22%20a%2Fb%26c/"
+        );
+    }
+
+    #[test]
+    fn with_boot_appends_the_boot_exec_and_log_flags_once() {
+        assert_eq!(
+            with_boot(&opts(&["-novid"]), false).args,
+            ["-novid", "+exec", "deadtune_boot", "-condebug"]
+        );
+        assert_eq!(
+            with_boot(&opts(&["-novid"]), true).args,
+            ["-novid", "+exec", "deadtune_boot", "-condebug", "-console"]
+        );
+        assert_eq!(
+            with_boot(
+                &opts(&["+exec", "deadtune_boot", "-condebug", "-console"]),
+                true
+            )
+            .args,
+            ["+exec", "deadtune_boot", "-condebug", "-console"],
+            "nothing is repeated"
+        );
+        assert_eq!(
+            steam_url(&with_boot(&opts(&[]), false)),
+            "steam://run/1422450//%2Bexec%20deadtune_boot%20-condebug/"
         );
     }
 

@@ -64,23 +64,34 @@ pub fn find_game(ui: &mut egui::Ui, input: &mut String, error: Option<&str>) -> 
     big_button(ui, true, "Retry").clicked() || submit
 }
 
+const CARD_WIDTH: f32 = 250.0;
+const CARD_HEIGHT: f32 = 84.0;
+
 fn card(ui: &mut egui::Ui, selected: bool, title: &str, author: &str, blurb: &str) -> bool {
     let stroke = if selected {
         egui::Stroke::new(2.0, GREEN)
     } else {
         egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
     };
+    let fill = if selected {
+        GREEN.gamma_multiply(0.15)
+    } else {
+        Color32::TRANSPARENT
+    };
     let frame = egui::Frame::group(ui.style())
         .stroke(stroke)
+        .fill(fill)
         .inner_margin(10.0)
         .show(ui, |ui| {
-            ui.set_width(250.0);
-            ui.set_min_height(74.0);
-            ui.label(RichText::new(title).size(16.0).strong());
-            if !author.is_empty() {
-                ui.weak(format!("by {author}"));
-            }
-            ui.label(blurb);
+            ui.vertical(|ui| {
+                ui.set_width(CARD_WIDTH);
+                ui.set_height(CARD_HEIGHT);
+                ui.label(RichText::new(title).size(16.0).strong());
+                if !author.is_empty() {
+                    ui.weak(format!("by {author}"));
+                }
+                ui.label(blurb);
+            });
         });
     frame.response.interact(egui::Sense::click()).clicked()
 }
@@ -124,38 +135,55 @@ fn pick_start(ui: &mut egui::Ui, state: &mut AppState, choice: Option<StartChoic
     ui.label(RichText::new("Pick a starting preset").size(18.0).strong());
     ui.weak("You can fine-tune everything afterwards.");
     let mut picked = None;
-    ui.horizontal_wrapped(|ui| {
-        let keep = choice == Some(StartChoice::KeepCurrent);
-        if card(
-            ui,
-            keep,
-            "Keep my current settings",
-            "",
-            "Change nothing now; start from what you have.",
-        ) {
-            picked = Some(StartChoice::KeepCurrent);
-        }
-        for info in preset::all() {
-            let Some(blurb) = friendly::preset_blurb(info.id) else {
-                continue;
+    let columns = ((ui.available_width() / (CARD_WIDTH + 36.0)) as usize).max(1);
+    egui::Grid::new("start_cards")
+        .spacing([12.0, 12.0])
+        .show(ui, |ui| {
+            let mut col = 0;
+            let mut next = |ui: &mut egui::Ui| {
+                col += 1;
+                if col % columns == 0 {
+                    ui.end_row();
+                }
             };
-            let selected = choice == Some(StartChoice::Preset(info.id));
-            if card(ui, selected, info.label, info.author, blurb) {
-                picked = Some(StartChoice::Preset(info.id));
+            let keep = choice == Some(StartChoice::KeepCurrent);
+            if card(
+                ui,
+                keep,
+                "Keep my current settings",
+                "",
+                "Change nothing now; start from what you have.",
+            ) {
+                picked = Some(StartChoice::KeepCurrent);
             }
-        }
-    });
+            next(ui);
+            for info in preset::all() {
+                let Some(blurb) = friendly::preset_blurb(info.id) else {
+                    continue;
+                };
+                let selected = choice == Some(StartChoice::Preset(info.id));
+                if card(ui, selected, info.label, info.author, blurb) {
+                    picked = Some(StartChoice::Preset(info.id));
+                }
+                next(ui);
+            }
+        });
     if let Some(choice) = picked
         && let Err(e) = state.choose_start(choice)
     {
         state.status = Some(Status::Error(e.to_string()));
     }
-    ui.add_space(16.0);
-    if big_button(ui, choice.is_some(), "Apply").clicked()
-        && let Err(e) = state.welcome_apply()
-    {
-        state.status = Some(Status::Error(e));
-    }
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        if big_button(ui, choice.is_some(), "Apply").clicked()
+            && let Err(e) = state.welcome_apply()
+        {
+            state.status = Some(Status::Error(e));
+        }
+        if choice.is_none() {
+            ui.label("Pick a preset above.");
+        }
+    });
     ui.weak("Takes effect next time you start Deadlock. Your original files are backed up first.");
 }
 

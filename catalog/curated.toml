@@ -453,3 +453,31 @@ denylist = true
 
 [citadel_minimap_overlap_scan_distance]
 denylist = true
+
+# Enemy UI colour (the game's own colour-blind setting, 2026-09-29 update)
+
+[citadel_custom_ui_colors]
+category = "UI & Panorama"
+impact = "low"
+notes = "Turns on the game's custom enemy colour (Settings: Enemy UI Color). Needed for citadel_enemy_ui_color_r/g/b to show."
+
+[citadel_enemy_ui_color_r]
+category = "UI & Panorama"
+type = "int"
+range = [0, 255]
+step = 1
+impact = "low"
+
+[citadel_enemy_ui_color_g]
+category = "UI & Panorama"
+type = "int"
+range = [0, 255]
+step = 1
+impact = "low"
+
+[citadel_enemy_ui_color_b]
+category = "UI & Panorama"
+type = "int"
+range = [0, 255]
+step = 1
+impact = "low"

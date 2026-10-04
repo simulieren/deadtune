@@ -804,6 +804,17 @@ boot_maxfps = "0.01"
 optilock_recommended = "//0.01"
 optilock_potato = "//0.01"
 
+[citadel_custom_ui_colors]
+category = "UI & Panorama"
+type = "bool"
+default = "false"
+apply = "live"
+impact = "low"
+denylist = false
+notes = "Turns on the game's custom enemy colour (Settings: Enemy UI Color). Needed for citadel_enemy_ui_color_r/g/b to show."
+
+[citadel_custom_ui_colors.presets]
+
 [citadel_damage_offscreen_indicator_disabled]
 category = "UI & Panorama"
 type = "bool"
@@ -951,6 +962,45 @@ sqooky_test = "true"
 boot_maxfps = "true"
 optilock_recommended = "true"
 optilock_potato = "true"
+
+[citadel_enemy_ui_color_b]
+category = "UI & Panorama"
+type = "int"
+range = [0.0, 255.0]
+step = 1.0
+default = "50"
+apply = "live"
+impact = "low"
+denylist = false
+notes = "Blue channel of the color used for enemy health bars and other enemy indicators in the UI."
+
+[citadel_enemy_ui_color_b.presets]
+
+[citadel_enemy_ui_color_g]
+category = "UI & Panorama"
+type = "int"
+range = [0.0, 255.0]
+step = 1.0
+default = "50"
+apply = "live"
+impact = "low"
+denylist = false
+notes = "Green channel of the color used for enemy health bars and other enemy indicators in the UI."
+
+[citadel_enemy_ui_color_g.presets]
+
+[citadel_enemy_ui_color_r]
+category = "UI & Panorama"
+type = "int"
+range = [0.0, 255.0]
+step = 1.0
+default = "215"
+apply = "live"
+impact = "low"
+denylist = false
+notes = "Red channel of the color used for enemy health bars and other enemy indicators in the UI."
+
+[citadel_enemy_ui_color_r.presets]
 
 [citadel_fibonnaci_sphere_trace_los_max]
 category = "Advanced"

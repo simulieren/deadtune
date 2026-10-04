@@ -13,7 +13,7 @@ use eframe::egui::{self, ViewportCommand};
 use crate::live::PushOutcome;
 use crate::relaunch::{self, Relaunch};
 use crate::settings::{Settings, View};
-use crate::state::{AppState, Mode, Section, Status, Tab};
+use crate::state::{AppState, HudPage, MinimapPreset, Mode, Section, Status, Tab};
 use crate::{Args, advanced, compact, profiles, simple, views};
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
@@ -152,7 +152,21 @@ impl App {
                         .find(|s| s.label.to_lowercase().starts_with(&name.to_lowercase()))
                         .map(|s| s.id);
                 }
+                // `DEADTUNE_HUD_PAGE=colors` opens the HUD tab's Minimap colours page;
+                // `DEADTUNE_MINIMAP_PRESET=colourblind` (or `contrast`) applies a colour preset.
+                if std::env::var("DEADTUNE_HUD_PAGE").is_ok_and(|v| v.starts_with("colo")) {
+                    state.ui.hud_page = HudPage::Colors;
+                }
                 self.startup_profile(&mut state);
+                if let Ok(name) = std::env::var("DEADTUNE_MINIMAP_PRESET") {
+                    let preset = MinimapPreset::ALL.into_iter().find(|p| {
+                        p.label()
+                            .to_lowercase()
+                            .replace(['-', ' '], "")
+                            .contains(&name.to_lowercase())
+                    });
+                    state.apply_minimap_preset(preset);
+                }
                 // `DEADTUNE_ADDONS=particle_disabler,blur_disabler` turns addons on after loading;
                 // `DEADTUNE_ADDON_EXPAND=particle_disabler` unfolds that card's options.
                 if let Ok(list) = std::env::var("DEADTUNE_ADDONS") {

@@ -11,3 +11,5 @@
 - `preset_comment` is the first inline comment found next to the convar (mostly Sqooky's, often contains `[def: "x"]`).
 
 Flags come from a community dump; treat them as a starting point and verify in game (Phase 0 of the plan).
+
+Rows with no preset column set were added by hand for ConVars no preset uses but the app edits (the enemy UI colour ConVars, flags from `research/configs/OptimizationLock/convars.txt`).

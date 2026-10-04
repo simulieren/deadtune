@@ -14,7 +14,7 @@ use crate::live::PushOutcome;
 use crate::relaunch::{self, Relaunch};
 use crate::settings::{Settings, TargetSource, View};
 use crate::state::{AppState, Mode, Status, Tab};
-use crate::{Args, profiles, simple, views};
+use crate::{Args, profiles, simple, theme, tuner, views};
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
 pub const COMPACT_SIZE: [f32; 2] = [320.0, 560.0];
@@ -44,6 +44,7 @@ pub struct App {
     saved_settings: Settings,
     game_poll: Option<Receiver<(bool, Option<SystemTime>)>>,
     screenshot: Option<Screenshot>,
+    themed: Option<bool>,
 }
 
 fn resolve_paths(game_dir: Option<&Path>) -> Result<GamePaths, String> {
@@ -91,6 +92,7 @@ impl App {
             args,
             saved_settings,
             game_poll: None,
+            themed: None,
             screenshot: screenshot.map(|path| Screenshot {
                 path,
                 frames: 0,
@@ -216,12 +218,40 @@ impl App {
         }
     }
 
+    /// The simple screens use the game-menu theme; Advanced and Compact keep egui's default.
+    fn sync_theme(&mut self, ctx: &egui::Context) {
+        let themed = match &self.screen {
+            Screen::FindGame { .. } => true,
+            Screen::Main(s) => {
+                s.welcome.is_some() || (s.ui.mode == Mode::Full && s.settings.view == View::Simple)
+            }
+        };
+        if self.themed == Some(themed) {
+            return;
+        }
+        let mut style = egui::Style::default();
+        if themed {
+            theme::apply(&mut style);
+        }
+        ctx.set_global_style(style);
+        self.themed = Some(themed);
+    }
+
     fn screenshot(&mut self, ctx: &egui::Context) {
         let Some(job) = &mut self.screenshot else {
             return;
         };
         job.frames += 1;
         ctx.request_repaint();
+        if job.frames == 2
+            && let Screen::Main(state) = &mut self.screen
+            && let Ok(name) = std::env::var("DEADTUNE_SCREENSHOT_TAB")
+            && let Some(tab) = crate::state::SimpleTab::ALL
+                .into_iter()
+                .find(|t| t.label().eq_ignore_ascii_case(&name))
+        {
+            state.ui.simple_tab = tab;
+        }
         if job.apply
             && job.frames == 5
             && let Screen::Main(state) = &mut self.screen
@@ -281,6 +311,7 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll(&ctx);
+        self.sync_theme(&ctx);
         let mut reopen = None;
         match &mut self.screen {
             Screen::FindGame {
@@ -300,7 +331,7 @@ impl eframe::App for App {
             Screen::Main(state) if state.welcome.is_some() => simple::welcome(ui, state),
             Screen::Main(state) => match (state.ui.mode, state.settings.view) {
                 (Mode::Compact, _) => compact_ui(ui, state),
-                (Mode::Full, View::Simple) => simple::simple(ui, state),
+                (Mode::Full, View::Simple) => tuner::simple(ui, state),
                 (Mode::Full, View::Advanced) => full_ui(ui, state, &mut reopen),
             },
         }

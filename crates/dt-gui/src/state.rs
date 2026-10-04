@@ -158,6 +158,41 @@ impl Tab {
     }
 }
 
+/// Tabs of the simple view; a row's tab is set in `friendly::ROWS`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum SimpleTab {
+    #[default]
+    Display,
+    Quality,
+    Effects,
+    Advanced,
+}
+
+impl SimpleTab {
+    pub const ALL: [SimpleTab; 4] = [
+        SimpleTab::Display,
+        SimpleTab::Quality,
+        SimpleTab::Effects,
+        SimpleTab::Advanced,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SimpleTab::Display => "Display",
+            SimpleTab::Quality => "Quality",
+            SimpleTab::Effects => "Effects",
+            SimpleTab::Advanced => "Advanced",
+        }
+    }
+}
+
+/// One-off helper windows opened from the simple view's Safety & tools menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SimpleTool {
+    KeyBind,
+    CheckSetup,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum Scope {
     #[default]
@@ -171,6 +206,10 @@ pub enum Scope {
 pub struct UiState {
     pub mode: Mode,
     pub tab: Tab,
+    pub simple_tab: SimpleTab,
+    /// The simple-view row whose help is shown in the side panel.
+    pub focus: Option<&'static str>,
+    pub tool: Option<SimpleTool>,
     pub search: String,
     pub scope: Scope,
     /// Path field for overrides.gi import/export on the Profiles tab.
@@ -555,6 +594,31 @@ impl AppState {
     pub fn revert_convar(&mut self, name: &str) {
         self.profile.convars.set.remove(name);
         self.profile.convars.comment.retain(|c| c != name);
+        self.refresh_preview();
+    }
+
+    /// Whether the profile moves `name` away from its base preset.
+    pub fn is_changed(&self, name: &str) -> bool {
+        matches!(
+            self.setting(name),
+            Setting::Override(_) | Setting::CommentedOut
+        )
+    }
+
+    /// The base preset's value for `name`, or the catalog default when the preset leaves it out.
+    pub fn preset_value(&self, name: &str) -> Option<String> {
+        self.base_value(name)
+            .map(str::to_string)
+            .or_else(|| self.catalog.get(name).and_then(|e| e.default.clone()))
+    }
+
+    pub fn changed_count(&self) -> usize {
+        self.profile.convars.set.len() + self.profile.convars.comment.len()
+    }
+
+    /// Drops every setting edit so the base preset applies as it is. Video edits stay.
+    pub fn reset_to_preset(&mut self) {
+        self.profile.convars = ConVarEdits::default();
         self.refresh_preview();
     }
 
@@ -1062,6 +1126,34 @@ mod tests {
         assert!(state.is_dirty(), "fps_max still edited");
         state.revert_all();
         assert!(!state.is_dirty());
+        assert!(plan(&state).is_empty());
+    }
+
+    #[test]
+    fn changed_means_different_from_the_preset() {
+        let (_dir, mut state) = state();
+        assert!(!state.is_changed(LIVE));
+        assert_eq!(state.changed_count(), 0);
+        let preset = state.preset_value(LIVE).expect("fps_max has a default");
+        state.set_convar(LIVE, "144".into()).unwrap();
+        assert!(state.is_changed(LIVE));
+        assert_eq!(state.changed_count(), 1);
+        assert_eq!(state.preset_value(LIVE), Some(preset.clone()));
+        state.set_convar(LIVE, preset).unwrap();
+        assert!(
+            !state.is_changed(LIVE),
+            "setting the preset value is no change"
+        );
+    }
+
+    #[test]
+    fn reset_to_preset_clears_every_setting_edit_and_the_plan() {
+        let (_dir, mut state) = state();
+        state.set_convar(RESTART, "true".into()).unwrap();
+        state.set_convar(LIVE, "90".into()).unwrap();
+        state.reset_to_preset();
+        assert_eq!(state.changed_count(), 0);
+        assert!(!state.is_changed(LIVE) && !state.is_changed(RESTART));
         assert!(plan(&state).is_empty());
     }
 

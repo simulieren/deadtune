@@ -1,0 +1,6 @@
+Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartQPC,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,AllInputToPhotonLatency,ClickToPhotonLatency
+deadlock.exe,9120,0x000002B7C41E8F70,DXGI,0,512,1,Hardware: Independent Flip,184467302201,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+deadlock.exe,9120,0x000002B7C41E8F70,DXGI,0,512,1,Hardware: Independent Flip,184467402201,8.333,6.912,1.421,0.611,6.402,6.390,0.012,9.874,8.333,0.000,NA,NA
+deadlock.exe,9120,0x000002B7C41E8F70,DXGI,0,512,1,Hardware: Independent Flip,184467485531,8.333,7.004,1.329,0.598,6.551,6.540,0.011,9.912,8.333,0.000,NA,NA
+deadlock.exe,9120,0x000002B7C41E8F70,DXGI,0,512,1,Hardware: Independent Flip,184467568861,25.000,23.512,1.488,0.640,7.120,7.101,0.019,26.410,25.000,16.667,NA,NA
+deadlock.exe,9120,0x000002B7C41E8F70,DXGI,0,512,1,Hardware: Independent Flip,184467818861,8.334,6.950,1.384,0.605,6.488,6.470,0.018,9.890,8.334,-16.667,NA,NA

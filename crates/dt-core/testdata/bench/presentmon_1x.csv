@@ -1,0 +1,7 @@
+Application,ProcessID,SwapChainAddress,Runtime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,WasBatched,DwmNotified,Dropped,TimeInSeconds,MsInPresentAPI,MsBetweenPresents,MsBetweenDisplayChange,MsUntilRenderComplete,MsUntilDisplayed
+deadlock.exe,14872,0x0000021C6E3F1A30,DXGI,0,512,1,Hardware: Independent Flip,0,0,0,0.000000,0.212,10.000,10.000,4.871,6.103
+dwm.exe,1352,0x000001A2B4C0D010,Other,0,0,0,Composed: Flip,0,0,0,0.004120,0.051,16.667,16.667,1.010,16.002
+deadlock.exe,14872,0x0000021C6E3F1A30,DXGI,0,512,1,Hardware: Independent Flip,0,0,0,0.010000,0.198,10.000,10.000,4.502,6.020
+deadlock.exe,14872,0x0000021C6E3F1A30,DXGI,0,512,1,Hardware: Independent Flip,0,0,0,0.030000,0.240,20.000,20.000,12.880,13.415
+dwm.exe,1352,0x000001A2B4C0D010,Other,0,0,0,Composed: Flip,0,0,0,0.020787,0.049,16.667,16.667,1.004,16.010
+deadlock.exe,14872,0x0000021C6E3F1A30,DXGI,0,512,1,Hardware: Independent Flip,0,0,0,0.040000,0.205,10.000,10.000,4.660,6.088

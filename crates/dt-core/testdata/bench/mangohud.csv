@@ -1,0 +1,7 @@
+os,cpu,gpu,ram,kernel,driver,cpuscheduler
+Arch Linux,AMD Ryzen 7 7840HS w/ Radeon 780M Graphics,AMD Radeon 780M (radv),27.2GB,6.10.10-arch1-1,Mesa 24.2.4,
+fps,frametime,cpu_load,cpu_power,gpu_load,cpu_temp,gpu_temp,gpu_core_clock,gpu_mem_clock,gpu_vram_used,gpu_power,ram_used,swap_used,process_rss,cpu_mhz,elapsed
+60.0024,16.666,38,21,97,71,64,2700,2800,1.83,24,9.12,0,3.41,4290,16666000
+60.0024,16.666,39,21,97,71,64,2700,2800,1.83,24,9.12,0,3.41,4290,33332000
+30.0012,33.332,41,22,98,72,64,2700,2800,1.84,25,9.12,0,3.41,4310,66664000
+60.0024,16.666,38,21,96,72,64,2700,2800,1.84,24,9.12,0,3.41,4290,83330000

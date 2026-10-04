@@ -297,6 +297,66 @@ fn push_writes_exec_file_prints_clipboard_and_refuses_denylist() {
             .contains("denylist")
     );
     assert!(fake.expect(&["push", "fps_max"], 2).contains("name=value"));
+    assert!(
+        cfg.contains("echo DEADTUNE_ACK ") && cfg.contains("echo DEADTUNE_END "),
+        "ack trailer: {cfg}"
+    );
+}
+
+#[test]
+fn push_wait_reports_each_convar_from_the_console_log_or_times_out() {
+    let fake = Fake::new();
+    let out = fake.expect(&["push", "fps_max=60", "--wait", "1"], 1);
+    assert!(out.contains("no reply from Deadlock after 1s"), "{out}");
+    assert!(
+        out.contains("console.log"),
+        "names the files it looked in: {out}"
+    );
+
+    let live = fake.cfg().join("deadtune_live.cfg");
+    fs::remove_file(&live).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_deadtune-cli"))
+        .arg("--game-dir")
+        .arg(&fake.game)
+        .arg("--data-dir")
+        .arg(fake.data())
+        .args(["push", "fps_max=60", "r_devonly=1", "--wait", "20"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("DEADTUNE_GAME_DIR")
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let nonce = loop {
+        if let Ok(text) = fs::read_to_string(&live)
+            && let Some(rest) = text
+                .lines()
+                .find_map(|l| l.strip_prefix("echo DEADTUNE_ACK "))
+        {
+            break rest.split(' ').next().unwrap().to_string();
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "live cfg never written"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    fs::write(
+        fake.game.join("game/citadel/console.log"),
+        format!(
+            "DEADTUNE_ACK {nonce} 2\r\n\"fps_max\" = \"60\" ( def. \"400\" )\r\nUnknown command 'r_devonly'\r\nDEADTUNE_END {nonce}\r\n"
+        ),
+    )
+    .unwrap();
+    let out = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(stdout.contains("fps_max = 60"), "{stdout}");
+    assert!(
+        stdout.contains("r_devonly: rejected (Unknown command 'r_devonly')"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Deadlock applied 1 of 2."), "{stdout}");
 }
 
 #[test]

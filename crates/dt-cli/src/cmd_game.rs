@@ -1,13 +1,16 @@
 //! watch, launch, kill
 
+use std::path::Path;
 use std::sync::mpsc;
 
+use dt_core::bridge::{ConsoleCmd, boot};
+use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::hud::install::{self, InstalledState};
 use dt_core::launch::{self, LaunchOptions};
 use dt_core::watch::{self, Change};
 
 use crate::args::{Args, CliResult, fail};
-use crate::env::Env;
+use crate::env::{self, Env};
 
 pub fn watch(env: &Env, args: &Args) -> CliResult {
     args.positionals::<0>("no positional arguments")?;
@@ -42,11 +45,44 @@ pub fn watch(env: &Env, args: &Args) -> CliResult {
     Ok(())
 }
 
-pub fn launch(_: &Env, args: &Args) -> CliResult {
+/// Writes `cfg/deadtune_boot.cfg` and starts the game with `+exec deadtune_boot -condebug`.
+/// With `--profile` the boot cfg carries that profile's live convars; without one an existing
+/// boot cfg (the GUI's, with its convars) is kept and a bare one is written only if missing.
+pub fn launch(env: &Env, args: &Args) -> CliResult {
     args.positionals::<0>("game arguments after --")?;
-    let opts = LaunchOptions {
-        args: args.rest.clone(),
-    };
+    let paths = env.paths()?;
+    let profile = args
+        .value("profile")
+        .map(|p| env::load_profile(Path::new(p)))
+        .transpose()?;
+    let boot_path = paths.cfg_dir.join(boot::FILE_NAME);
+    if profile.is_some() || !boot_path.exists() {
+        let catalog = Catalog::embedded();
+        let live = profile
+            .iter()
+            .flat_map(|p| p.convars.set.iter())
+            .filter(|(name, _)| {
+                catalog.apply_class(name) == ApplyClass::Live && !catalog.is_denied(name)
+            })
+            .map(|(name, value)| ConsoleCmd {
+                name: name.clone(),
+                value: value.clone(),
+            })
+            .collect();
+        boot::BootCfg {
+            bind_key: "F8".into(),
+            live,
+            version: env!("CARGO_PKG_VERSION").into(),
+        }
+        .write(&paths.cfg_dir)?;
+        println!("Wrote {}", boot_path.display());
+    }
+    let opts = launch::with_boot(
+        &LaunchOptions {
+            args: args.rest.clone(),
+        },
+        args.switch("console"),
+    );
     println!("Opening {}", launch::steam_url(&opts));
     launch::launch(&opts)?;
     Ok(())

@@ -3,7 +3,9 @@
 use dt_core::addons::AddonsConfig;
 use dt_core::apply::{self, ApplyContext, ApplyPlan, ApplyReport};
 use dt_core::backup::FileKind;
-use dt_core::bridge::{ConsoleCmd, clipboard};
+use std::time::{Duration, Instant};
+
+use dt_core::bridge::{ConsoleCmd, Receipt, clipboard};
 use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::hud::HudLayout;
 use dt_core::locate::GamePaths;
@@ -229,7 +231,7 @@ pub fn push(env: &Env, args: &Args) -> CliResult {
     }
     let paths = env.paths()?;
     let mut bridge = env::open_bridge(choice, &paths)?.expect("execfile and netcon open a bridge");
-    bridge.push(&cmds)?;
+    let receipt = bridge.push(&cmds)?;
     println!("Pushed {} command(s) via {}.", cmds.len(), bridge.name());
     if choice == BridgeChoice::ExecFile {
         println!(
@@ -237,5 +239,52 @@ pub fn push(env: &Env, args: &Args) -> CliResult {
             dt_core::bridge::execfile::ExecFileBridge::bind_hint("F8")
         );
     }
-    Ok(())
+    let wait: u64 = match args.value("wait") {
+        Some(text) => text
+            .parse()
+            .map_err(|_| usage("--wait takes a number of seconds"))?,
+        None => return Ok(()),
+    };
+    wait_for_ack(&paths, receipt, Duration::from_secs(wait))
+}
+
+/// Tails the console log until the batch's END marker or the deadline, printing each convar.
+fn wait_for_ack(paths: &GamePaths, receipt: Receipt, wait: Duration) -> CliResult {
+    use dt_core::bridge::ack::{Outcome, PushStatus, Tracker};
+    use dt_core::bridge::conlog::LogTail;
+    let mut tail = LogTail::for_game(paths);
+    let mut tracker = Tracker::default();
+    let start = Instant::now();
+    tracker.start(receipt, start);
+    println!("Waiting up to {}s for the console log...", wait.as_secs());
+    loop {
+        for line in tail.poll() {
+            tracker.observe_line(&line);
+        }
+        let now = Instant::now();
+        tracker.tick(now);
+        match tracker.status() {
+            PushStatus::Confirmed { results, .. } => {
+                for (name, outcome) in results {
+                    match outcome {
+                        Outcome::Applied(v) => println!("  {name} = {v}"),
+                        Outcome::Rejected(why) => println!("  {name}: rejected ({why})"),
+                        Outcome::NoEcho => println!("  {name}: no reply in the log"),
+                    }
+                }
+                let applied = tracker.status().applied();
+                println!("Deadlock applied {applied} of {}.", results.len());
+                return Ok(());
+            }
+            PushStatus::TimedOut { .. } => break,
+            _ if now.duration_since(start) >= wait => break,
+            _ => std::thread::sleep(Duration::from_millis(250)),
+        }
+    }
+    let looked: Vec<String> = tail.paths().map(|p| p.display().to_string()).collect();
+    Err(fail(format!(
+        "no reply from Deadlock after {}s. Is the game running, started with +exec deadtune_boot -condebug, and was the key pressed? Looked in: {}",
+        wait.as_secs(),
+        looked.join(", ")
+    )))
 }

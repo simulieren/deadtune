@@ -7,6 +7,8 @@ mod live;
 mod png;
 mod profiles;
 mod relaunch;
+#[cfg(feature = "remote")]
+mod remote;
 mod settings;
 mod state;
 mod views;

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeadTune remote</title>
+<style>
+  body { font: 16px system-ui, sans-serif; margin: 0; padding: 12px 16px; background: #16181c; color: #e6e6e6; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .meta { color: #8a8f98; font-size: 13px; margin-bottom: 12px; }
+  .row { padding: 10px 0; border-bottom: 1px solid #2a2d33; }
+  .name { font-family: ui-monospace, monospace; font-size: 14px; display: flex; justify-content: space-between; }
+  .live { color: #5abe6e; font-size: 12px; }
+  .restart { color: #8a8f98; font-size: 12px; }
+  input[type=range] { width: 100%; height: 32px; }
+  input[type=text] { width: 100%; font-size: 16px; padding: 6px; background: #24272c; color: inherit; border: 1px solid #3a3e45; }
+  input[type=checkbox] { width: 28px; height: 28px; }
+  .val { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<h1>DeadTune</h1>
+<div class="meta" id="meta">connecting...</div>
+<div id="rows"></div>
+<script>
+const token = new URLSearchParams(location.search).get("t");
+let busy = false;
+
+function send(name, value) {
+  busy = true;
+  fetch(`/set?t=${token}&name=${encodeURIComponent(name)}&value=${encodeURIComponent(value)}`, { method: "POST" })
+    .finally(() => { busy = false; });
+}
+
+let timer = null;
+function sendSoon(name, value) {
+  clearTimeout(timer);
+  timer = setTimeout(() => send(name, value), 150);
+}
+
+function row(r) {
+  const div = document.createElement("div");
+  div.className = "row";
+  const head = document.createElement("div");
+  head.className = "name";
+  const name = document.createElement("span");
+  name.textContent = r.name;
+  const tag = document.createElement("span");
+  tag.className = r.live ? "live" : "restart";
+  tag.textContent = r.live ? "live" : "next launch";
+  head.append(name, tag);
+  div.appendChild(head);
+  if (r.kind === "bool") {
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = r.value === "1" || r.value === "true";
+    const digits = r.value === "0" || r.value === "1";
+    box.onchange = () => send(r.name, box.checked ? (digits ? "1" : "true") : (digits ? "0" : "false"));
+    div.appendChild(box);
+  } else if ((r.kind === "int" || r.kind === "float") && r.range) {
+    const val = document.createElement("div");
+    val.className = "val";
+    val.textContent = r.value;
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = r.range[0];
+    slider.max = r.range[1];
+    slider.step = r.step || (r.kind === "int" ? 1 : 0.01);
+    slider.value = r.value;
+    slider.oninput = () => { val.textContent = slider.value; sendSoon(r.name, slider.value); };
+    div.appendChild(val);
+    div.appendChild(slider);
+  } else {
+    const text = document.createElement("input");
+    text.type = "text";
+    text.value = r.value;
+    text.onchange = () => send(r.name, text.value);
+    div.appendChild(text);
+  }
+  return div;
+}
+
+let last = "";
+async function refresh() {
+  if (busy || document.activeElement?.tagName === "INPUT") return;
+  try {
+    const res = await fetch(`/state?t=${token}`);
+    const body = await res.text();
+    if (body === last) return;
+    last = body;
+    const s = JSON.parse(body);
+    document.getElementById("meta").textContent =
+      `${s.profile} | game ${s.running ? "running" : "not running"}`;
+    const rows = document.getElementById("rows");
+    rows.replaceChildren(...s.rows.map(row));
+    if (!s.rows.length) rows.textContent = "No favourites. Star convars in DeadTune.";
+  } catch (e) {
+    document.getElementById("meta").textContent = "DeadTune is not reachable";
+  }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

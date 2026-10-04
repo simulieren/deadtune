@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use dt_core::addons::AddonsConfig;
 use dt_core::catalog::Catalog;
 use dt_core::gi::Override;
 use dt_core::hud::HudLayout;
@@ -28,6 +29,7 @@ fn new_profile(
         convars,
         video: BTreeMap::new(),
         hud: HudLayout::default(),
+        addons: AddonsConfig::default(),
     })
 }
 

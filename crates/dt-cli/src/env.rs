@@ -164,7 +164,16 @@ pub fn profile_plan(
     let catalog = Catalog::embedded();
     let base = apply::resolve_base(profile)?;
     let hud = apply::hud_plan(paths, &profile.hud, &store)?;
-    let target = apply::target(&live, live_video.as_deref(), &base, profile, catalog, hud)?;
+    let addons = apply::addons_plan(paths, &profile.addons, &store)?;
+    let target = apply::target(
+        &live,
+        live_video.as_deref(),
+        &base,
+        profile,
+        catalog,
+        hud,
+        addons,
+    )?;
     let ctx = ApplyContext {
         in_sandbox,
         game_running: dt_core::launch::is_game_running(),
@@ -221,6 +230,27 @@ pub fn print_plan(plan: &ApplyPlan, diffs: bool) {
                 "HUD conflict: {} also overrides {}",
                 c.addon.display(),
                 c.paths.join(", ")
+            );
+        }
+    }
+    if let Some(addons) = &plan.addons {
+        for a in &addons.addons {
+            println!(
+                "addon {}: {} {}",
+                a.id.key(),
+                crate::cmd_addons::describe_action(&a.action),
+                a.path.display()
+            );
+        }
+        if addons.needs_search_path {
+            println!("addons: adds `Game citadel/addons` to SearchPaths");
+        }
+        for c in &addons.conflicts {
+            println!(
+                "addon conflict: {} also overrides {} ({})",
+                c.addon.display(),
+                c.paths.join(", "),
+                c.id.key()
             );
         }
     }

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use dt_core::addons::AddonsConfig;
 use dt_core::apply::*;
 use dt_core::backup::{BackupStore, FileKind};
 use dt_core::bridge::{Bridge, BridgeError, ConsoleCmd};
@@ -46,6 +47,7 @@ fn kaiz_profile() -> Profile {
         },
         video: BTreeMap::new(),
         hud: HudLayout::default(),
+        addons: AddonsConfig::default(),
     }
 }
 
@@ -112,6 +114,7 @@ fn plan_for(install: &FakeInstall, profile: &Profile, ctx: ApplyContext) -> Appl
     let live = read(&install.paths.gameinfo);
     let live_video = read_opt(&install.paths.video);
     let base = resolve_base(profile).unwrap();
+    let addons = addons_plan(&install.paths, &profile.addons, &install.store).unwrap();
     let tgt = target(
         &live,
         live_video.as_deref(),
@@ -119,6 +122,7 @@ fn plan_for(install: &FakeInstall, profile: &Profile, ctx: ApplyContext) -> Appl
         profile,
         catalog(),
         None,
+        addons,
     )
     .unwrap();
     plan(
@@ -170,7 +174,7 @@ fn resolve_base_uses_pinned_preset_text_or_the_base_file() {
 fn target_takes_base_block_plus_edits_and_keeps_live_outside_convars() {
     let profile = kaiz_profile();
     let base = resolve_base(&profile).unwrap();
-    let tgt = target(VANILLA, None, &base, &profile, catalog(), None).unwrap();
+    let tgt = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
 
     let effective = effective_values(&tgt.gameinfo).unwrap();
     let base_effective = effective_values(KAIZ).unwrap();
@@ -207,7 +211,16 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
         ..kaiz_profile()
     };
     let base = resolve_base(&profile).unwrap();
-    let tgt = target(VANILLA, Some(LIVE_VIDEO), &base, &profile, catalog(), None).unwrap();
+    let tgt = target(
+        VANILLA,
+        Some(LIVE_VIDEO),
+        &base,
+        &profile,
+        catalog(),
+        None,
+        None,
+    )
+    .unwrap();
     let video = tgt.video.unwrap();
     let settings: BTreeMap<_, _> = dt_core::video::read_settings(&video)
         .unwrap()
@@ -237,6 +250,7 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
         &kaiz_video_edit,
         catalog(),
         None,
+        None,
     )
     .unwrap();
     let video = tgt.video.unwrap();
@@ -254,7 +268,7 @@ fn plan_buckets_follow_catalog_apply_classes() {
     let live_eff = effective_values(VANILLA).unwrap();
     let base = resolve_base(&profile).unwrap();
     let target_eff = effective_values(
-        &target(VANILLA, None, &base, &profile, catalog(), None)
+        &target(VANILLA, None, &base, &profile, catalog(), None, None)
             .unwrap()
             .gameinfo,
     )
@@ -343,7 +357,7 @@ fn commenting_out_a_live_convar_pushes_its_catalog_default() {
         ..kaiz_profile()
     };
     let base = resolve_base(&profile).unwrap();
-    let applied = target(VANILLA, None, &base, &profile, catalog(), None).unwrap();
+    let applied = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
     let install = fake_install(&applied.gameinfo, None);
 
     let unknown_restart = read_convars(&applied.gameinfo)
@@ -426,6 +440,7 @@ fn execute_writes_backs_up_snapshots_and_pushes_then_reapply_is_a_no_op() {
             needs_restart: true,
             bridge_error: None,
             hud_changed: false,
+            addons_changed: false,
         }
     );
     assert_eq!(bridge.pushed, plan.live);
@@ -536,10 +551,10 @@ fn ranked_safe_restores_stock_block_and_keeps_modified_search_paths() {
     );
     let profile = kaiz_profile();
     let base = resolve_base(&profile).unwrap();
-    let tuned = target(&modded, None, &base, &profile, catalog(), None).unwrap();
+    let tuned = target(&modded, None, &base, &profile, catalog(), None, None).unwrap();
     let install = fake_install(&tuned.gameinfo, None);
 
-    let safe = ranked_safe_target(&tuned.gameinfo, &install.store, None).unwrap();
+    let safe = ranked_safe_target(&tuned.gameinfo, &install.store, None, None).unwrap();
     assert_eq!(safe.video, None);
     assert!(safe.gameinfo.contains("citadel/addons // mod manager"));
     assert_eq!(
@@ -566,7 +581,7 @@ fn ranked_safe_restores_stock_block_and_keeps_modified_search_paths() {
         .store
         .snapshot_original(FileKind::GameInfo, &original)
         .unwrap();
-    let safe = ranked_safe_target(&tuned.gameinfo, &install.store, None).unwrap();
+    let safe = ranked_safe_target(&tuned.gameinfo, &install.store, None, None).unwrap();
     assert_eq!(
         effective_values(&safe.gameinfo).unwrap(),
         effective_values(&custom_stock).unwrap(),
@@ -616,7 +631,7 @@ fn plan_with_hud(install: &FakeInstall, profile: &Profile) -> ApplyPlan {
     let live = read(&install.paths.gameinfo);
     let hud = hud_plan(&install.paths, &profile.hud, &install.store).unwrap();
     let base = resolve_base(profile).unwrap();
-    let tgt = target(&live, None, &base, profile, catalog(), hud).unwrap();
+    let tgt = target(&live, None, &base, profile, catalog(), hud, None).unwrap();
     plan(
         &install.paths,
         &live,
@@ -681,7 +696,7 @@ fn ranked_safe_removes_our_addon_and_keeps_the_search_path_line() {
     let live = read(&install.paths.gameinfo);
     let hud = hud_plan(&install.paths, &HudLayout::default(), &install.store).unwrap();
     assert_eq!(hud.as_ref().unwrap().action, HudAction::Remove);
-    let safe = ranked_safe_target(&live, &install.store, hud).unwrap();
+    let safe = ranked_safe_target(&live, &install.store, hud, None).unwrap();
     let plan = plan(
         &install.paths,
         &live,
@@ -703,5 +718,66 @@ fn ranked_safe_removes_our_addon_and_keeps_the_search_path_line() {
     assert!(
         has_addons(&gameinfo).unwrap() && addons_dir(&install.paths).is_dir(),
         "the mount line stays and points at an existing, now empty, addons dir"
+    );
+}
+
+fn addons_profile(install: &FakeInstall) -> Profile {
+    let upstream = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../research/configs/OptimizationLock/Various Addons Relating to Performance/Sinner Light Fix Mod/pak26_dir.vpk",
+    );
+    let cache = dt_core::addons::sources::cache_dir(&install.store.root);
+    dt_core::addons::sources::import(&cache, &upstream).unwrap();
+    let mut profile = kaiz_profile();
+    profile
+        .addons
+        .set_enabled(dt_core::addons::AddonId::SinnerLightFix, true);
+    profile
+}
+
+#[test]
+fn enabled_addon_installs_its_pak_mounts_addons_then_ranked_safe_removes_it() {
+    use dt_core::addons::Action;
+    let install = fake_install(VANILLA, None);
+    let profile = addons_profile(&install);
+    let first = plan_for(&install, &profile, ApplyContext::default());
+    let addons = first.addons.as_ref().expect("addons plan");
+    assert!(matches!(addons.addons[0].action, Action::Write(_)));
+    assert!(addons.needs_search_path);
+    assert_eq!(first.addon_changes(), 1);
+    assert!(has_addons(&first.gameinfo.as_ref().unwrap().after).unwrap());
+
+    let report = execute(&install.paths, &first, &install.store, None).unwrap();
+    assert!(report.addons_changed && report.needs_restart && !report.hud_changed);
+    let pak = addons_dir(&install.paths).join("pak73_dir.vpk");
+    assert!(pak.is_file());
+    assert!(has_addons(&read(&install.paths.gameinfo)).unwrap());
+
+    let again = plan_for(&install, &profile, ApplyContext::default());
+    assert!(
+        again.is_empty(),
+        "second apply has nothing to do: {again:?}"
+    );
+    assert_eq!(again.addon_changes(), 0);
+
+    let live = read(&install.paths.gameinfo);
+    let removal = addons_plan(&install.paths, &AddonsConfig::default(), &install.store).unwrap();
+    assert_eq!(removal.as_ref().unwrap().addons[0].action, Action::Remove);
+    let safe = ranked_safe_target(&live, &install.store, None, removal).unwrap();
+    let plan = plan(
+        &install.paths,
+        &live,
+        None,
+        &safe,
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap();
+    let report = execute(&install.paths, &plan, &install.store, None).unwrap();
+    assert!(report.addons_changed);
+    assert!(!pak.exists());
+    assert_eq!(
+        addons_plan(&install.paths, &AddonsConfig::default(), &install.store).unwrap(),
+        None,
+        "nothing enabled and nothing installed: no plan at all"
     );
 }

@@ -1,5 +1,6 @@
 //! diff, apply, ranked-safe, restore, push.
 
+use dt_core::addons::AddonsConfig;
 use dt_core::apply::{self, ApplyContext, ApplyPlan, ApplyReport};
 use dt_core::backup::FileKind;
 use dt_core::bridge::{ConsoleCmd, clipboard};
@@ -44,7 +45,8 @@ pub fn ranked_safe(env: &Env, args: &Args) -> CliResult {
     let store = env.store()?;
     let live = env::read(&paths.gameinfo)?;
     let hud = apply::hud_plan(&paths, &HudLayout::default(), &store)?;
-    let target = apply::ranked_safe_target(&live, &store, hud)?;
+    let addons = apply::addons_plan(&paths, &AddonsConfig::default(), &store)?;
+    let target = apply::ranked_safe_target(&live, &store, hud, addons)?;
     let plan = apply::plan(
         &paths,
         &live,
@@ -53,7 +55,9 @@ pub fn ranked_safe(env: &Env, args: &Args) -> CliResult {
         Catalog::embedded(),
         ApplyContext::default(),
     )?;
-    println!("Ranked-safe: stock ConVars block, video.txt kept, DeadTune HUD addon removed");
+    println!(
+        "Ranked-safe: stock ConVars block, video.txt kept, DeadTune HUD and performance addons removed"
+    );
     run_plan(
         env,
         args,
@@ -107,6 +111,7 @@ fn print_report(report: &ApplyReport, running: bool) {
         (report.wrote_gameinfo, "gameinfo.gi"),
         (report.wrote_video, "video.txt"),
         (report.hud_changed, "HUD addon"),
+        (report.addons_changed, "performance addons"),
     ]
     .into_iter()
     .filter_map(|(done, name)| done.then_some(name))

@@ -2,7 +2,7 @@
 
 use crate::args::{Args, CliResult};
 use crate::env::Env;
-use crate::{cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_info, cmd_profile};
+use crate::{cmd_addons, cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_info, cmd_profile};
 
 pub struct Command {
     pub name: &'static str,
@@ -199,6 +199,54 @@ pub const COMMANDS: &[Command] = &[
         values: &["layout"],
         switches: &[],
         run: cmd_hud::status,
+    },
+    Command {
+        name: "addons list",
+        usage: "addons list [--profile <file>]",
+        summary: "performance addons: authors, download and install state",
+        values: &["profile"],
+        switches: &[],
+        run: cmd_addons::list,
+    },
+    Command {
+        name: "addons enable",
+        usage: "addons enable <id> --profile <file> [--keep <group,...>]",
+        summary: "turn an addon on in a profile (apply --profile installs it)",
+        values: &["profile", "keep"],
+        switches: &[],
+        run: cmd_addons::enable,
+    },
+    Command {
+        name: "addons disable",
+        usage: "addons disable <id> --profile <file>",
+        summary: "turn an addon off in a profile (apply --profile removes it)",
+        values: &["profile"],
+        switches: &[],
+        run: cmd_addons::disable,
+    },
+    Command {
+        name: "addons import",
+        usage: "addons import <file.vpk or folder>",
+        summary: "take a downloaded upstream addon file into DeadTune's cache",
+        values: &[],
+        switches: &[],
+        run: cmd_addons::import,
+    },
+    Command {
+        name: "addons fetch",
+        usage: "addons fetch <id>|all",
+        summary: "download upstream addon files from GitHub (fetch feature)",
+        values: &[],
+        switches: &[],
+        run: cmd_addons::fetch,
+    },
+    Command {
+        name: "addons build",
+        usage: "addons build --profile <file>",
+        summary: "build the texture downscaler pak from the game files",
+        values: &["profile"],
+        switches: &[],
+        run: cmd_addons::build,
     },
 ];
 

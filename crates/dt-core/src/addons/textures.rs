@@ -210,6 +210,12 @@ pub trait TextureBuilder: Sync {
     ) -> Result<BuildStats, String>;
 }
 
+/// The builder the GUI and CLI use. `dt_core::texture` replaces the body with its own
+/// implementation when it lands; nothing else needs to change.
+pub fn builder() -> &'static dyn TextureBuilder {
+    &Unavailable
+}
+
 pub struct Unavailable;
 
 impl TextureBuilder for Unavailable {

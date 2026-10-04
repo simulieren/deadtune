@@ -63,6 +63,9 @@ Takeaway: "live preview" is real but partial. The design must make **restart-req
 ### 2.4 Risk: Valve's ConVar restriction
 
 - The game ships the string: *"Unable to enter matchmaking while any party member has changes to ConVars in Gameinfo.gi or is running Tools-Mode."*
+  - Update (GameTracking-Deadlock, checked 2026-10-05): that wording lived one day (added 2026-03-26, commit `2b81bc71`). Since 2026-03-27 (`8febc71f`) `Citadel_StartMatchmaking_UnverifiedPGI` reads: *"...has unsupported changes to the following sections of their 'gameinfo.gi': Engine2, MaterialSystem2, NetworkSystem, Particles, RenderSystem, SceneSystem, WorldRenderer"*. `ConVars` is a separate top-level block and is not in that list.
+  - On 2026-09-24 (`711b91ed`) the convar dump started showing `gameinfo_cannot_override` on 77 ConVars (shadows, fog, outlines, glow, cloak, particle cables). The catalog marks these `gameinfo_ignored`.
+  - Inferred, not tested in game: Valve moved from blocking ConVar edits to ignoring the sensitive ones. P0-3 in `docs/testing-windows.md` still decides this.
 - Forum reports from March 2026 show players hitting it. Sqooky's README (updated Oct 3, 2026) says it is "not fully implemented" and the presets are still actively maintained.
 - **Implication:** enforcement may be partial, rolling or toggled server side. The app must make it trivial to go back to vanilla (one click: "Ranked-safe mode", which restores the stock ConVars block and keeps `video.txt` tweaks, which are normal menu settings).
 - Also note that `-tools` mode is explicitly named, which matters for the netcon workaround below.

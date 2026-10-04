@@ -95,8 +95,8 @@ citadel_outer_radius_scaler,restart (gameinfo only),"devonly, cl",0.2545,,For so
 citadel_per_weapon_per_surface_impact_effects,unknown,,,,,,,,,,true,false,false
 citadel_perf_interval_report_s,unknown,,,,"The interval that we record performance stats to the log at measured in seconds [def: ""60""]",,//100000,//100000,,,,,
 citadel_ping_wheel_activation_radius,restart (gameinfo only),"devonly, cl",0.37,LEGACY. See: citadel_show_chat_wheel_angle_threshold. Increase this to change how much you have to move your mouse to make the mousewheel visible.,,,//1,//1,,,,,
-citadel_player_glow_disabled,live w/ sv_cheats (hideout/sandbox),"cl, cheat, release",false,,"Disables player glow/highlight effect when pinged.               [def: ""0""]",,,,,,0,0,0
-citadel_player_outline_enemies,restart (gameinfo only),"devonly, cl",true,,turn off enemy outline DOES NOT BREAK BACKSTABBER OR PING THRU WALL,,,false,,,true,true,true
+citadel_player_glow_disabled,live w/ sv_cheats (hideout/sandbox),"cl, cheat, release, gameinfo_cannot_override",false,,"Disables player glow/highlight effect when pinged.               [def: ""0""]",,,,,,0,0,0
+citadel_player_outline_enemies,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,,turn off enemy outline DOES NOT BREAK BACKSTABBER OR PING THRU WALL,,,false,,,true,true,true
 citadel_portrait_unit_ag2_enable,restart (gameinfo only),"devonly, cl",true,Enable AG2 use in portrait units,,,,false,,,,,
 citadel_portrait_world_renderer_off,restart (gameinfo only),"devonly, cl",false,,"Disables character models in shop and endgame screen                                            [def: ""false""]",,false,false,1,1,true,false,false
 citadel_reduce_camera_shake,unknown,,,,,,,,,,,true,
@@ -212,7 +212,7 @@ csm_cascade3_override_dist,live w/ sv_cheats (hideout/sandbox),cheat,-1,,All of 
 csm_cascade_viewdir_shadow_bias_scale,live w/ sv_cheats (hideout/sandbox),cheat,2,,,,,,,,,0.1,
 csm_max_dist_between_caster_and_receiver,live w/ sv_cheats (hideout/sandbox),cheat,15000,default pushback,All of these commands should reduce shadow quality.,,0,0,,,0,0,0
 csm_max_num_cascades_override,restart (gameinfo only),devonly,-1,Number of cascades in sunlight shadow,All of these commands should reduce shadow quality.,,0,0,1,1,0,0,0
-csm_max_shadow_dist_override,restart (gameinfo only),devonly,-1,,All of these commands should reduce shadow quality.,,,,1000,1000,0,0,0
+csm_max_shadow_dist_override,restart (gameinfo only),"devonly, gameinfo_cannot_override",-1,,All of these commands should reduce shadow quality.,,,,1000,1000,0,0,0
 csm_max_visible_dist,live w/ sv_cheats (hideout/sandbox),cheat,7500,,All of these commands should reduce shadow quality.,,0,0,1000,1000,0,1,0
 csm_res_override_0,live w/ sv_cheats (hideout/sandbox),cheat,0,,All of these commands should reduce shadow quality.,,1,1,,,1,1,1
 csm_res_override_1,live w/ sv_cheats (hideout/sandbox),cheat,0,,All of these commands should reduce shadow quality.,,1,1,,,1,1,1
@@ -400,7 +400,7 @@ pred_cloth_rot_multiplier,restart (gameinfo only),"devonly, cl",0.3,,was 0.2 cha
 presettle_cloth_iterations,restart (gameinfo only),"devonly, cl",30,,default 3,,,,,,0,0,0
 props_break_apply_radial_forces,unknown,,,,default: 1,,,,,,0,0,0
 props_break_max_pieces_perframe,unknown,,,,"Makes boxes and troopers break into a single piece               [def: ""16""]  // Say thank you to jasper that this can be set to 0 now <3",,0,0,1,1,0.5,0.1,0.5
-r_RainParticleDensity,restart (gameinfo only),"devonly, cl",1,Density of Particle Rain 0-1,"Disable rain particles (devonly, default 1)",,,,0,0,0,0,0
+r_RainParticleDensity,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",1,Density of Particle Rain 0-1,"Disable rain particles (devonly, default 1)",,,,0,0,0,0,0
 r_add_views_in_pre_output,restart (gameinfo only),devonly,false,,,1,1,1,,,,1,1
 r_ambientboost,unknown,,,,,,,,,,,1,1
 r_ambientfactor,unknown,,,,,,,,,,,12,12
@@ -417,36 +417,36 @@ r_character_decal_monitor_render_res,restart (gameinfo only),devonly,512,,defaul
 r_character_decal_resolution,restart (gameinfo only),devonly,1024,Resolution of character decal texture.,"Resolution of character decal textures.                          [def: ""1024""]",,4,4,128,128,0.01,0.01,0.01
 r_citadel_antialiasing,restart (gameinfo only),"devonly, cl",1,,Disable AA (default 1),,,,0,0,0,0,0
 r_citadel_clip_sphere_min_opacity,restart (gameinfo only),"devonly, cl, cheat",0.4,,"Removes the blur from the pinhole camera                         [def: ""40""]",,0,0,0,0,,0,0
-r_citadel_cloak_blur_amount,live w/ sv_cheats (hideout/sandbox),"cl, cheat",0.01,cloak,"Disable cloak/blur post-effect (cheat, default 0.01). Saves blur pass for cloaked units",,,,0,0,,0,0
-r_citadel_cloak_refract_amount,live w/ sv_cheats (hideout/sandbox),"cl, cheat",0,cloak,Disables the GPU-heavy refraction effect when heroes go invisible (Wraith/Invis item),,,,,,,0,0
+r_citadel_cloak_blur_amount,live w/ sv_cheats (hideout/sandbox),"cl, cheat, gameinfo_cannot_override",0.01,cloak,"Disable cloak/blur post-effect (cheat, default 0.01). Saves blur pass for cloaked units",,,,0,0,,0,0
+r_citadel_cloak_refract_amount,live w/ sv_cheats (hideout/sandbox),"cl, cheat, gameinfo_cannot_override",0,cloak,Disables the GPU-heavy refraction effect when heroes go invisible (Wraith/Invis item),,,,,,,0,0
 r_citadel_depth_prepass_dynamic_objects,restart (gameinfo only),"devonly, cl",true,,"Should be not prepassing entities that move                      [def: ""true""]",,false,false,0,0,false,false,false
-r_citadel_depthoffield_enable,restart (gameinfo only),"devonly, cl",false,Enable/Disable Depth of Field,"Hard-disable DOF (default false — already off, reinforces)",,,,0,0,false,false,false
+r_citadel_depthoffield_enable,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",false,Enable/Disable Depth of Field,"Hard-disable DOF (default false — already off, reinforces)",,,,0,0,false,false,false
 r_citadel_disable_npr_lighting,restart (gameinfo only),"devonly, cl",false,,~1 extra FPS but game looks terrible. Uncomment if you don't mind (devonly),,,,1,1,false,false,false
 r_citadel_distancefield_ao_quality,restart (gameinfo only),"devonly, cl",0,Distance Field AO quality,Distance-field AO off (already default 0 — reinforces),,,,0,0,,,
-r_citadel_distancefield_blur,restart (gameinfo only),"devonly, cl",true,Enable/Disable distance field blur,Disable distance-field blur (background blur),,,,0,0,false,false,false
-r_citadel_distancefield_down_sample,restart (gameinfo only),"devonly, cl",1,Distance field down sample factor,DF downsample 0 (default 1). Reinforces DF shutoff,,,,0,0,6,6,6
-r_citadel_distancefield_farfield_enable,restart (gameinfo only),"devonly, cl",true,Distance field far field enable,"Disable DF far-field trace pass (devonly, default true)",,,,0,0,0,0,0
+r_citadel_distancefield_blur,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,Enable/Disable distance field blur,Disable distance-field blur (background blur),,,,0,0,false,false,false
+r_citadel_distancefield_down_sample,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",1,Distance field down sample factor,DF downsample 0 (default 1). Reinforces DF shutoff,,,,0,0,6,6,6
+r_citadel_distancefield_farfield_enable,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,Distance field far field enable,"Disable DF far-field trace pass (devonly, default true)",,,,0,0,0,0,0
 r_citadel_distancefield_shadows,restart (gameinfo only),"devonly, cl",true,,Disable distance-field soft shadows (ray-marched),,,,0,0,false,false,false
 r_citadel_enable_pano_world_blur,restart (gameinfo only),"devonly, cl",true,Enable world-blur style,"This command disables the blur in the shop and improves the performance of the shop DRAMATICALLY however it can cause visual issues with the pause menu on nvidia systems running vulkan. Please experiment. [def: ""true""]",,true,true,0,0,//false,//false,//false
 r_citadel_fog_quality,restart (gameinfo only),"devonly, cl",1,Fog Quality,Lowest fog quality,,,,0,0,0,0,0
 r_citadel_fsr_enable_mip_bias,restart (gameinfo only),"devonly, cl",true,Apply negative mip bias when rendering with FSR.,"Disable FSR mip bias (avoids sharper mip loading, default true)",,,false,0,0,,,
 r_citadel_glow_health_bar_debug,live w/ sv_cheats (hideout/sandbox),"cl, cheat",false,,"This seems to be a command controlling the rendering of a debug tool. Seeing as its inclusion doesn't benefit us I have disabled it [def: ""true""]",,false,false,,,,,
 r_citadel_glow_health_bars,restart (gameinfo only),"devonly, cl",true,,Disable glow health bars. ⚠ Makes health bars invisible through walls — gameplay readability hit,,,,//0,//0,false,false,false
-r_citadel_gpu_culling,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/GPU Culling,"The game barely uses the gpu so this is a win                    [def: ""true""]",,true,true,,,,,
-r_citadel_gpu_culling_shadows,restart (gameinfo only),"devonly, cl",false,Citadel/Graphics/GPU Cull Shadow Views,GPU-cull shadow views (default false). Harmless with shadows off,,,,1,1,true,true,true
-r_citadel_gpu_culling_two_pass,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/GPU Culling (Two Pass),"Setting this to false will cause issues with frametime [def: ""true""]",,//false,//false,,,,,
+r_citadel_gpu_culling,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,Citadel/Graphics/GPU Culling,"The game barely uses the gpu so this is a win                    [def: ""true""]",,true,true,,,,,
+r_citadel_gpu_culling_shadows,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",false,Citadel/Graphics/GPU Cull Shadow Views,GPU-cull shadow views (default false). Harmless with shadows off,,,,1,1,true,true,true
+r_citadel_gpu_culling_two_pass,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,Citadel/Graphics/GPU Culling (Two Pass),"Setting this to false will cause issues with frametime [def: ""true""]",,//false,//false,,,,,
 r_citadel_gpu_preview_baked_shadows,restart (gameinfo only),"devonly, cl",true,,Disable baked/preview shadow denoising,,,,0,0,,false,false
 r_citadel_gpu_preview_denoise,restart (gameinfo only),"devonly, cl",true,,Disable shadow denoiser (saves GPU passes),,,,0,0,,,
 r_citadel_gpu_preview_denoise_passes,restart (gameinfo only),"devonly, cl",3,,"[def: ""3""]",,0,0,0,0,,,
 r_citadel_gpu_preview_denoise_shadow_passes,restart (gameinfo only),"devonly, cl",1,,Zero shadow denoise passes,,,,0,0,,,
 r_citadel_npr_force_solid_outline,restart (gameinfo only),"devonly, cl",false,,"Causes odd visual bugs with dragons and neutrals when set to true    [def: ""false""]",,//false,//false,1,1,true,,
-r_citadel_npr_outlines,restart (gameinfo only),"devonly, cl, cheat",true,Enable/Disable NPR Outlines,"Enable the little black outlines on players. Unfortunately this was disabled and no longer works a few months ago.                                [def: ""true""]",,//false,//false,//0918,//0918,true,true,true
-r_citadel_npr_outlines_max_dist,restart (gameinfo only),"devonly, cl, cheat",1000,Maximum distance at which NPR outlines are rendered,"Limits outline distance to reduce unnecessary processing.        [def: ""1000""]",,//1,//1,,,600,600,600
+r_citadel_npr_outlines,restart (gameinfo only),"devonly, cl, cheat, gameinfo_cannot_override",true,Enable/Disable NPR Outlines,"Enable the little black outlines on players. Unfortunately this was disabled and no longer works a few months ago.                                [def: ""true""]",,//false,//false,//0918,//0918,true,true,true
+r_citadel_npr_outlines_max_dist,restart (gameinfo only),"devonly, cl, cheat, gameinfo_cannot_override",1000,Maximum distance at which NPR outlines are rendered,"Limits outline distance to reduce unnecessary processing.        [def: ""1000""]",,//1,//1,,,600,600,600
 r_citadel_outlines,unknown,,,,Enables enemy outlines for better visibility.,,,,,,,1,1
 r_citadel_screenspace_particles_full_res,restart (gameinfo only),"devonly, cl",true,Render screen space particles at full resolution,"Render screen space particles at full resolution. This could introduce readability issues but should be fine. [def: ""true""]",,true,true,0,0,0,0,0
-r_citadel_selection_outline2_alpha,restart (gameinfo only),"devonly, cl",0.8,Selection Outline Alpha,"Outlines on enemy players and abilities on a scale of 0-1.       [def: ""0.8""]",,//0.2,//0.2,,,255,0.8,0.8
-r_citadel_selection_outline2_offset,restart (gameinfo only),"devonly, cl",0.3,"Selection Outline Offset: -1 for interior, 0 for centered, 1 for exterior.",,,,,,,,2,2
-r_citadel_selection_outline2_width,restart (gameinfo only),"devonly, cl",4,Selection Outline Width,,,,,,,,50,50
+r_citadel_selection_outline2_alpha,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",0.8,Selection Outline Alpha,"Outlines on enemy players and abilities on a scale of 0-1.       [def: ""0.8""]",,//0.2,//0.2,,,255,0.8,0.8
+r_citadel_selection_outline2_offset,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",0.3,"Selection Outline Offset: -1 for interior, 0 for centered, 1 for exterior.",,,,,,,,2,2
+r_citadel_selection_outline2_width,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",4,Selection Outline Width,,,,,,,,50,50
 r_citadel_shadow_caching,restart (gameinfo only),"devonly, cl",true,,"We disable all shadows so this shouldn't be needed               [def: ""true""]",,true,true,0,0,,,
 r_citadel_shadow_quality,restart (gameinfo only),"devonly, cl",1,Shadow Quality,"Deadlock/Citadel shadow quality level (0 = lowest).              [def: ""2""]",,0,0,1,1,0,0,0
 r_citadel_shadowdb,restart (gameinfo only),"devonly, cl",2048,,Default: 2048,,,,,,256,256,256
@@ -466,7 +466,7 @@ r_decals_max_on_deformables,unknown,,,,,,,,,,0,0,0
 r_decals_overlap_threshold,unknown,,,,,,,,,,5,5,5
 r_depth_of_field,restart (gameinfo only),"devonly, cl",true,,"Disables depth of field.                                         [def: ""1""]",,0,0,0,0,0,0,0
 r_directional_lightmaps,restart (gameinfo only),devonly,true,,Disable directional lightmaps,,,,0,0,false,false,false
-r_directlighting,live w/ sv_cheats (hideout/sandbox),cheat,true,Set to use direct lighting,Disable direct lighting (cheat),,,,0,0,true,false,true
+r_directlighting,live w/ sv_cheats (hideout/sandbox),"cheat, gameinfo_cannot_override",true,Set to use direct lighting,Disable direct lighting (cheat),,,,0,0,true,false,true
 r_distancefield_enable,restart (gameinfo only),"devonly, cl",true,Graphics/Enable Distance Field rendering,"Disables/ Enables distance-field system (used by some lighting/shadowing/occlusion features). [def: ""1""]",,1,1,0,0,0,0,0
 r_dopixelvisibility,live w/ sv_cheats (hideout/sandbox),cheat,true,,Causes issues with boxes being invisible,,//0,//0,//0,//0,//false,//false,//false
 r_draw3dskybox,restart (gameinfo only),"devonly, cl",true,,"Enables drawing the 3D skybox layer (distant geometry).         [def: ""1""]",,//0,//0,0,0,0,0,0
@@ -476,19 +476,19 @@ r_draw_overlays,restart (gameinfo only),"devonly, cl",true,,causes problems with
 r_draw_particle_children_with_parents,live w/ sv_cheats (hideout/sandbox),cheat,-1,"Draw particle children with parents (-1=use gameinfo, 0=no, 1=yes)","I believe this handles the drawing of little visual flourish particles. [def: ""-1""]",,1,1,,,0,false,false
 r_drawdecals,live w/ sv_cheats (hideout/sandbox),cheat,true,Set to render decals,"*Render decals. If not set to true lash's slam and warden's ult indicators become quite difficult to see.                                                  [def: ""1""]",,//1,//1,//0,//0,0,1,0
 r_drawmodeldecals,unknown,,,,does not exist in master convar,,,,,,0,0,0
-r_drawparticles,live w/ sv_cheats (hideout/sandbox),cheat,true,SceneSystem/Particles/Draw Particles,default: true - might change to false again,,,,,,true,true,true
+r_drawparticles,live w/ sv_cheats (hideout/sandbox),"cheat, gameinfo_cannot_override",true,SceneSystem/Particles/Draw Particles,default: true - might change to false again,,,,,,true,true,true
 r_drawropes,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,,"[def: ""true""]",,false,false,0,0,0,0,0
-r_drawskybox,live w/ sv_cheats (hideout/sandbox),cheat,true,Render the 2d skybox.,"Can't be changed anymore                                             [def: ""true""]",,//true,//true,0,0,0,,
+r_drawskybox,live w/ sv_cheats (hideout/sandbox),"cheat, gameinfo_cannot_override",true,Render the 2d skybox.,"Can't be changed anymore                                             [def: ""true""]",,//true,//true,0,0,0,,
 r_drawtracers,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,,"Makes lash's ground slam marker invisible. I would enable it anyway but I don't like getting fifty trillion ""how do I fix this"" dms",,//false,//false,,,0,0,0
 r_drawtracers_firstperson,live,"cl, a, release",true,Toggle visibility of first person weapon tracers,"[def: ""true""]",,false,false,,,0,0,0
 r_drawviewmodel,live w/ sv_cheats (hideout/sandbox),"cl, cheat",true,Render view model,"[def: ""true""]",,false,false,,,,,
 r_dx11_software_cmd_lists,restart (gameinfo only),devonly,true,Enable Software Command lists for DX11 (Avoid using deferred contexts),causes a lot of issues,,//0,//0,,,,,
 r_effects_bloom,restart (gameinfo only),"devonly, cl",true,,"Disables effects bloom.                                          [def: ""1""]",,0,0,0,0,0,0,0
-r_enable_cubemap_fog,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/Fog/Enable Cubemap Fog,Disable cubemap fog,,,false,0,0,0,0,0
-r_enable_gradient_fog,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/Fog/Enable Gradient Fog,Disable gradient fog,,,false,0,0,0,0,0
+r_enable_cubemap_fog,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,Citadel/Graphics/Fog/Enable Cubemap Fog,Disable cubemap fog,,,false,0,0,0,0,0
+r_enable_gradient_fog,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,Citadel/Graphics/Fog/Enable Gradient Fog,Disable gradient fog,,,false,0,0,0,0,0
 r_enable_rigid_animation,restart (gameinfo only),"devonly, cl",false,,"[def: ""true""]",,false,false,,,0,0,0
-r_enable_volume_fog,restart (gameinfo only),"devonly, cl",true,Citadel/Graphics/Fog/Enable Volume Fog,Disable volume fog,,,false,0,0,0,0,0
-r_environment_map_roughness_range,restart (gameinfo only),"devonly, cl, cheat",0.2 0.3,Fade region for sampling environment maps on lightmapped nonmetals. Smoother values than the first param sample envmaps. Rougher values than the second sample only lightmap SH. r_environment_map_roughness_range 1 1 to always sample envmaps for comparison.,"Fade region for envmap sampling (default ""0.2 0.3""). Rougher values skip envmaps; 0.01 0.01 = basically turn off map reflections",,,,0.01 0.01,0.01 0.01,0.01,0.01,0.01
+r_enable_volume_fog,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,Citadel/Graphics/Fog/Enable Volume Fog,Disable volume fog,,,false,0,0,0,0,0
+r_environment_map_roughness_range,restart (gameinfo only),"devonly, cl, cheat, gameinfo_cannot_override",0.2 0.3,Fade region for sampling environment maps on lightmapped nonmetals. Smoother values than the first param sample envmaps. Rougher values than the second sample only lightmap SH. r_environment_map_roughness_range 1 1 to always sample envmaps for comparison.,"Fade region for envmap sampling (default ""0.2 0.3""). Rougher values skip envmaps; 0.01 0.01 = basically turn off map reflections",,,,0.01 0.01,0.01 0.01,0.01,0.01,0.01
 r_extra_render_frames,live w/ sv_cheats (hideout/sandbox),cheat,0,,"Setting this to anything above 0 causes issues with latency. negative values cause the game to crash. [def: ""0""]",,//1,//1,,,,,
 r_fallback_texture_lod_scale,live w/ sv_cheats (hideout/sandbox),cheat,2,Scale factor for requested texture size (texture streaming) - used for geo that doesn't have a precomputed UV density measure,Fallback geo uses 8x lower mip (default 2) (cheat),,,,8,8,4,4,4
 r_farz,live w/ sv_cheats (hideout/sandbox),"cl, cheat",-1,Override the far clipping plane. -1 means to use the value in env_fog_controller.,"This controls the far clipping plane, ie building/player popin   [def: ""-1""]",,7000,7000,4500,4500,6000,8000,8000
@@ -537,19 +537,19 @@ r_monitor_3dskybox,restart (gameinfo only),"devonly, cl",true,,kai's cfg,,,,0,0,
 r_morphing_enabled,live w/ sv_cheats (hideout/sandbox),cheat,true,,Disable vertex morph targets / facial expressions (cheat),,,false,0,0,false,false,false
 r_multiscattering,restart (gameinfo only),"devonly, cl",true,,"Enables multi-scattering lighting approximation.                 [def: ""1""]",,1,1,0,0,1,1,1
 r_muzzleflashbrightness,live w/ sv_cheats (hideout/sandbox),"cl, rep, cheat",0.4,,default 0.4 idk if this does anything,,,,,,0.01,0.01,0.01
-r_nearz,live w/ sv_cheats (hideout/sandbox),"cl, cheat",-1,Override the near clipping plane. -1 means use the default.,,,,,12,12,,10,10
+r_nearz,live w/ sv_cheats (hideout/sandbox),"cl, cheat, gameinfo_cannot_override",-1,Override the near clipping plane. -1 means use the default.,,,,,12,12,,10,10
 r_opaque,restart (gameinfo only),"devonly, cl",true,,makes the map invisible,,//false,//false,,,,,
 r_particle_allowprerender,restart (gameinfo only),devonly,true,,"I imagine it renders particles prematurely, which we do not care for.    [def: ""true""]",,true,true,,,true,,
 r_particle_batch_collections,restart (gameinfo only),devonly,false,,"Batches collections of particles, typically batch rendering is faster so this is set to true. [def: ""false""]",1,1,1,1,1,true,true,true
 r_particle_batch_simulate,unknown,,,,,,,,,,,1,1
-r_particle_cables_cast_shadows,restart (gameinfo only),devonly,true,,Cable particles don't cast shadows (default 1),,,,0,0,0,false,false
-r_particle_cables_culling,restart (gameinfo only),devonly,1,,,,,,,,,1,1
-r_particle_cables_render,restart (gameinfo only),devonly,true,,Skip rendering cable/rope particle geometry (default 0? keep 1 = render minimal),,,,1,1,false,false,false
-r_particle_cables_render_meshlets,restart (gameinfo only),devonly,true,,,,,,,,0,false,false
+r_particle_cables_cast_shadows,restart (gameinfo only),"devonly, gameinfo_cannot_override",true,,Cable particles don't cast shadows (default 1),,,,0,0,0,false,false
+r_particle_cables_culling,restart (gameinfo only),"devonly, gameinfo_cannot_override",1,,,,,,,,,1,1
+r_particle_cables_render,restart (gameinfo only),"devonly, gameinfo_cannot_override",true,,Skip rendering cable/rope particle geometry (default 0? keep 1 = render minimal),,,,1,1,false,false,false
+r_particle_cables_render_meshlets,restart (gameinfo only),"devonly, gameinfo_cannot_override",true,,,,,,,,0,false,false
 r_particle_explicit_fetch,restart (gameinfo only),devonly,false,,"[def: ""false""]        // I believe this improves performance but will make soul orbs a bit difficult to see",,false,false,,,,,
 r_particle_fixedrandomseeds,restart (gameinfo only),devonly,false,Use fixed seeds for easier debugging,"I need to properly test this, but I'm pretty sure that setting this to true marginally increases performance. That being said it does make flames from paige 1 always appear on the left, so your call ig [def: ""false""]",,true,true,1,1,,,
 r_particle_gpu_implicit_lds_cache,restart (gameinfo only),devonly,false,,"(default false) — caches implicit particle data in GPU LDS (on-chip), fewer VRAM round-trips per particle. Try it.",,,,1,1,,,
-r_particle_max_detail_level,restart (gameinfo only),devonly,3,The maximum detail level of particle to create,Only spawn lowest-detail particle systems (default -1),,,,0,0,1,0,0
+r_particle_max_detail_level,restart (gameinfo only),"devonly, gameinfo_cannot_override",3,The maximum detail level of particle to create,Only spawn lowest-detail particle systems (default -1),,,,0,0,1,0,0
 r_particle_max_draw_distance,live w/ sv_cheats (hideout/sandbox),cheat,1e+06,The maximum distance that particles will render,Reduce particle draw distance (default 1e6),,,,300000,300000,300000,100000,300000
 r_particle_max_size_cull,restart (gameinfo only),devonly,1200,Particle systems larger than this in every dimension skip culling to save CPU.  They will be drawn anyway.,"[def: ""1200""] // Particle systems larger than this in every dimension skip culling to save CPU.  They will be drawn anyway. // So particle culling is handled by the CPU in deadlock, if you have GPU overhead to spare, consider lowering this value.",,900,900,256,256,1600,126,256
 r_particle_max_texture_layers,restart (gameinfo only),devonly,-1,,"Anything below 4 will make infernus afterburn, paige fire, and drifter's passive look very weird and blocky [def: ""-1""]",,4,4,4,4,4,4,4
@@ -566,14 +566,14 @@ r_physics_particle_op_spawn_scale,restart (gameinfo only),devonly,1,,"Prevents p
 r_pipeline_stats_use_flush_api,restart (gameinfo only),devonly,true,Experimental: Set to 1 to use the ID3D11DeviceContext11::Flush() to flush the GPU pipeline instead of queries.,,,,,,,false,false,false
 r_pixelvisibility_partial,live w/ sv_cheats (hideout/sandbox),cheat,true,,"As far as I am aware this disables the pixel visibility system which should reduce visual fidelity but saves you from drawing a ray (I THINK) [def: ""true""]",,false,false,//0,//0,,,
 r_post_bloom,restart (gameinfo only),"devonly, cl",false,,"Disables post-process bloom.                                     [def: ""1""]",,0,0,0,0,0,0,0
-r_postprocess_enable,restart (gameinfo only),"devonly, cl",true,,Disable ALL post-processing. Uncomment if not using post-processing mods like Sunlock or you want the game to look grey,,,,//0,0,true,true,true
+r_postprocess_enable,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,,Disable ALL post-processing. Uncomment if not using post-processing mods like Sunlock or you want the game to look grey,,,,//0,0,true,true,true
 r_propsmaxdist,restart (gameinfo only),"devonly, cl",1200,Maximum visible distance,Max prop draw distance (default 1200). Controls how far you see boxes/props,,,,600,600,700,600,600
 r_render_hair,restart (gameinfo only),"devonly, cheat",true,,"[def: ""true""]",,false,false,0,0,0,0,0
 r_render_portals,restart (gameinfo only),"devonly, cl",true,,default: true,,,,,,true,true,true
 r_renderdoc_auto_shader_pdbs,restart (gameinfo only),devonly,true,Automatically generate shader debug info on capture,"Automatically generate shader debug info on capture.             [def: ""true""]",,false,false,0,0,0,0,0
 r_rendersun,live w/ sv_cheats (hideout/sandbox),cheat,true,Render sun lighting,"Disables sun lighting.                                           [def: ""1""]",,0,0,0,0,false,false,false
 r_ropetranslucent,restart (gameinfo only),"devonly, cl",true,,Disable translucent rope rendering,,,,0,0,0,0,0
-r_shadows,live w/ sv_cheats (hideout/sandbox),cheat,true,,Disable all shadow rendering (cheat),,,,0,0,0,0,0
+r_shadows,live w/ sv_cheats (hideout/sandbox),"cheat, gameinfo_cannot_override",true,,Disable all shadow rendering (cheat),,,,0,0,0,0,0
 r_showdebugoverlays,live w/ sv_cheats (hideout/sandbox),cheat,false,Set to render debug overlays,"Shows a ton of debug overlays IT MAKES ME SO HAPPY I LOVE IT     [def: ""false""]",,//true,//true,,,,,
 r_size_cull_threshold,restart (gameinfo only),devonly,0.8,Threshold of screen size percentage below which objects get culled,"This will control the distance trooper healthbars and boxes stop rendering *Culls small objects sooner based on screen size threshold (higher = more culling). [def: ""0.8""]",,0.9,1.4,1.75,1.75,1.6,0.8,0.8
 r_size_cull_threshold_shadow,live w/ sv_cheats (hideout/sandbox),cheat,0.2,Threshold of shadow map size percentage below which objects get culled,"Threshold of shadow map size percentage below which objects get culled (higher = cull more to save shadow cost). [def: ""0.2""]",,2.4,2.4,1.0,1.0,200,200,200
@@ -644,7 +644,7 @@ sc_disable_baked_lighting,restart (gameinfo only),devonly,false,,default: false,
 sc_disable_culling_boxes,live w/ sv_cheats (hideout/sandbox),cheat,false,,Skips calculating bounding boxes for culling,,,,,,,1,1
 sc_disable_procedural_layer_rendering,live w/ sv_cheats (hideout/sandbox),cheat,false,,"Disables rendering, ie the screen is black.          [def: ""false""]",,//false,//false,,,,,
 sc_disable_shadow_materials,unknown,,,,kai's cfg,,,,,,1,1,1
-sc_disable_spotlight_shadows,live w/ sv_cheats (hideout/sandbox),cheat,false,,"Disable spotlight shadow rendering (cheat, default false)",,,,1,1,1,1,1
+sc_disable_spotlight_shadows,live w/ sv_cheats (hideout/sandbox),"cheat, gameinfo_cannot_override",false,,"Disable spotlight shadow rendering (cheat, default false)",,,,1,1,1,1,1
 sc_dithered_lod_transition_amt,restart (gameinfo only),devonly,0.075,Percentage of the transition between two lods we will apply a dither,,,,,,,0,0,0
 sc_enable_discard,restart (gameinfo only),devonly,true,,default true,,,,,,true,true,true
 sc_fade_distance_scale_override,live w/ sv_cheats (hideout/sandbox),cheat,-1,,"Distance objects fade in and out                                 [def: ""-1""]",,100,100,100,100,180,5,180

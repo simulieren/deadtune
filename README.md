@@ -37,7 +37,7 @@ DeadTune turns that into an app:
 - **Eight community presets** to start from: Vanilla, Sqooky, Kaizuchaneru minimum spec and extreme low, Boot max FPS, OptiLock recommended and potato. Authors are credited in the app.
 - **Simple view** grouped the way players think: Display, Shadows, Lighting and effects, World detail, Performance. The biggest FPS wins sit on the Overview page.
 - **Advanced view** with every one of the **761 catalogued ConVars**, searchable, with type-aware controls, defaults, preset values and an impact rating.
-- **Honest apply classes.** Each setting is tagged *live*, *live in sandbox* or *needs restart*, so you know when a change takes effect.
+- **Honest apply classes.** Each setting is tagged *live*, *live in sandbox*, *needs restart* or *ignored* (the game no longer reads it from `gameinfo.gi`), so you know when a change takes effect and whether it does anything.
 - **Profiles** stored as small TOML files. Import and export Sqooky's `overrides.gi` format, so you can switch between his updater and DeadTune.
 
 ### HUD editor
@@ -78,7 +78,9 @@ DeadTune only works through files, launch options and the official console.
 | Back up every file before writing, keep the original forever | Touch settings that show enemies through walls or reveal hidden information |
 | Validate braces and refuse to write a broken file | Edit anything outside the `ConVars` and `SearchPaths` blocks (mod manager edits survive) |
 
-**Ranked-safe mode.** Valve has started blocking matchmaking for players with modified ConVars in `gameinfo.gi`. One click restores the stock ConVars block and removes the HUD addon, while keeping your `video.txt` settings (those are normal menu options). One more click brings your profile back.
+**Matchmaking.** Edited ConVars do not block matchmaking (checked on Windows). Since March 2026 the game only refuses to queue when the `Engine2`, `MaterialSystem2`, `NetworkSystem`, `Particles`, `RenderSystem`, `SceneSystem` or `WorldRenderer` sections of `gameinfo.gi` are changed, or the game runs in Tools mode. DeadTune never edits those sections. Since September 2026 the game also ignores 77 ConVars when they are set in `gameinfo.gi` (shadows, fog, outlines, glow and others). DeadTune marks these as *ignored*, so you can see which preset lines no longer do anything.
+
+**Ranked-safe mode.** If Valve tightens the rules again, one click restores the stock ConVars block and removes the HUD addon, while keeping your `video.txt` settings (those are normal menu options). One more click brings your profile back.
 
 ## Install
 
@@ -175,8 +177,7 @@ No Deadlock install? `scripts/fake-install.sh` builds a fake game folder to run 
 DeadTune is in **alpha**. The core, CLI and GUI work against a fake install and the test suite. In-game checks are still open for:
 
 - whether the game accepts the generated HUD addon, and which HUD edits apply in matches;
-- which live console paths work on Windows without `-tools`;
-- current matchmaking enforcement for ConVar changes.
+- which live console paths work on Windows without `-tools`.
 
 In progress: a local texture downscaler that builds a low-VRAM texture addon from your own game files, and a phone remote (`--features remote`) for tweaking while the game stays fullscreen.
 

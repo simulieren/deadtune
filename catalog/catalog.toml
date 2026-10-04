@@ -6,6 +6,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ai_async_queue_max_jobs.presets]
@@ -20,6 +21,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Both of these commands disable creep animations which means that neutrals and guardians won't move"
 
 [ai_disable.presets]
@@ -33,6 +35,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ai_disabled.presets]
@@ -45,6 +48,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ai_expression_optimization.presets]
@@ -58,6 +62,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ai_foot_sweep_enable.presets]
@@ -71,6 +76,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default false"
 
 [ai_gather_conditions_async.presets]
@@ -84,6 +90,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Default 0, idk about this"
 
 [ai_lod_auto_enabled.presets]
@@ -98,6 +105,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Not fully sure what exactly this does, but I would imagine given the name of the convar it optimizes ai."
 
 [ai_strong_optimizations_no_checkstand.presets]
@@ -111,6 +119,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ai_think_interval.presets]
@@ -124,6 +133,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ai_think_interval_lod_low.presets]
@@ -137,6 +147,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ai_think_interval_lod_med.presets]
@@ -149,6 +160,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "doesnt really need tbh since ragdoll is disabled"
 
 [ai_use_async_ragdoll_fixup.presets]
@@ -162,6 +174,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [always_perform_full_spatial_partition_update.presets]
@@ -176,6 +189,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Force BatchAnimationDecode to write transformations for all bones"
 
 [anim_decode_forcewritealltransforms.presets]
@@ -189,6 +203,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [anim_disable.presets]
@@ -202,6 +217,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Validates the animation group channel list against the animations on load for every animation"
 
 [anim_resource_validate_on_load.presets]
@@ -215,6 +231,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [animated_material_attributes.presets]
@@ -228,6 +245,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Only updates the animation graph if the network variables actually changed."
 
 [animgraph_enable_dirty_netvar_optimization.presets]
@@ -241,6 +259,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Allows animgraph operator evaluation to run in parallel (performance)."
 
 [animgraph_enable_parallel_op_evaluation.presets]
@@ -257,6 +276,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Allows animgraph pre-update work to run in parallel (performance)."
 
 [animgraph_enable_parallel_preupdate.presets]
@@ -273,6 +293,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [animgraph_footlock_calculate_tilt.presets]
@@ -286,6 +307,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "A master convar that effectively disables the entire footlock node."
 
 [animgraph_footlock_enabled.presets]
@@ -302,6 +324,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [animgraph_footlock_ground_roll.presets]
@@ -315,6 +338,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [animgraph_footlock_hip_offset_enable.presets]
@@ -328,6 +352,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable IK."
 
 [animgraph_footlock_ik_enable.presets]
@@ -341,6 +366,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Convar for toggling foot lock ground tracking."
 
 [animgraph_footlock_trace_ground_enabled.presets]
@@ -354,6 +380,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [animgraph_footlock_use_hip_shift.presets]
@@ -367,6 +394,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "kai's cfg"
 
 [animgraph_slowdownonslopes_enabled.presets]
@@ -383,6 +411,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enables the mix layer which mutes certain sounds at map load boundaries."
 
 [audio_enable_spawn_mask_mix_layer.presets]
@@ -396,6 +425,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enables mastering DSP in vmix."
 
 [audio_enable_vmix_mastering.presets]
@@ -413,6 +443,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [audio_enclosure_calc_enabled.presets]
@@ -427,6 +458,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "OBSOLETE replaced by mobile_fps_* - Battery saver mode. 0=off, 1=on"
 
 [battery_saver.presets]
@@ -443,6 +475,7 @@ default = "4"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Controls the speed when matching offset to ideal angles in thirdperson view"
 
 [cam_idealdelta.presets]
@@ -456,6 +489,7 @@ default = "150"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cam_idealdist.presets]
@@ -469,6 +503,7 @@ default = "4"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Amount of lag used when matching offset to ideal angles in thirdperson view"
 
 [cam_ideallag.presets]
@@ -482,6 +517,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Show missing closecaptions (0 = no, 1 = devconsole, 2 = show in hud)"
 
 [cc_captiontrace.presets]
@@ -495,6 +531,7 @@ default = "0.35"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If the chat wheel is opened and closed within this time, trigger a ping when it's closed."
 
 [citadel_auto_ping_window.presets]
@@ -508,6 +545,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables boss and walker glow/highlight effect."
 
 [citadel_boss_glow_disabled.presets]
@@ -526,6 +564,7 @@ default = "0.5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_bullet_shot_offset_fade_time.presets]
@@ -540,6 +579,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_camera_dist.presets]
@@ -553,6 +593,7 @@ default = "63"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The look at point of the camera is vertically offset by this distance."
 
 [citadel_camera_height.presets]
@@ -566,6 +607,7 @@ default = "800"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This makes the camera go all black when set to zero. Cool!"
 
 [citadel_camera_height_approach_speed.presets]
@@ -579,6 +621,7 @@ default = "20"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_camera_height_ceiling_distance.presets]
@@ -592,6 +635,7 @@ default = "90"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The field of view angle of the camera when following a hero."
 
 [citadel_camera_hero_fov.presets]
@@ -608,6 +652,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "To be completely honest I have no idea but I want to test this."
 
 [citadel_camera_listening_offset.presets]
@@ -621,6 +666,7 @@ default = "60"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When the camera stops being clipped, smooth the motion back to the desired resting position."
 
 [citadel_camera_parrot_smoothing_rate.presets]
@@ -634,6 +680,7 @@ default = "20"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The default camera pitch."
 
 [citadel_camera_pitch_default.presets]
@@ -646,6 +693,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_camera_see_distance_max.presets]
@@ -659,6 +707,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Experimental: Soften the camera to wall collision distance by using the gaussian weight of fibbonnaci cone of line traces. 2: Use soft collision system to inform hole punch."
 
 [citadel_camera_soft_collision.presets]
@@ -675,6 +724,7 @@ default = "75"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Experimental: Soft camera collision cone arc angle in degrees. Larger cone angle results in earlier softening."
 
 [citadel_camera_soft_collision_angle.presets]
@@ -688,6 +738,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "For each camera pose set, use the average of X positions. This is a motion sickness reducing action."
 
 [citadel_camera_use_vmdl_flatten_horizontal.presets]
@@ -701,6 +752,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Zero the relative Z axis of the camera to reduce motion sickness."
 
 [citadel_camera_use_vmdl_flatten_vertical.presets]
@@ -714,6 +766,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I believe this disables the camera wobble when heavy melee'd or talking walker/guardian damage. I like it"
 
 [citadel_camera_wobble_disable.presets]
@@ -731,6 +784,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_cinematic_intro_duration_npc.presets]
@@ -744,6 +798,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_cinematic_intro_duration_player.presets]
@@ -757,6 +812,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_cinematic_intro_enabled.presets]
@@ -771,6 +827,7 @@ default = "4"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Number of seconds to show enemy commend toasts"
 
 [citadel_commend_toast_enemy_seconds.presets]
@@ -783,6 +840,7 @@ default = "30"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Number of seconds to show commend toasts"
 
 [citadel_commend_toast_seconds.presets]
@@ -795,6 +853,7 @@ default = "0.1"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Removes the hitmarker when shooting people."
 
 [citadel_crosshair_hit_marker_duration.presets]
@@ -811,6 +870,7 @@ default = "false"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Turns on the game's custom enemy colour (Settings: Enemy UI Color). Needed for citadel_enemy_ui_color_r/g/b to show."
 
 [citadel_custom_ui_colors.presets]
@@ -822,6 +882,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The little trooper portraits that show up behind walls."
 
 [citadel_damage_offscreen_indicator_disabled.presets]
@@ -840,6 +901,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If enabled, show damage report"
 
 [citadel_damage_report_enable.presets]
@@ -856,6 +918,7 @@ default = "1.05"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When ability damage events are within this amount of time of each other, they will be added together into a single entry."
 
 [citadel_damage_text_batching_window_ability.presets]
@@ -869,6 +932,7 @@ default = "1.5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "How long do numbers live."
 
 [citadel_damage_text_lifetime.presets]
@@ -885,6 +949,7 @@ default = "1.5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "How long do accumulated numbers live."
 
 [citadel_damage_text_lifetime_new.presets]
@@ -898,6 +963,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Show the damage effectiveness on every damage number"
 
 [citadel_damage_text_show_effectiveness.presets]
@@ -913,6 +979,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_death_ragdoll_duration.presets]
@@ -926,6 +993,7 @@ default = "15"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "this command makes drawing on the minimap more precise so you can actually doodle on it :D makes me happy"
 
 [citadel_distance_mouse_move_for_minimap_drawing.presets]
@@ -941,6 +1009,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Convar to test new ping particle"
 
 [citadel_enable_new_ping_particle.presets]
@@ -953,6 +1022,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_enable_vdata_sound_preload.presets]
@@ -972,6 +1042,7 @@ default = "50"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Blue channel of the color used for enemy health bars and other enemy indicators in the UI."
 
 [citadel_enemy_ui_color_b.presets]
@@ -985,6 +1056,7 @@ default = "50"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Green channel of the color used for enemy health bars and other enemy indicators in the UI."
 
 [citadel_enemy_ui_color_g.presets]
@@ -998,6 +1070,7 @@ default = "215"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Red channel of the color used for enemy health bars and other enemy indicators in the UI."
 
 [citadel_enemy_ui_color_r.presets]
@@ -1008,6 +1081,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = ""
 
 [citadel_fibonnaci_sphere_trace_los_max.presets]
@@ -1020,6 +1094,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enables first-person viewpoint"
 
 [citadel_first_person.presets]
@@ -1033,6 +1108,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Shows a fun juggle count minigame for hideout ball."
 
 [citadel_hideout_ball_show_juggle_count.presets]
@@ -1049,6 +1125,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Shows juggle visual FX for hideout ball minigame."
 
 [citadel_hideout_ball_show_juggle_fx.presets]
@@ -1065,6 +1142,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Unfortunately this doesn't work"
 
 [citadel_hideout_enable_testing_tools.presets]
@@ -1081,6 +1159,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This makes midboss' health bar visible whenever it's able to be rendered. I like it, you might not"
 
 [citadel_hud_objective_health_debug_show_midboss.presets]
@@ -1094,6 +1173,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable/Disable HUD-level objective health bars. 0=Off. 1=Shrines, Patron, Midboss. 2=T1s and T2s. 3=Barracks"
 
 [citadel_hud_objective_health_enabled.presets]
@@ -1110,6 +1190,7 @@ default = "7"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "After how many seconds of an objective is damage to hide its health on the HUD"
 
 [citadel_hud_objective_health_idle_timeout.presets]
@@ -1126,6 +1207,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "In-world texture resolution scale"
 
 [citadel_in_world_item_panel_dpi.presets]
@@ -1144,6 +1226,7 @@ default = "540"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_match_details_lane_stats_time.presets]
@@ -1158,6 +1241,7 @@ default = "0.55"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I believe this properly disables the camera shake on heavy melee"
 
 [citadel_melee_shake_amplitude.presets]
@@ -1172,6 +1256,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_melee_shake_duration.presets]
@@ -1187,6 +1272,7 @@ default = "12.5"
 apply = "live"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = ""
 
 [citadel_minimap_overlap_scan_distance.presets]
@@ -1199,6 +1285,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Uses an alternate “canvas” rendering path for neutral icons on the minimap (render path toggle)."
 
 [citadel_minimap_use_canvas_for_neutrals.presets]
@@ -1213,6 +1300,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Uses an alternate “canvas” rendering path for shop icons on the minimap (render path toggle)."
 
 [citadel_minimap_use_canvas_for_shop.presets]
@@ -1226,6 +1314,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_npc_disable_cockroaches.presets]
@@ -1239,6 +1328,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_npc_disable_floor_point_caching.presets]
@@ -1253,6 +1343,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Don't change this, it does what it says on the tin."
 
 [citadel_npc_force_animate_every_tick.presets]
@@ -1268,6 +1359,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_orb_debug_draw_state.presets]
@@ -1280,6 +1372,7 @@ default = "0.2545"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "For some reason setting this to zero disables ping wheel input."
 
 [citadel_outer_radius_scaler.presets]
@@ -1293,6 +1386,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_per_weapon_per_surface_impact_effects.presets]
@@ -1307,6 +1401,7 @@ default = "60"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The interval that we record performance stats to the log at measured in seconds"
 
 [citadel_perf_interval_report_s.presets]
@@ -1320,6 +1415,7 @@ default = "0.37"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "LEGACY. See: citadel_show_chat_wheel_angle_threshold. Increase this to change how much you have to move your mouse to make the mousewheel visible."
 
 [citadel_ping_wheel_activation_radius.presets]
@@ -1333,6 +1429,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = true
 notes = "Disables player glow/highlight effect when pinged."
 
 [citadel_player_glow_disabled.presets]
@@ -1347,6 +1444,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = true
 notes = "turn off enemy outline DOES NOT BREAK BACKSTABBER OR PING THRU WALL"
 
 [citadel_player_outline_enemies.presets]
@@ -1362,6 +1460,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable AG2 use in portrait units"
 
 [citadel_portrait_unit_ag2_enable.presets]
@@ -1374,6 +1473,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables character models in shop and endgame screen"
 
 [citadel_portrait_world_renderer_off.presets]
@@ -1391,6 +1491,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_reduce_camera_shake.presets]
@@ -1403,6 +1504,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Causes a crash but does what you think it would."
 
 [citadel_roster_select_force_enable_priority_token.presets]
@@ -1416,6 +1518,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = 'Rich presence debug messages. Spams console with "x is doing y in the hideout"'
 
 [citadel_rp_show_dev_messages.presets]
@@ -1428,6 +1531,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_shoot_forward_offset.presets]
@@ -1441,6 +1545,7 @@ default = "16"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "(degrees) Increase this to change how much you have to move your camera angle to make the Chat Wheel instantly visible while holding Ping."
 
 [citadel_show_chat_wheel_angle_threshold.presets]
@@ -1454,6 +1559,7 @@ default = "0.23"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "How long it takes after pressing the +ping command for the chat wheel to appear."
 
 [citadel_show_chat_wheel_time.presets]
@@ -1466,6 +1572,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Set 1 to enable"
 
 [citadel_show_new_damage_feedback_numbers.presets]
@@ -1480,6 +1587,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "A way to force the survey UI on even outside of matchmaking"
 
 [citadel_show_survey.presets]
@@ -1492,6 +1600,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [citadel_stuck_camera_trace_extra_length.presets]
@@ -1505,6 +1614,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Test Ranked Summary"
 
 [citadel_test_ranked_summary.presets]
@@ -1518,6 +1628,7 @@ default = "1.3"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Tight-camera test mode alternative."
 
 [citadel_tightcamera_alternative.presets]
@@ -1531,6 +1642,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "Disable glow on friendly troopers except for through walls during laning"
 
 [citadel_trooper_friendly_glow_disabled.presets]
@@ -1545,6 +1657,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "1 = Disable friendly/enemy minion glow."
 
 [citadel_trooper_glow_disabled.presets]
@@ -1563,6 +1676,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "turn off trooper outline"
 
 [citadel_trooper_outline_enabled.presets]
@@ -1577,6 +1691,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "Do you want to see allied player outlines through walls"
 
 [citadel_unit_status_allies_see_thru_walls.presets]
@@ -1590,6 +1705,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "How far to make allied players' unit status show through walls. Use values <= 0 for no limit."
 
 [citadel_unit_status_allies_see_thru_walls_max_distance.presets]
@@ -1603,6 +1719,7 @@ default = "0.166667"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The delay between doing damage and havin the yellow damage indicator appear"
 
 [citadel_unit_status_delta_decay_delay.presets]
@@ -1619,6 +1736,7 @@ default = "3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = """How quickly the yellow "you're dealing damage" indicator fades"""
 
 [citadel_unit_status_delta_decay_rate.presets]
@@ -1635,6 +1753,7 @@ default = "10"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This increases the size of the health bar. Unfortunately I think this lowers performance. A shame."
 
 [citadel_unit_status_dpi.presets]
@@ -1648,6 +1767,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Removes player names from health bars (text rendering is heavy)."
 
 [citadel_unit_status_hide_names.presets]
@@ -1662,6 +1782,7 @@ default = "30"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "How many times per second the unit status can update (0 = every frame)."
 
 [citadel_unit_status_old_update_rate.presets]
@@ -1678,6 +1799,7 @@ default = "0.25"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "how long to show someone's numerical health value when you shoot them. Inf means infinite, but will cause the healthbar to jiggle/shake forever."
 
 [citadel_unit_status_recent_damage_time.presets]
@@ -1691,6 +1813,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Allow only a single health bar, no stacking."
 
 [citadel_unit_status_single_bar_mode.presets]
@@ -1704,6 +1827,7 @@ default = "3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "below this threshold stamina is permanantly visble"
 
 [citadel_unit_status_stamina_low_pips.presets]
@@ -1717,6 +1841,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = 'This uses new Health Bar, to use old Health Bar change "true" to "false".'
 
 [citadel_unit_status_use_new.presets]
@@ -1733,6 +1858,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Set to 1 to enable the new health bar that allows you to see enemy stamina."
 
 [citadel_unit_status_use_v2.presets]
@@ -1746,6 +1872,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Set to 1 to enable the new health bar but for troopers, objs, and camps."
 
 [citadel_unit_status_use_v2_for_nonplayers.presets]
@@ -1758,6 +1885,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "Use PVS for players (devonly sv, default false). Less entity visibility work. [SV]"
 
 [citadel_use_pvs_for_players.presets]
@@ -1774,6 +1902,7 @@ default = "3"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Rendering performance level."
 
 [citadel_video_preset.presets]
@@ -1789,6 +1918,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "use 2"
 
 [citadel_visibility_queue_rate.presets]
@@ -1802,6 +1932,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Doesn't seem to do anything."
 
 [citadel_weapon_spread_debug.presets]
@@ -1815,6 +1946,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Doesn't seem to cause any issues but a benchmark proper should be conducted"
 
 [cl_aggregate_particles.presets]
@@ -1834,6 +1966,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "We don't support early prediction at the moment, which async send requires"
 
 [cl_async_usercmd_send.presets]
@@ -1850,6 +1983,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Additional frame since we do not use the async usercmd send (potentially unneccessary)"
 
 [cl_async_usercmd_send_disabled_recvmargin_min.presets]
@@ -1867,6 +2001,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Batch entity list adds / removes while latching interpolated variables to avoid mutex contention."
 
 [cl_batch_entity_list_ops_during_latch.presets]
@@ -1885,6 +2020,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_bone_cache_optimization.presets]
@@ -1899,6 +2035,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Clock sync will try to maintain an additional margin of N ticks. This is intended to smooth over packet loss, and is a replacement for cl_interp_ratio / cl_interp. This value is simply added to cl_clock_recvmargin_desired"
 
 [cl_clock_buffer_ticks.presets]
@@ -1916,6 +2053,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Keep set to 0 - enabling this (disabling ragdolls) can cause issue with doorman's ultimate."
 
 [cl_disable_ragdolls.presets]
@@ -1934,6 +2072,7 @@ default = "citadel.convar.stop_all_game_layer_soundevents"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This soundevent is called to stop the desired soundevents when the game is disconnected."
 
 [cl_disconnect_soundevent.presets]
@@ -1951,6 +2090,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_enable_eye_occlusion.presets]
@@ -1967,6 +2107,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_entityiter_allow_world_occlusion.presets]
@@ -1980,6 +2121,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_eye_yaw_multiplier.presets]
@@ -1994,6 +2136,7 @@ default = "5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Limits/controls fast collision processing for temporary entities (impacts/tracers/etc.); higher usually = more work."
 
 [cl_fasttempentcollision.presets]
@@ -2010,6 +2153,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_globallight_freeze.presets]
@@ -2025,6 +2169,7 @@ default = "2"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Global (sun) light shadow mode. Presets set 0 to turn it off."
 
 [cl_globallight_shadow_mode.presets]
@@ -2041,6 +2186,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "Brightness of player halos"
 
 [cl_glow_brightness.presets]
@@ -2055,6 +2201,7 @@ default = "1"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Show frame time (FPS) in the HUD. 0=never, 1=only if poor, 2=always"
 
 [cl_hud_telemetry_frametime_show.presets]
@@ -2068,6 +2215,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable client impact effects (bullet hit FX) (devonly)"
 
 [cl_impacteffects.presets]
@@ -2084,6 +2232,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable raw keyboard input"
 
 [cl_input_enable_raw_keyboard.presets]
@@ -2100,6 +2249,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Client-side interpolation time (smoothing delay) for rendering other players/entities."
 
 [cl_interp.presets]
@@ -2114,6 +2264,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Set to zero do disable hermite interpolation."
 
 [cl_interp_hermite.presets]
@@ -2127,6 +2278,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Run interpolation in parallel for entities with no children."
 
 [cl_interp_parallel.presets]
@@ -2146,6 +2298,7 @@ default = "0"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Sets the client simulation interpolation amount, in terms of server updates (final amount is cl_interp_ratio / cl_updaterate)."
 
 [cl_interp_ratio.presets]
@@ -2163,6 +2316,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable joystick input"
 
 [cl_joystick_enabled.presets]
@@ -2182,6 +2336,7 @@ default = "100"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Culls particle systems outside a smaller visibility box."
 
 [cl_max_particle_pvs_aabb_edge_length.presets]
@@ -2201,6 +2356,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Not sure"
 
 [cl_modifier_parallel_gather_status_effect_updates.presets]
@@ -2214,6 +2370,7 @@ default = "true"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Reads entity snapshots on worker threads."
 
 [cl_parallel_readpacketentities.presets]
@@ -2228,6 +2385,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Use parallel processing of snapshot reading if above this many entries."
 
 [cl_parallel_readpacketentities_threshold.presets]
@@ -2242,6 +2400,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Has a range of 1 or 2, 2 will make celeste's auto rebound look weird and 0 will make them not batch"
 
 [cl_particle_batch_mode.presets]
@@ -2262,6 +2421,7 @@ default = "0"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Base for falling back to cheaper particle effects under load."
 
 [cl_particle_fallback_base.presets]
@@ -2282,6 +2442,7 @@ default = "0"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Multiplier for falling back to cheaper particle effects under load."
 
 [cl_particle_fallback_multiplier.presets]
@@ -2302,6 +2463,7 @@ default = "0"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Particle cap. 0 means unlimited. Too low makes abilities and fights hard to read."
 
 [cl_particle_max_count.presets]
@@ -2318,6 +2480,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "turn on optimized particle init"
 
 [cl_particle_newinit.presets]
@@ -2331,6 +2494,7 @@ default = "5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "How aggressive the switch to fallbacks will be depending on how far over the cl_particle_sim_fallback_threshold_ms the sim time is. Higher numbers are more aggressive."
 
 [cl_particle_sim_fallback_base_multiplier.presets]
@@ -2349,6 +2513,7 @@ default = "6"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Amount of simulation time that can elapse before new systems start falling back to cheaper versions"
 
 [cl_particle_sim_fallback_threshold_ms.presets]
@@ -2367,6 +2532,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_phys_animated_hierarchy.presets]
@@ -2380,6 +2546,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If true, we assume the client uses a fixed tickrate like the server (which may not always be true). If false, we recalculate the number of physics substeps in each client tick based on the actual elapsed time in the tick."
 
 [cl_phys_assume_fixed_tick_interval.presets]
@@ -2393,6 +2560,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable all physics simulation"
 
 [cl_phys_enabled.presets]
@@ -2409,6 +2577,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "try on and off, this is probably what causing result screen to pop up when idling"
 
 [cl_phys_networked_start_sleep.presets]
@@ -2423,6 +2592,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable sleeping for dynamic physics bodies."
 
 [cl_phys_sleep_enable.presets]
@@ -2437,6 +2607,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Scale time for physics"
 
 [cl_phys_timescale.presets]
@@ -2450,6 +2621,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Turns on the absbox for all active physics objects. 0 : un-highlight."
 
 [cl_physics_highlight_active.presets]
@@ -2464,6 +2636,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable polling for network messages every frame, instead of every tick"
 
 [cl_poll_network_early.presets]
@@ -2481,6 +2654,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Optimize for not repredicting if there were no errors"
 
 [cl_pred_optimize.presets]
@@ -2494,6 +2668,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_pred_parallel_postnetwork.presets]
@@ -2506,6 +2681,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Test 1 0"
 
 [cl_predict_after_every_createmove.presets]
@@ -2518,6 +2694,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Experimental optimization. If you are reading this in 2026, please delete this convar."
 
 [cl_prediction_savedata_postentitypacketreceived.presets]
@@ -2532,6 +2709,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Put to 1 if character vibrates"
 
 [cl_predictioncopy_runs.presets]
@@ -2544,6 +2722,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Scale ragdoll to 0 (devonly, default 1)"
 
 [cl_ragdoll_default_scale.presets]
@@ -2560,6 +2739,7 @@ default = "20"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Maximum ragdolls shown at once. -1 removes the limit."
 
 [cl_ragdoll_limit.presets]
@@ -2577,6 +2757,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_removedecals.presets]
@@ -2589,6 +2770,7 @@ default = "0.5"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Delay in seconds before the client will resend the 'connect' attempt"
 
 [cl_resend.presets]
@@ -2605,6 +2787,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Low priority dlights are replaced by high priority ones"
 
 [cl_retire_low_priority_lights.presets]
@@ -2623,6 +2806,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables splash effects (water/impact splashes)."
 
 [cl_show_splashes.presets]
@@ -2641,6 +2825,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Based on the name I would imagine it does what it says."
 
 [cl_simulate_dormant_entities.presets]
@@ -2659,6 +2844,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_skel_constraints_enable.presets]
@@ -2671,6 +2857,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Skips updating bones/hierarchy for networked entities that haven't moved. Massive CPU saver."
 
 [cl_skip_hierarchy_update_for_unchanged_entities.presets]
@@ -2684,6 +2871,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable to skip game animations"
 
 [cl_skip_update_animations.presets]
@@ -2697,6 +2885,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Smooth view/eye origin after prediction errors"
 
 [cl_smooth.presets]
@@ -2711,6 +2900,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [cl_smooth_draw_debug.presets]
@@ -2725,6 +2915,7 @@ default = "0.2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Smooth client's view after prediction error over this many seconds"
 
 [cl_smoothtime.presets]
@@ -2741,6 +2932,7 @@ default = "0"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This value, multiplied by the tick interval, is added to cl_tickpacket_recvmargin_desired to obtain the effective desired recv margin."
 
 [cl_tickpacket_desired_queuelength.presets]
@@ -2758,6 +2950,7 @@ default = "5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Recvmargin-based usercommand pacing will try to maintain N ms margin between user command arriving at the server and the server needing that user command. See also cl_tickpacket_desired_queuelength."
 
 [cl_tickpacket_recvmargin_desired.presets]
@@ -2775,6 +2968,7 @@ default = "20"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Number of packets per second of updates you are requesting from the server"
 
 [cl_updaterate.presets]
@@ -2792,6 +2986,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When connecting to local listen server (for example, using the 'map' command), default to loopback=false, which connects to '127.0.0.1' instead of 'loopback'. This uses the network stack so that fake lag/loss can be simulated."
 
 [cl_usesocketsforloopback.presets]
@@ -2809,6 +3004,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable close captioning."
 
 [closecaption.presets]
@@ -2825,6 +3021,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable the new, stateless version of FilterTransform"
 
 [cloth_filter_transform_stateless.presets]
@@ -2842,6 +3039,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Update the cloth simulation every tick"
 
 [cloth_sim_on_tick.presets]
@@ -2860,6 +3058,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable cloth update altogether (devonly) you can use this if you use mods that remove character cloaks/coats/etc"
 
 [cloth_update.presets]
@@ -2876,6 +3075,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Allows the console to be activated."
 
 [con_enable.presets]
@@ -2888,6 +3088,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "CPU Level - Default: High"
 
 [cpu_level.presets]
@@ -2906,6 +3107,7 @@ default = "120"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Server will not allow the client to buffer up more than N ms of commands."
 
 [cq_buffer_bloat_msecs_max.presets]
@@ -2923,6 +3125,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_bias_override_0.presets]
@@ -2935,6 +3138,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_bias_override_1.presets]
@@ -2947,6 +3151,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_bias_override_2.presets]
@@ -2959,6 +3164,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_bias_override_3.presets]
@@ -2971,6 +3177,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "All of these commands should reduce shadow quality."
 
 [csm_cascade0_override_dist.presets]
@@ -2987,6 +3194,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "All of these commands should reduce shadow quality."
 
 [csm_cascade1_override_dist.presets]
@@ -3003,6 +3211,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "All of these commands should reduce shadow quality."
 
 [csm_cascade2_override_dist.presets]
@@ -3019,6 +3228,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "All of these commands should reduce shadow quality."
 
 [csm_cascade3_override_dist.presets]
@@ -3035,6 +3245,7 @@ default = "2"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_cascade_viewdir_shadow_bias_scale.presets]
@@ -3047,6 +3258,7 @@ default = "15000"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default pushback"
 
 [csm_max_dist_between_caster_and_receiver.presets]
@@ -3065,6 +3277,7 @@ default = "-1"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Number of sun shadow cascades. -1 uses the engine default; fewer cascades means less shadow detail at range."
 
 [csm_max_num_cascades_override.presets]
@@ -3085,6 +3298,7 @@ default = "-1"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = true
 notes = "How far sun shadows reach. -1 uses the engine default."
 
 [csm_max_shadow_dist_override.presets]
@@ -3103,6 +3317,7 @@ default = "7500"
 apply = "live_cheat"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Distance beyond which sun shadows are not drawn."
 
 [csm_max_visible_dist.presets]
@@ -3121,6 +3336,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "All of these commands should reduce shadow quality."
 
 [csm_res_override_0.presets]
@@ -3137,6 +3353,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "All of these commands should reduce shadow quality."
 
 [csm_res_override_1.presets]
@@ -3153,6 +3370,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "All of these commands should reduce shadow quality."
 
 [csm_res_override_2.presets]
@@ -3169,6 +3387,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "All of these commands should reduce shadow quality."
 
 [csm_res_override_3.presets]
@@ -3187,6 +3406,7 @@ default = "2000"
 apply = "live_cheat"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Visible distance of the sparse shadow tree (static shadows)."
 
 [csm_sst_max_visible_dist.presets]
@@ -3201,6 +3421,7 @@ default = "1500"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default pushback"
 
 [csm_sst_pushback_distance.presets]
@@ -3212,6 +3433,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_sst_shadow_focus_region_caster_headroom.presets]
@@ -3224,6 +3446,7 @@ default = "2000"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_sst_shadow_focus_region_maxz.presets]
@@ -3236,6 +3459,7 @@ default = "-2000"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_sst_shadow_focus_region_minz.presets]
@@ -3247,6 +3471,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_sst_vertical_depth_shear_enable.presets]
@@ -3259,6 +3484,7 @@ default = "30"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_viewmodel_farz.presets]
@@ -3274,6 +3500,7 @@ default = "21"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_viewmodel_max_shadow_dist.presets]
@@ -3290,6 +3517,7 @@ default = "1000"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_viewmodel_max_visible_dist.presets]
@@ -3306,6 +3534,7 @@ default = "0.5"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [csm_viewmodel_nearz.presets]
@@ -3320,6 +3549,7 @@ default = "false"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Shadows cast by your own weapon and hands."
 
 [csm_viewmodel_shadows.presets]
@@ -3336,6 +3566,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [debug_draw_enable.presets]
@@ -3348,6 +3579,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [default.presets]
@@ -3365,6 +3597,7 @@ default = "70"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [default_fov.presets]
@@ -3378,6 +3611,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Bypasses lookup of soundscapes for indvidual audio sources when enabled."
 
 [disable_source_soundscape_trace.presets]
@@ -3394,6 +3628,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [dsp_slow_cpu.presets]
@@ -3408,6 +3643,7 @@ default = "0.8"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "idk"
 
 [dsp_volume.presets]
@@ -3422,6 +3658,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables bone flexes (procedural facial/mesh flex drivers)."
 
 [enable_boneflex.presets]
@@ -3439,6 +3676,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [enable_priority_boost.presets]
@@ -3455,6 +3693,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When true, elapsed time given to the input processing will be the time elapsed since the last input processing. This is only relevant when input is processed multiple times per frame ( i.e. multiple ticks per frame)"
 
 [engine_accurate_input_processing_delta_time.presets]
@@ -3470,6 +3709,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When the client is catching up in low frame rate situations, should we run client simulate more than once a frame?"
 
 [engine_allow_multiple_simulates_per_frame.presets]
@@ -3484,6 +3724,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When the client is catching up in low frame rate situations, should we run tick more than once a frame?"
 
 [engine_allow_multiple_ticks_per_frame.presets]
@@ -3496,6 +3737,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When r_low_latency is enabled, this moves the low latency sleep on tick frames to happen after client simulation."
 
 [engine_low_latency_sleep_after_client_tick.presets]
@@ -3514,6 +3756,7 @@ default = "-1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Max number of ticks to simulate per frame, after which simulation will start to slow down compared to real time."
 
 [engine_max_ticks_to_simulate.presets]
@@ -3534,6 +3777,7 @@ default = "20"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Milliseconds to sleep per frame while alt-tabbed. 0 keeps full speed but burns CPU in the background."
 
 [engine_no_focus_sleep.presets]
@@ -3550,6 +3794,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "// These shouldn't be needed?"
 
 [ent_joint_lines.presets]
@@ -3563,6 +3808,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "//"
 
 [ent_joint_names.presets]
@@ -3576,6 +3822,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable fog"
 
 [fog_enable.presets]
@@ -3594,6 +3841,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I doubt the fog commands actually are modifiable but I am maintaining their inclusion for posterity"
 
 [fog_enableskybox.presets]
@@ -3614,6 +3862,7 @@ default = "400"
 apply = "live"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Frame rate cap. 0 removes the cap. Capping near your refresh rate saves battery and heat."
 
 [fps_max.presets]
@@ -3633,6 +3882,7 @@ default = "120"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Additional frame rate limit while in tools mode and a window other than the game window has focus. Note that fps_max still applies, this only allows the maximum frame rate for tools mode to be lower. 0=no tools specific limit."
 
 [fps_max_tools.presets]
@@ -3648,6 +3898,7 @@ default = "120"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Frame rate cap while the game UI is open. 0 removes the cap."
 
 [fps_max_ui.presets]
@@ -3669,6 +3920,7 @@ default = "-1"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Async filesystem I/O threads. -1 picks automatically."
 
 [fs_async_threads.presets]
@@ -3682,6 +3934,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "No breakable-prop debris pieces (sv/a/rep, default 15)"
 
 [func_break_max_pieces.presets]
@@ -3698,6 +3951,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Draw metal spark effects."
 
 [fx_drawmetalspark.presets]
@@ -3713,6 +3967,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "No important ragdolls (default 2, devonly sv/cl/rep)"
 
 [g_ragdoll_important_maxcount.presets]
@@ -3728,6 +3983,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Max ragdoll count 0 (default 5, devonly sv/cl/rep)"
 
 [g_ragdoll_maxcount.presets]
@@ -3743,6 +3999,7 @@ default = "3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "GPU Level - Default: High"
 
 [gpu_level.presets]
@@ -3761,6 +4018,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Memory Level - Default: High"
 
 [gpu_mem_level.presets]
@@ -3779,6 +4037,7 @@ default = "-1"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If -1 use the hud default, otherwise 0 is disabled, 1 is enabled"
 
 [hud_free_cursor.presets]
@@ -3793,6 +4052,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ik_constraints_enabled.presets]
@@ -3806,6 +4066,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ik_debug_dogleg3bone_enabled.presets]
@@ -3819,6 +4080,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ik_debug_fabrik_backwards_enabled.presets]
@@ -3832,6 +4094,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ik_debug_fabrik_forwards_enabled.presets]
@@ -3845,6 +4108,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable IK."
 
 [ik_enable.presets]
@@ -3860,6 +4124,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables FABRIK chain alignment in IK (cheaper)."
 
 [ik_fabrik_align_chain.presets]
@@ -3876,6 +4141,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ik_fabrik_backwards_enabled.presets]
@@ -3889,6 +4155,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ik_fabrik_forwards_enabled.presets]
@@ -3902,6 +4169,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables final IK fixup pass (cheaper animations, potentially less accurate)."
 
 [ik_final_fixup_enable.presets]
@@ -3918,6 +4186,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [ik_planetilt_enable.presets]
@@ -3930,6 +4199,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [in_button_double_press_window.presets]
@@ -3947,6 +4217,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable instant replay recording."
 
 [instant_replay.presets]
@@ -3960,6 +4231,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "EDITED BY BOOT"
 
 [iv_parallel_restore.presets]
@@ -3977,6 +4249,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Allow time-sliced shadow buffer rendering when enabled via gameinfo.gi"
 
 [lb_allow_time_sliced_shadow_map_rendering.presets]
@@ -3991,6 +4264,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [lb_barnlight_shadow_use_precomputed_vis.presets]
@@ -4005,6 +4279,7 @@ default = "1"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Scale for computed barnlight shadowmap size"
 
 [lb_barnlight_shadowmap_scale.presets]
@@ -4023,6 +4298,7 @@ default = "8192"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [lb_bin_slices.presets]
@@ -4035,6 +4311,7 @@ default = "-1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Override width/height of individual cascades in the CSM"
 
 [lb_csm_cascade_size_override.presets]
@@ -4053,6 +4330,7 @@ default = "-1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Override CSM cross fade amount"
 
 [lb_csm_cross_fade_override.presets]
@@ -4069,6 +4347,7 @@ default = "-1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Override CSM distance fade"
 
 [lb_csm_distance_fade_override.presets]
@@ -4085,6 +4364,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Prevents alpha-tested geometry from being included in CSM passes (cheaper, possible missing leaf/fence shadows)."
 
 [lb_csm_draw_alpha_tested.presets]
@@ -4103,6 +4383,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Prevents translucent objects from rendering into CSM (cheaper, fewer shadow details)."
 
 [lb_csm_draw_translucent.presets]
@@ -4121,6 +4402,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Override Cascades that will render static objects with lb_csm_override_staticgeo_cascades_value"
 
 [lb_csm_override_staticgeo_cascades.presets]
@@ -4137,6 +4419,7 @@ default = "-1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If lb_csm_override_staticgeo_cascades, override value used to determine which cascades render static objects"
 
 [lb_csm_override_staticgeo_cascades_value.presets]
@@ -4153,6 +4436,7 @@ default = "1.526e-05"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Shader depth bias applied to shadow receiver (Note this conflicts with renderstate depth bias, both now default to 0)"
 
 [lb_csm_receiver_plane_depth_bias.presets]
@@ -4167,6 +4451,7 @@ default = "0.00015"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Depth bias applied to shadow receiver for transmissive backface geo (based on renderstate depthbias being 0)"
 
 [lb_csm_receiver_plane_depth_bias_transmissive_backface.presets]
@@ -4181,6 +4466,7 @@ default = "32"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Default: 32"
 
 [lb_cubemap_normalization_max.presets]
@@ -4198,6 +4484,7 @@ default = "0.1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Default: 0.1"
 
 [lb_cubemap_normalization_roughness_begin.presets]
@@ -4211,6 +4498,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "(false)"
 
 [lb_cull_onscreen_bounce_light_shadows.presets]
@@ -4224,6 +4512,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Adjust shadow penumbra based on light size"
 
 [lb_dynamic_shadow_penumbra.presets]
@@ -4240,6 +4529,7 @@ default = "true"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Lets the engine scale shadow map resolution with load."
 
 [lb_dynamic_shadow_resolution.presets]
@@ -4256,6 +4546,7 @@ default = "1024"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Base resolution for dynamic shadowmap sizing. Shadowmap size of a screen sized light"
 
 [lb_dynamic_shadow_resolution_base.presets]
@@ -4274,6 +4565,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "take min of lb_dynamic_shadow_resolution and barnlight shadowmapsize as base shadowmapsize"
 
 [lb_dynamic_shadow_resolution_base_cmp_shadowmapsize.presets]
@@ -4287,6 +4579,7 @@ default = "64"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Quantization of dynamically computed shadow size"
 
 [lb_dynamic_shadow_resolution_quantization.presets]
@@ -4301,6 +4594,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SceneSystem/LightBinner/Enable Baked Shadows"
 
 [lb_enable_baked_shadows.presets]
@@ -4319,6 +4613,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SceneSystem/LightBinner/Enable Binning"
 
 [lb_enable_binning.presets]
@@ -4334,6 +4629,7 @@ default = "true"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Dynamic lights from abilities and effects. Off also leaves hero portraits uncoloured in the shop and end screen."
 
 [lb_enable_dynamic_lights.presets]
@@ -4352,6 +4648,7 @@ default = "true"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Environment-map reflections. Off makes characters render black, so presets leave it commented out."
 
 [lb_enable_envmaps.presets]
@@ -4368,6 +4665,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SceneSystem/LightBinner/Enable Fog Mixed Shadows"
 
 [lb_enable_fog_mixed_shadows.presets]
@@ -4385,6 +4683,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SceneSystem/LightBinner/Enable Lights"
 
 [lb_enable_lights.presets]
@@ -4401,6 +4700,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SceneSystem/LightBinner/Enable New Sum"
 
 [lb_enable_newsum.presets]
@@ -4417,6 +4717,7 @@ default = "true"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Lets stationary and dynamic lights cast shadows."
 
 [lb_enable_shadow_casting.presets]
@@ -4435,6 +4736,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Allows rendering stationary/mixed lights"
 
 [lb_enable_stationary_lights.presets]
@@ -4453,6 +4755,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SceneSystem/LightBinner/Enable Sunlight"
 
 [lb_enable_sunlight.presets]
@@ -4472,6 +4775,7 @@ default = "-1"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Cap on visible barn (spot) lights. -1 means no cap."
 
 [lb_max_visible_barn_lights_override.presets]
@@ -4490,6 +4794,7 @@ default = "-1"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Cap on visible environment-map reflections. -1 means no cap."
 
 [lb_max_visible_envmaps_override.presets]
@@ -4506,6 +4811,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SceneSystem/LightBinner/Enable Mixed Shadows"
 
 [lb_mixed_shadows.presets]
@@ -4523,6 +4829,7 @@ default = "0.0001"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [lb_precomputed_shadowmap_depth_bias.presets]
@@ -4536,6 +4843,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable precomputed shadowmaps"
 
 [lb_precomputed_shadowmap_enable.presets]
@@ -4553,6 +4861,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Don't render shadows for mixed shadowmaps with no dynamics objects in view"
 
 [lb_shadow_map_cull_empty_mixed.presets]
@@ -4569,6 +4878,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [lb_shadow_map_culling.presets]
@@ -4583,6 +4893,7 @@ default = "-1"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Shadow atlas height. -1 uses the engine default; tiny values make shadows blocky."
 
 [lb_shadow_texture_height_override.presets]
@@ -4598,6 +4909,7 @@ default = "-1"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Shadow atlas width. -1 uses the engine default; tiny values make shadows blocky."
 
 [lb_shadow_texture_width_override.presets]
@@ -4611,6 +4923,7 @@ default = "11"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Subsurface sample count"
 
 [lb_ssss_samples.presets]
@@ -4629,6 +4942,7 @@ default = "10"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Size, in texels, where we will cull an object in the shadowmap"
 
 [lb_sun_csm_size_cull_threshold_texels.presets]
@@ -4647,6 +4961,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable timesliced shadow dynamic resizing (default true)"
 
 [lb_timesliced_shadows_dynamic_size.presets]
@@ -4661,6 +4976,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [m_rawinput.presets]
@@ -4675,6 +4991,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I have no reason to believe the name doesn't match the function"
 
 [mat_async_shader_load.presets]
@@ -4693,6 +5010,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable map color-correction entities"
 
 [mat_colcorrection_disableentities.presets]
@@ -4709,6 +5027,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables/ Enables color correction (game looks less vibrant when off)."
 
 [mat_colorcorrection.presets]
@@ -4727,6 +5046,7 @@ default = "0.0005"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [mat_depthbias_shadowmap.presets]
@@ -4739,6 +5059,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "BUGGY"
 
 [mat_disable_dynamic_shader_compile.presets]
@@ -4753,6 +5074,7 @@ default = "8"
 apply = "live_cheat"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Shader lighting complexity cap. Little measured effect."
 
 [mat_max_lighting_complexity.presets]
@@ -4770,6 +5092,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Force shader quality low (devonly). ⚠ May force shader recompiles; test first"
 
 [mat_set_shader_quality.presets]
@@ -4786,6 +5109,7 @@ default = "1024"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [mat_shading_complexity_max_instruction_count.presets]
@@ -4798,6 +5122,7 @@ default = "128"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [mat_shading_complexity_max_register_count.presets]
@@ -4810,6 +5135,7 @@ default = "4"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [mat_slopescaledepthbias_shadowmap.presets]
@@ -4823,6 +5149,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [mat_tonemap_bloom_scale.presets]
@@ -4836,6 +5163,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [mat_tonemap_boost.presets]
@@ -4848,6 +5176,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [mat_tonemapping_occlusion_use_stencil.presets]
@@ -4861,6 +5190,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Scale down the main viewport (to reduce GPU impact on CPU profiling)"
 
 [mat_viewportscale.presets]
@@ -4876,6 +5206,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [max.presets]
@@ -4893,6 +5224,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Memory Level - Default: High"
 
 [mem_level.presets]
@@ -4905,6 +5237,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "kai's cfg"
 
 [mesh_calculate_curvature_smooth_pass_count.presets]
@@ -4918,6 +5251,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [min.presets]
@@ -4934,6 +5268,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "(default 5) — fewer minimap updates, server-side."
 
 [minimap_trooper_update_rate_hz.presets]
@@ -4946,6 +5281,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = ""
 
 [minimap_update_rate_hz.presets]
@@ -4959,6 +5295,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Kill switch for the idle detection system"
 
 [mm_idle_enabled.presets]
@@ -4973,6 +5310,7 @@ default = "300"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "How many seconds to wait before showing the idle warning dialog"
 
 [mm_idle_show_warning_at_s.presets]
@@ -4987,6 +5325,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Prefer being matched with other solo players when not in a party"
 
 [mm_prefer_solo_only.presets]
@@ -5001,6 +5340,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Doesn't seem to do anything"
 
 [movement_stats_debug_draw.presets]
@@ -5014,6 +5354,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Displays music manager debug info for hideout."
 
 [music_hideout_debug_enabled.presets]
@@ -5026,6 +5367,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [nav_edit_use_camera.presets]
@@ -5038,6 +5380,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [nav_gen_connect_dist_a.presets]
@@ -5052,6 +5395,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Not fully sure but async good wowie"
 
 [nav_obstruction_async_update.presets]
@@ -5065,6 +5409,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default false test 1 and 0, moves npc pathing to separate thread"
 
 [nav_pathfind_multithread.presets]
@@ -5079,6 +5424,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable async client connect optimization"
 
 [net_async_clientconnect.presets]
@@ -5092,6 +5438,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [net_gather_child_fields_only.presets]
@@ -5106,6 +5453,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Skip redundant netvar change callbacks (devonly cl, default false). ⚠ User notes: test before changing"
 
 [net_skip_redundant_change_callbacks.presets]
@@ -5120,6 +5468,7 @@ default = "true"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "UI animations in the shop and menus."
 
 [panorama_allow_transitions.presets]
@@ -5138,6 +5487,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "use asynchronous compute for mipmap generation."
 
 [panorama_async_compute_mipgen.presets]
@@ -5151,6 +5501,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [panorama_classes_perf_warning_threshold_ms.presets]
@@ -5168,6 +5519,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [panorama_clear_frames_on_device_restore.presets]
@@ -5181,6 +5533,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This should keep panorama caches loaded for longer so the game can use them more frequently."
 
 [panorama_comp_layer_lru_lifetime.presets]
@@ -5196,6 +5549,7 @@ default = "false"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables UI blur."
 
 [panorama_disable_blur.presets]
@@ -5214,6 +5568,7 @@ default = "false"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables UI box shadows."
 
 [panorama_disable_box_shadow.presets]
@@ -5232,6 +5587,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable descendant selector filtering"
 
 [panorama_disable_descendant_filtering.presets]
@@ -5249,6 +5605,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Causes issues with the hud"
 
 [panorama_disable_draw_fancy_quad.presets]
@@ -5262,6 +5619,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [panorama_disable_render_target_cache.presets]
@@ -5279,6 +5637,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Forces text rendering through a hardware fast-path"
 
 [panorama_draw_text_fast_path.presets]
@@ -5292,6 +5651,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Forces text shadows through a hardware fast-path"
 
 [panorama_draw_text_fast_path_text_shadow.presets]
@@ -5305,6 +5665,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Setting this to false causes text (chat messages) to not wrap."
 
 [panorama_enable_secondary_layout_pass.presets]
@@ -5318,6 +5679,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Forces UI hue/saturation/brightness changes through a fast-path"
 
 [panorama_hsbc_through_fast_path.presets]
@@ -5331,6 +5693,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable panorama joystick input"
 
 [panorama_joystick_enabled.presets]
@@ -5348,6 +5711,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable sending minidumps on JS Exceptions."
 
 [panorama_js_minidumps.presets]
@@ -5367,6 +5731,7 @@ default = "120"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Frame cap for menus such as the shop."
 
 [panorama_max_fps.presets]
@@ -5387,6 +5752,7 @@ default = "60"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Frame cap for the settings and escape menu overlay."
 
 [panorama_max_overlay_fps.presets]
@@ -5405,6 +5771,7 @@ default = "10"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Freaks out text shadows."
 
 [panorama_max_text_shadow_strength.presets]
@@ -5418,6 +5785,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "According to John Valve this is an optimization feature that stops rendering of panels underneath the top level."
 
 [panorama_panel_occlusion.presets]
@@ -5431,6 +5799,7 @@ default = "31457280"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This should increase the panorama cache size by 4x, needs more testing"
 
 [panorama_render_target_cache_max_size.presets]
@@ -5446,6 +5815,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable script caching to speed up recompiling scripts multiple times."
 
 [panorama_script_cache_enabled.presets]
@@ -5459,6 +5829,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [panorama_skip_composition_layer_content_paint.presets]
@@ -5476,6 +5847,7 @@ default = "512"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Based on the name I'm implied to believe this is the minimum size for panorama compositing, ie blur, rounded corners, etc."
 
 [panorama_temp_comp_layer_min_dimension.presets]
@@ -5492,6 +5864,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "A float representing a scale factor for transitions. 1.0 is normal, 2.0 would be twice as fast as normal, 0.5 half as fast"
 
 [panorama_transition_time_factor.presets]
@@ -5506,6 +5879,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Skips copying the UI buffer to memory and writes directly to the backbuffer"
 
 [panorama_use_backbuffer_directly.presets]
@@ -5519,6 +5893,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SPOOKY TESTING CONVARS HAS IT SET TO ZERO"
 
 [panorama_use_new_occlusion_invalidation.presets]
@@ -5533,6 +5908,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Messes with health bar rendering, the information will be inaccurate unless close to the target if set to true. It is weird."
 
 [panorama_worldpanel_update_culling.presets]
@@ -5548,6 +5924,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Not sure"
 
 [parallel_perform_invalidate_physics.presets]
@@ -5561,6 +5938,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [parallel_update_surrounding_bounds_in_spatial_partition_update.presets]
@@ -5575,6 +5953,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Skips drawing particle “clusters”/grouped particle batches (performance, fewer small effects)."
 
 [particle_cluster_nodraw.presets]
@@ -5593,6 +5972,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Should make particles able to pass through each other. Saves some perf"
 
 [particle_cluster_use_collision_hulls.presets]
@@ -5610,6 +5990,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [phys_agg_world_compounds.presets]
@@ -5624,6 +6005,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Don't know what this does? shouldn't be needed deadlock doesn't have many physics objects"
 
 [phys_batch_ray_test.presets]
@@ -5636,6 +6018,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [phys_continuous_kinematic_update.presets]
@@ -5649,6 +6032,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Don't simulate the bones inside of a mesh."
 
 [phys_cull_internal_mesh_contacts.presets]
@@ -5666,6 +6050,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default true"
 
 [phys_dynamic_scaling.presets]
@@ -5680,6 +6065,7 @@ default = "6"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default: 6"
 
 [phys_expensive_shape_threshold.presets]
@@ -5694,6 +6080,7 @@ default = "0.02"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Highlight expensive physics objects strength"
 
 [phys_highlight_expensive_objects_strength.presets]
@@ -5707,6 +6094,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default true, alr enabled no need to include ngl"
 
 [phys_multithreading_enabled.presets]
@@ -5721,6 +6109,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I am inclined to believe this makes the cloth update threaded"
 
 [phys_threaded_cloth_bone_update.presets]
@@ -5738,6 +6127,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Threaded transform update (devonly sv/cl/rep, default false). [SV] may override"
 
 [phys_threaded_kaiz_transform_update.presets]
@@ -5751,6 +6141,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I am inclined to believe this makes the cloth kinematics threaded"
 
 [phys_threaded_kinematic_bone_update.presets]
@@ -5769,6 +6160,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Same as above"
 
 [phys_threaded_transform_update.presets]
@@ -5785,6 +6177,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Reduce cloth prediction was 1"
 
 [pred_cloth_pos_max.presets]
@@ -5799,6 +6192,7 @@ default = "0.5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "was 0.3"
 
 [pred_cloth_pos_multiplier.presets]
@@ -5813,6 +6207,7 @@ default = "0.25"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "was 0.1"
 
 [pred_cloth_pos_strength.presets]
@@ -5827,6 +6222,7 @@ default = "0.1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "was 0.05"
 
 [pred_cloth_rot_high.presets]
@@ -5841,6 +6237,7 @@ default = "0.01"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "was 0.005"
 
 [pred_cloth_rot_low.presets]
@@ -5855,6 +6252,7 @@ default = "0.3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "was 0.2 changing these values does fucking nothing"
 
 [pred_cloth_rot_multiplier.presets]
@@ -5869,6 +6267,7 @@ default = "30"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default 3"
 
 [presettle_cloth_iterations.presets]
@@ -5882,6 +6281,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default: 1"
 
 [props_break_apply_radial_forces.presets]
@@ -5896,6 +6296,7 @@ default = "16"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Makes boxes and troopers break into a single piece // Say thank you to jasper that this can be set to 0 now <3"
 
 [props_break_max_pieces_perframe.presets]
@@ -5916,6 +6317,7 @@ default = "1"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = true
 notes = "Rain particle density, 0 to 1."
 
 [r_RainParticleDensity.presets]
@@ -5932,6 +6334,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_add_views_in_pre_output.presets]
@@ -5947,6 +6350,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_ambientboost.presets]
@@ -5959,6 +6363,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_ambientfactor.presets]
@@ -5971,6 +6376,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_ambientmin.presets]
@@ -5983,6 +6389,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "(default false, cheat) — animatable meshes via GPU shader path instead of CPU skinning. Experimental-sounding name, test in bot match, watch for deformed models."
 
 [r_animatable_mesh_shaders.presets]
@@ -5996,6 +6403,7 @@ default = "12"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Distance to cull the AO proxy as a factor of size"
 
 [r_aoproxy_cull_dist.presets]
@@ -6010,6 +6418,7 @@ default = "3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default: 3, 0 is always tricky so consider changing this to 1"
 
 [r_aoproxy_min_dist.presets]
@@ -6024,6 +6433,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_aoproxy_min_dist_box.presets]
@@ -6038,6 +6448,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable area lights"
 
 [r_arealights.presets]
@@ -6054,6 +6465,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "1.75=80fov | 2.15=90fov | 2.49=100fov (every .15 interval = 5 fov)."
 
 [r_aspectratio.presets]
@@ -6072,6 +6484,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Just whether to asyncroniously render fog"
 
 [r_async_compute_fog.presets]
@@ -6088,6 +6501,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "bloom mip up-sample filtering radius (using 3x3 tent filter, radius in mip level texels), 0.0 radius => box (2x2) filter with (fixed) 1.0 radius"
 
 [r_bloom_tent_filter_radius.presets]
@@ -6101,6 +6515,7 @@ default = "512"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default: 512"
 
 [r_character_decal_monitor_render_res.presets]
@@ -6115,6 +6530,7 @@ default = "1024"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Resolution of character decal texture."
 
 [r_character_decal_resolution.presets]
@@ -6135,6 +6551,7 @@ default = "1"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Anti-aliasing. 0 disables it."
 
 [r_citadel_antialiasing.presets]
@@ -6151,6 +6568,7 @@ default = "0.4"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Removes the blur from the pinhole camera"
 
 [r_citadel_clip_sphere_min_opacity.presets]
@@ -6168,6 +6586,7 @@ default = "0.01"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "cloak"
 
 [r_citadel_cloak_blur_amount.presets]
@@ -6183,6 +6602,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "cloak"
 
 [r_citadel_cloak_refract_amount.presets]
@@ -6196,6 +6616,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Should be not prepassing entities that move"
 
 [r_citadel_depth_prepass_dynamic_objects.presets]
@@ -6214,6 +6635,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Enable/Disable Depth of Field"
 
 [r_citadel_depthoffield_enable.presets]
@@ -6230,6 +6652,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "~1 extra FPS but game looks terrible. Uncomment if you don't mind (devonly)"
 
 [r_citadel_disable_npr_lighting.presets]
@@ -6246,6 +6669,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Distance Field AO quality"
 
 [r_citadel_distancefield_ao_quality.presets]
@@ -6259,6 +6683,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Enable/Disable distance field blur"
 
 [r_citadel_distancefield_blur.presets]
@@ -6275,6 +6700,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Distance field down sample factor"
 
 [r_citadel_distancefield_down_sample.presets]
@@ -6291,6 +6717,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Distance field far field enable"
 
 [r_citadel_distancefield_farfield_enable.presets]
@@ -6307,6 +6734,7 @@ default = "true"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Ray-marched distance-field soft shadows."
 
 [r_citadel_distancefield_shadows.presets]
@@ -6323,6 +6751,7 @@ default = "true"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "World blur behind the shop. Off makes the shop dramatically faster."
 
 [r_citadel_enable_pano_world_blur.presets]
@@ -6343,6 +6772,7 @@ default = "1"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Fog quality level. 0 is lowest."
 
 [r_citadel_fog_quality.presets]
@@ -6359,6 +6789,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Apply negative mip bias when rendering with FSR."
 
 [r_citadel_fsr_enable_mip_bias.presets]
@@ -6373,6 +6804,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This seems to be a command controlling the rendering of a debug tool. Seeing as its inclusion doesn't benefit us I have disabled it"
 
 [r_citadel_glow_health_bar_debug.presets]
@@ -6386,6 +6818,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "Disable glow health bars. ⚠ Makes health bars invisible through walls — gameplay readability hit"
 
 [r_citadel_glow_health_bars.presets]
@@ -6402,6 +6835,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Citadel/Graphics/GPU Culling"
 
 [r_citadel_gpu_culling.presets]
@@ -6415,6 +6849,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Citadel/Graphics/GPU Cull Shadow Views"
 
 [r_citadel_gpu_culling_shadows.presets]
@@ -6431,6 +6866,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Citadel/Graphics/GPU Culling (Two Pass)"
 
 [r_citadel_gpu_culling_two_pass.presets]
@@ -6444,6 +6880,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable baked/preview shadow denoising"
 
 [r_citadel_gpu_preview_baked_shadows.presets]
@@ -6459,6 +6896,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable shadow denoiser (saves GPU passes)"
 
 [r_citadel_gpu_preview_denoise.presets]
@@ -6472,6 +6910,7 @@ default = "3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_citadel_gpu_preview_denoise_passes.presets]
@@ -6487,6 +6926,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Zero shadow denoise passes"
 
 [r_citadel_gpu_preview_denoise_shadow_passes.presets]
@@ -6499,7 +6939,8 @@ type = "bool"
 default = "false"
 apply = "restart"
 impact = "unknown"
-denylist = false
+denylist = true
+gameinfo_ignored = false
 notes = "Causes odd visual bugs with dragons and neutrals when set to true"
 
 [r_citadel_npr_force_solid_outline.presets]
@@ -6515,7 +6956,8 @@ type = "bool"
 default = "true"
 apply = "restart"
 impact = "unknown"
-denylist = false
+denylist = true
+gameinfo_ignored = true
 notes = "Enable/Disable NPR Outlines"
 
 [r_citadel_npr_outlines.presets]
@@ -6533,7 +6975,8 @@ type = "int"
 default = "1000"
 apply = "restart"
 impact = "unknown"
-denylist = false
+denylist = true
+gameinfo_ignored = true
 notes = "Maximum distance at which NPR outlines are rendered"
 
 [r_citadel_npr_outlines_max_dist.presets]
@@ -6549,6 +6992,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "Enables enemy outlines for better visibility."
 
 [r_citadel_outlines.presets]
@@ -6562,6 +7006,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Render screen space particles at full resolution"
 
 [r_citadel_screenspace_particles_full_res.presets]
@@ -6580,6 +7025,7 @@ default = "0.8"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = true
 notes = "Selection Outline Alpha"
 
 [r_citadel_selection_outline2_alpha.presets]
@@ -6596,6 +7042,7 @@ default = "0.3"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = true
 notes = "Selection Outline Offset: -1 for interior, 0 for centered, 1 for exterior."
 
 [r_citadel_selection_outline2_offset.presets]
@@ -6609,6 +7056,7 @@ default = "4"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = true
 notes = "Selection Outline Width"
 
 [r_citadel_selection_outline2_width.presets]
@@ -6622,6 +7070,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "We disable all shadows so this shouldn't be needed"
 
 [r_citadel_shadow_caching.presets]
@@ -6639,6 +7088,7 @@ default = "1"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Overall shadow quality level. 0 is lowest; most FPS presets use 0."
 
 [r_citadel_shadow_quality.presets]
@@ -6657,6 +7107,7 @@ default = "2048"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Default: 2048"
 
 [r_citadel_shadowdb.presets]
@@ -6670,6 +7121,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_citadel_ssao_bent_normals.presets]
@@ -6683,6 +7135,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_citadel_ssao_denoise_passes.presets]
@@ -6699,6 +7152,7 @@ default = "3"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Screen-space ambient occlusion quality. 0 is lowest."
 
 [r_citadel_ssao_quality.presets]
@@ -6716,6 +7170,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_citadel_ssao_radius.presets]
@@ -6730,6 +7185,7 @@ default = "0.5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables special handling for thin occluders in SSAO (cheaper)."
 
 [r_citadel_ssao_thin_occluder_compensation.presets]
@@ -6748,6 +7204,7 @@ default = "3.54"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = '\\'
 
 [r_citadel_sun_shadow_slope_scale_depth_bias.presets]
@@ -6768,6 +7225,7 @@ default = "4"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Upscaler selection. 0 disables upscaling; the default 4 uses DLSS or FSR."
 
 [r_citadel_upscaling.presets]
@@ -6781,6 +7239,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Skip cubemap normalization pass (devonly, default true). Minor GPU saver"
 
 [r_cubemap_normalization.presets]
@@ -6794,6 +7253,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Sets dashboard/UI render quality (lower = cheaper UI rendering)."
 
 [r_dashboard_render_quality.presets]
@@ -6814,6 +7274,7 @@ default = "2048"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Maximum decals (bullet holes, blood, impact marks)."
 
 [r_decals.presets]
@@ -6830,6 +7291,7 @@ default = "3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "How quickly decals (bullet holes) fade"
 
 [r_decals_default_fade_duration.presets]
@@ -6845,6 +7307,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_decals_default_start_fade.presets]
@@ -6858,6 +7321,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_decals_max_on_deformables.presets]
@@ -6871,6 +7335,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_decals_overlap_threshold.presets]
@@ -6885,6 +7350,7 @@ default = "true"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Depth of field blur."
 
 [r_depth_of_field.presets]
@@ -6903,6 +7369,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable directional lightmaps"
 
 [r_directional_lightmaps.presets]
@@ -6919,6 +7386,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Set to use direct lighting"
 
 [r_directlighting.presets]
@@ -6935,6 +7403,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Graphics/Enable Distance Field rendering"
 
 [r_distancefield_enable.presets]
@@ -6953,6 +7422,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Causes issues with boxes being invisible"
 
 [r_dopixelvisibility.presets]
@@ -6971,6 +7441,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enables drawing the 3D skybox layer (distant geometry)."
 
 [r_draw3dskybox.presets]
@@ -6989,6 +7460,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Only draw the first triangle. Only works on dx11, causes issues with every playermodel and the hud for some reason"
 
 [r_draw_first_tri_only.presets]
@@ -7002,6 +7474,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "causes boxes to freak out on dx11"
 
 [r_draw_instances.presets]
@@ -7015,6 +7488,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "causes problems with the hud"
 
 [r_draw_overlays.presets]
@@ -7031,6 +7505,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Draw particle children with parents (-1=use gameinfo, 0=no, 1=yes)"
 
 [r_draw_particle_children_with_parents.presets]
@@ -7047,6 +7522,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Set to render decals"
 
 [r_drawdecals.presets]
@@ -7064,6 +7540,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "does not exist in master convar"
 
 [r_drawmodeldecals.presets]
@@ -7078,6 +7555,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "SceneSystem/Particles/Draw Particles"
 
 [r_drawparticles.presets]
@@ -7092,6 +7570,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_drawropes.presets]
@@ -7110,6 +7589,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Render the 2d skybox."
 
 [r_drawskybox.presets]
@@ -7126,6 +7606,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = """Makes lash's ground slam marker invisible. I would enable it anyway but I don't like getting fifty trillion "how do I fix this" dms"""
 
 [r_drawtracers.presets]
@@ -7142,6 +7623,7 @@ default = "true"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Your own bullet tracers."
 
 [r_drawtracers_firstperson.presets]
@@ -7158,6 +7640,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Render view model"
 
 [r_drawviewmodel.presets]
@@ -7171,6 +7654,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable Software Command lists for DX11 (Avoid using deferred contexts)"
 
 [r_dx11_software_cmd_lists.presets]
@@ -7184,6 +7668,7 @@ default = "true"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Bloom on effects such as abilities and particles."
 
 [r_effects_bloom.presets]
@@ -7202,6 +7687,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Citadel/Graphics/Fog/Enable Cubemap Fog"
 
 [r_enable_cubemap_fog.presets]
@@ -7219,6 +7705,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Citadel/Graphics/Fog/Enable Gradient Fog"
 
 [r_enable_gradient_fog.presets]
@@ -7236,6 +7723,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_enable_rigid_animation.presets]
@@ -7252,6 +7740,7 @@ default = "true"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = true
 notes = "Volumetric fog."
 
 [r_enable_volume_fog.presets]
@@ -7269,6 +7758,7 @@ default = "0.2 0.3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Fade region for sampling environment maps on lightmapped nonmetals. Smoother values than the first param sample envmaps. Rougher values than the second sample only lightmap SH. r_environment_map_roughness_range 1 1 to always sample envmaps for comparison."
 
 [r_environment_map_roughness_range.presets]
@@ -7285,6 +7775,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Setting this to anything above 0 causes issues with latency. negative values cause the game to crash."
 
 [r_extra_render_frames.presets]
@@ -7298,6 +7789,7 @@ default = "2"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Scale factor for requested texture size (texture streaming) - used for geo that doesn't have a precomputed UV density measure"
 
 [r_fallback_texture_lod_scale.presets]
@@ -7316,6 +7808,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Far clip plane. -1 uses the map's fog controller. Lower values make buildings and distant players pop in."
 
 [r_farz.presets]
@@ -7333,6 +7826,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_fastzreject.presets]
@@ -7346,6 +7840,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables ambient lighting math on flashlights/muzzle flashes"
 
 [r_flashlightambient.presets]
@@ -7359,6 +7854,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_flashlightbrightness.presets]
@@ -7373,6 +7869,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables constant lighting math"
 
 [r_flashlightconstant.presets]
@@ -7386,6 +7883,7 @@ default = "1500"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_flashlightfar.presets]
@@ -7400,6 +7898,7 @@ default = "0.35"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_flashlightshadowatten.presets]
@@ -7414,6 +7913,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_flush_on_pooled_ib_resize.presets]
@@ -7426,6 +7926,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_force_ambient.presets]
@@ -7439,6 +7940,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Don't force thick hair (cheaper)"
 
 [r_force_thick_hair.presets]
@@ -7452,6 +7954,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "0: Force z prepass off. 1: Force on. -1: Don't force"
 
 [r_force_zprepass.presets]
@@ -7465,6 +7968,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Setting this to false causes vram to overflow to normal ram for some reason? Game freaks out."
 
 [r_frame_sync_enable.presets]
@@ -7483,6 +7987,7 @@ default = "2.2"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Screen Gamma (only in fullscreen modes)"
 
 [r_fullscreen_gamma.presets]
@@ -7496,6 +8001,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "might change to true"
 
 [r_gbuffer_disable_npr_lighting.presets]
@@ -7510,6 +8016,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable grass flattening simulation"
 
 [r_grass_allow_flattening.presets]
@@ -7523,6 +8030,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Skips transparency rendering math for foliage"
 
 [r_grass_alpha_test.presets]
@@ -7536,6 +8044,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "0 = Density corresponds to blade existance, 1 = Density corresponds to blade height, 2 = Both 0 and 1"
 
 [r_grass_density_mode.presets]
@@ -7549,6 +8058,7 @@ default = "3000"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When to cull grass when far"
 
 [r_grass_end_fade.presets]
@@ -7569,6 +8079,7 @@ default = "2"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Grass quality: 0 off, 1 low, 2 medium, 3 high, 4 ultra."
 
 [r_grass_quality.presets]
@@ -7587,6 +8098,7 @@ default = "2000"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When to cull grass when it's close I think"
 
 [r_grass_start_fade.presets]
@@ -7605,6 +8117,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable per-vertex grass lighting (already default 0 — reinforces)"
 
 [r_grass_vertex_lighting.presets]
@@ -7618,6 +8131,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables hair ambient occlusion/shading pass."
 
 [r_hair_ao.presets]
@@ -7636,6 +8150,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable hair indirect light transmission"
 
 [r_hair_indirect_transmittance.presets]
@@ -7652,6 +8167,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable hair shadow tiling"
 
 [r_hair_shadowtile.presets]
@@ -7668,6 +8184,7 @@ default = "0.07"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Zero hair wind animation"
 
 [r_hair_wind_motion_scale.presets]
@@ -7681,6 +8198,7 @@ default = "0.2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable hair wind noise"
 
 [r_hair_wind_noise.presets]
@@ -7694,6 +8212,7 @@ default = "-1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_haircull_percent.presets]
@@ -7708,6 +8227,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Simplify impact orientation (minor)"
 
 [r_impacts_alt_orientation.presets]
@@ -7723,6 +8243,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Set to use indirect lighting"
 
 [r_indirectlighting.presets]
@@ -7738,6 +8259,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_late_particle_job_sync.presets]
@@ -7751,6 +8273,7 @@ default = "1"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Flickering light effects where maps use them."
 
 [r_light_flickering_enabled.presets]
@@ -7769,6 +8292,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_light_sensitivity_mode.presets]
@@ -7783,6 +8307,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enables bicubic filtering on lightmaps."
 
 [r_lightmap_bicubic_filtering.presets]
@@ -7801,6 +8326,7 @@ default = "65536"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Maximum lightmap resolution."
 
 [r_lightmap_size.presets]
@@ -7819,6 +8345,7 @@ default = "-1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Maximum lightmap resolution for directional_irradiance channel. -1 = use value of r_lightmap_size"
 
 [r_lightmap_size_directional_irradiance.presets]
@@ -7837,6 +8364,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Seems to help with particle clutter, although I am not sure."
 
 [r_limit_particle_job_duration.presets]
@@ -7852,6 +8380,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_lod.presets]
@@ -7867,6 +8396,7 @@ default = "1"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "NVIDIA Reflex / AMD Anti-Lag 2. 0 off, 1 on, 2 NVIDIA only with boost."
 
 [r_low_latency.presets]
@@ -7883,6 +8413,7 @@ default = "16384"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Set the max dimension for the map. This determines the far clipping plane"
 
 [r_mapextents.presets]
@@ -7901,6 +8432,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Maxium number of Doorman doors to allow rendering. // This will cause visual bugs when set to 1, either set it to 2 or 0 to disable them."
 
 [r_max_portal_render_targets.presets]
@@ -7917,6 +8449,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Upper limit on texture pool size."
 
 [r_max_texture_pool_size.presets]
@@ -7929,6 +8462,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_mixed_shadows_fade_out_time.presets]
@@ -7942,6 +8476,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "kai's cfg"
 
 [r_monitor_3dskybox.presets]
@@ -7958,6 +8493,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable vertex morph targets / facial expressions (cheat)"
 
 [r_morphing_enabled.presets]
@@ -7975,6 +8511,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enables multi-scattering lighting approximation."
 
 [r_multiscattering.presets]
@@ -7993,6 +8530,7 @@ default = "0.4"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default 0.4 idk if this does anything"
 
 [r_muzzleflashbrightness.presets]
@@ -8007,6 +8545,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Override the near clipping plane. -1 means use the default."
 
 [r_nearz.presets]
@@ -8022,6 +8561,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "makes the map invisible"
 
 [r_opaque.presets]
@@ -8035,6 +8575,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I imagine it renders particles prematurely, which we do not care for."
 
 [r_particle_allowprerender.presets]
@@ -8049,6 +8590,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Batches collections of particles, typically batch rendering is faster so this is set to true."
 
 [r_particle_batch_collections.presets]
@@ -8067,6 +8609,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_particle_batch_simulate.presets]
@@ -8080,6 +8623,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Cable particles don't cast shadows (default 1)"
 
 [r_particle_cables_cast_shadows.presets]
@@ -8096,6 +8640,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = ""
 
 [r_particle_cables_culling.presets]
@@ -8109,6 +8654,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Skip rendering cable/rope particle geometry (default 0? keep 1 = render minimal)"
 
 [r_particle_cables_render.presets]
@@ -8125,6 +8671,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = ""
 
 [r_particle_cables_render_meshlets.presets]
@@ -8139,6 +8686,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "// I believe this improves performance but will make soul orbs a bit difficult to see"
 
 [r_particle_explicit_fetch.presets]
@@ -8152,6 +8700,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Use fixed seeds for easier debugging"
 
 [r_particle_fixedrandomseeds.presets]
@@ -8167,6 +8716,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "(default false) — caches implicit particle data in GPU LDS (on-chip), fewer VRAM round-trips per particle. Try it."
 
 [r_particle_gpu_implicit_lds_cache.presets]
@@ -8182,6 +8732,7 @@ default = "3"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = true
 notes = "Highest particle detail level spawned. 0 spawns only the cheapest variants."
 
 [r_particle_max_detail_level.presets]
@@ -8200,6 +8751,7 @@ default = "1e+06"
 apply = "live_cheat"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Distance beyond which particles are not drawn."
 
 [r_particle_max_draw_distance.presets]
@@ -8216,6 +8768,7 @@ default = "1200"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Particle systems larger than this in every dimension skip culling to save CPU. They will be drawn anyway."
 
 [r_particle_max_size_cull.presets]
@@ -8234,6 +8787,7 @@ default = "-1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Anything below 4 will make infernus afterburn, paige fire, and drifter's passive look very weird and blocky"
 
 [r_particle_max_texture_layers.presets]
@@ -8252,6 +8806,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "A minimum on particle simulation time, particle simulation happening more frequently than this will lerp."
 
 [r_particle_min_timestep.presets]
@@ -8270,6 +8825,7 @@ default = "500"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I don't know if this does anything but I didn't notice anything terrible out the gate and lowering particle resolution can't hurt"
 
 [r_particle_mixed_resolution_viewstart.presets]
@@ -8288,6 +8844,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Jasper stated that these variables aren't used by deadlock so I'm disabling them to be safe :steam_happy:"
 
 [r_particle_model_new.presets]
@@ -8301,6 +8858,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Jasper stated that these variables aren't used by deadlock so I'm disabling them to be safe :steam_happy:"
 
 [r_particle_model_new8.presets]
@@ -8317,6 +8875,7 @@ default = "32"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I believe it is how many particle models a thread is allowed to handle."
 
 [r_particle_model_per_thread_count.presets]
@@ -8333,6 +8892,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable input path in particle ops"
 
 [r_particle_newinput.presets]
@@ -8347,6 +8907,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_particle_parallel_simulation.presets]
@@ -8360,6 +8921,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Not entirely sure what it does, going off of the name I'd imagine it skips the post simulation, this is a testvar"
 
 [r_particle_skip_postsim.presets]
@@ -8378,6 +8940,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Speeds up particle simulation, thus making them end sooner, however this causes visual desyncs, most notably with big effects that last a while such as infernus ult. Please tweak this to what you are comfortable with."
 
 [r_particle_timescale.presets]
@@ -8393,6 +8956,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Prevents physics-based particle spawns."
 
 [r_physics_particle_op_spawn_scale.presets]
@@ -8411,6 +8975,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Experimental: Set to 1 to use the ID3D11DeviceContext11::Flush() to flush the GPU pipeline instead of queries."
 
 [r_pipeline_stats_use_flush_api.presets]
@@ -8425,6 +8990,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "As far as I am aware this disables the pixel visibility system which should reduce visual fidelity but saves you from drawing a ray (I THINK)"
 
 [r_pixelvisibility_partial.presets]
@@ -8440,6 +9006,7 @@ default = "false"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Post-process bloom."
 
 [r_post_bloom.presets]
@@ -8458,6 +9025,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = true
 notes = "Disable ALL post-processing. Uncomment if not using post-processing mods like Sunlock or you want the game to look grey"
 
 [r_postprocess_enable.presets]
@@ -8476,6 +9044,7 @@ default = "1200"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Prop draw distance (boxes and other props). Too low hides breakables."
 
 [r_propsmaxdist.presets]
@@ -8492,6 +9061,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_render_hair.presets]
@@ -8510,6 +9080,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default: true"
 
 [r_render_portals.presets]
@@ -8524,6 +9095,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Automatically generate shader debug info on capture"
 
 [r_renderdoc_auto_shader_pdbs.presets]
@@ -8542,6 +9114,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Render sun lighting"
 
 [r_rendersun.presets]
@@ -8560,6 +9133,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable translucent rope rendering"
 
 [r_ropetranslucent.presets]
@@ -8576,6 +9150,7 @@ default = "true"
 apply = "live_cheat"
 impact = "high"
 denylist = false
+gameinfo_ignored = true
 notes = "Master switch for shadow rendering. Off is a large GPU win but flattens the scene."
 
 [r_shadows.presets]
@@ -8592,6 +9167,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Set to render debug overlays"
 
 [r_showdebugoverlays.presets]
@@ -8607,6 +9183,7 @@ default = "0.8"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Objects smaller than this percentage of the screen are culled. Higher values also cull trooper health bars and boxes earlier."
 
 [r_size_cull_threshold.presets]
@@ -8625,6 +9202,7 @@ default = "0.2"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Threshold of shadow map size percentage below which objects get culled"
 
 [r_size_cull_threshold_shadow.presets]
@@ -8643,6 +9221,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "makes players a pose"
 
 [r_skinning_enabled.presets]
@@ -8656,6 +9235,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I believe this checks to see if things are properly cached in a debug context, which we shouldn't need"
 
 [r_skip_precache_validation_check.presets]
@@ -8671,6 +9251,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable smooth morph normals (cheaper)"
 
 [r_smooth_morph_normals.presets]
@@ -8687,6 +9268,7 @@ default = "true"
 apply = "restart"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "Screen-space ambient occlusion (contact shadows in corners)."
 
 [r_ssao.presets]
@@ -8705,6 +9287,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable SSAO blur pass"
 
 [r_ssao_blur.presets]
@@ -8721,6 +9304,7 @@ default = "1.2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "AO strength multiplier (0 = no AO contribution)."
 
 [r_ssao_strength.presets]
@@ -8737,6 +9321,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "idk ngl"
 
 [r_strip_invisible_during_sceneobject_update.presets]
@@ -8755,6 +9340,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Dynamically adjust texture streaming budget based on GPU memory usage."
 
 [r_texture_budget_dynamic.presets]
@@ -8769,6 +9355,7 @@ default = "0.9"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Reduce texture memory pool size when this percentage of the budget is full."
 
 [r_texture_budget_threshold.presets]
@@ -8785,6 +9372,7 @@ default = "0.1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Time (in seconds) between updating texture memory budget."
 
 [r_texture_budget_update_period.presets]
@@ -8801,6 +9389,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Eagerly evict unused textures (lower VRAM). Uncomment to enable"
 
 [r_texture_eager_eviction.presets]
@@ -8816,6 +9405,7 @@ default = "1"
 apply = "live_cheat"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Scale on requested texture size. Higher values are blurrier and use less VRAM."
 
 [r_texture_lod_scale.presets]
@@ -8832,6 +9422,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Allow immediately loading mips of textures (when possible) when their headers are loaded, saving IO & reducing latency."
 
 [r_texture_nonstreaming_load.presets]
@@ -8845,6 +9436,7 @@ default = "256"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Reduce texture memory pool size by this many MB / s when over budget."
 
 [r_texture_pool_reduce_rate.presets]
@@ -8859,6 +9451,7 @@ default = "1600"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Total size of the texture pool in MB"
 
 [r_texture_pool_size.presets]
@@ -8875,6 +9468,7 @@ default = "2147483647"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Maximum resolution for top mip level in streaming textures"
 
 [r_texture_stream_max_resolution.presets]
@@ -8893,7 +9487,8 @@ default = "0"
 apply = "restart"
 impact = "medium"
 denylist = false
-notes = "Streams lower-resolution texture mips. Higher values are blurrier and use less VRAM."
+gameinfo_ignored = false
+notes = "Streams lower-resolution texture mips. Higher values are blurrier and use less VRAM. Above 4 the Sinner's Sacrifice lights turn into small triangles unless the Sinner's Sacrifice light fix addon is on."
 
 [r_texture_stream_mip_bias.presets]
 sqooky = "3"
@@ -8909,6 +9504,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_texture_stream_resolution_bias.presets]
@@ -8923,6 +9519,7 @@ default = "10"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "(default 10) fewer streaming ops per frame, smaller individual hitches, slightly slower texture pop-in"
 
 [r_texture_stream_throttle_amount.presets]
@@ -8936,6 +9533,7 @@ default = "3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "(default 3)"
 
 [r_texture_stream_throttle_count.presets]
@@ -8949,6 +9547,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [r_texture_stream_throttle_count_over_budget.presets]
@@ -8964,6 +9563,7 @@ default = "1"
 apply = "restart"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "0 bilinear, 1 trilinear, 2 to 5 anisotropic 2x to 16x. Very low FPS impact."
 
 [r_texturefilteringquality.presets]
@@ -8982,6 +9582,7 @@ default = "true"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Simulates particles on worker threads."
 
 [r_threaded_particles.presets]
@@ -8995,6 +9596,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable rendering of translucent geometry"
 
 [r_translucent.presets]
@@ -9011,6 +9613,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This does what it says on the tin, should save more performance the lower fps gets"
 
 [r_update_particles_on_render_only_frames.presets]
@@ -9026,6 +9629,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Defrag algorithm 0=Fast 1=Balanced 2=full 3=Extensive"
 
 [r_vma_defrag_algorithm.presets]
@@ -9039,6 +9643,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Seems to cause frame rate to artificially lower"
 
 [r_wait_on_present.presets]
@@ -9052,6 +9657,7 @@ default = "0.03"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Zero grass wind animationaiz"
 
 [r_world_wind_frequency_grass.presets]
@@ -9068,6 +9674,7 @@ default = "0.003"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Zero tree wind animation"
 
 [r_world_wind_frequency_trees.presets]
@@ -9084,6 +9691,7 @@ default = "40"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables wind effects, cosmetic only."
 
 [r_world_wind_strength.presets]
@@ -9102,6 +9710,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Multithreaded ragdoll handling, better performance (if ragdolls aren't disabled)."
 
 [ragdoll_parallel_pose_control.presets]
@@ -9118,6 +9727,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If true, resets the input device when there was a long enough hitch between callbacks."
 
 [reset_voice_on_input_stallout.presets]
@@ -9135,6 +9745,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Collide rope with the world"
 
 [rope_collide.presets]
@@ -9151,6 +9762,7 @@ default = "1.4"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "How much to enlarge ropes in screen space for antialiasing effect"
 
 [rope_smooth_enlarge.presets]
@@ -9165,6 +9777,7 @@ default = "0.5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Alpha for rope antialiasing effect"
 
 [rope_smooth_maxalpha.presets]
@@ -9179,6 +9792,7 @@ default = "1.75"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables rope smoothing width-based alpha."
 
 [rope_smooth_maxalphawidth.presets]
@@ -9193,6 +9807,7 @@ default = "0.2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Alpha for rope antialiasing effect"
 
 [rope_smooth_minalpha.presets]
@@ -9207,6 +9822,7 @@ default = "0.3"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "When using smoothing, this is the min screenspace width it lets a rope shrink to"
 
 [rope_smooth_minwidth.presets]
@@ -9221,6 +9837,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Rope subdivision amount"
 
 [rope_subdiv.presets]
@@ -9235,6 +9852,7 @@ default = "1000"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Don't use CPU applying small wind gusts to ropes when they're past this distance."
 
 [rope_wind_dist.presets]
@@ -9249,6 +9867,7 @@ default = "90"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [rpg_camera_yaw.presets]
@@ -9262,6 +9881,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Allow dynamic BLAS creation for geometry going through the compute shader skinning path."
 
 [rtx_dynamic_blas.presets]
@@ -9275,6 +9895,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Cache dynamic BLAS if geometry has not changed"
 
 [rtx_dynamic_blas_caching.presets]
@@ -9288,6 +9909,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Forces all ray traced geometry to use default hit shaders instead of specialized ones."
 
 [rtx_force_default_hitgroup.presets]
@@ -9301,6 +9923,7 @@ default = "512"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Sets the texture resolution the raytracer will mark to stream in"
 
 [rtx_texture_resolution.presets]
@@ -9314,6 +9937,7 @@ default = "128"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Not fully sure what these do. Don't change them."
 
 [sc_aggregate_bvh_threshold.presets]
@@ -9330,6 +9954,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Toggles GPU culling of aggregate meshes"
 
 [sc_aggregate_gpu_culling.presets]
@@ -9343,6 +9968,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SceneSystem/Aggregates/Show GPU Culled Meshes"
 
 [sc_aggregate_gpu_culling_show_culled.presets]
@@ -9356,6 +9982,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sc_aggregate_gpu_occlusion_culling.presets]
@@ -9369,6 +9996,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sc_aggregate_gpu_vis_culling.presets]
@@ -9383,6 +10011,7 @@ default = "8"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Threshold of indirect draws when we will do compaction"
 
 [sc_aggregate_indirect_draw_compaction_threshold.presets]
@@ -9396,6 +10025,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Using mesh shaders if available instead of drawcalls"
 
 [sc_aggregate_render_mesh_shader.presets]
@@ -9409,6 +10039,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sc_aggregate_rtproxy_instanced_geo.presets]
@@ -9422,6 +10053,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sc_aggregate_rtproxy_unique_geo.presets]
@@ -9435,6 +10067,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This makes the entire map stop rendering"
 
 [sc_aggregate_show_outside_vis.presets]
@@ -9448,6 +10081,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Allow use of dithered lod transitions"
 
 [sc_allow_dithered_lod.presets]
@@ -9466,6 +10100,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sc_allow_dynamic_constant_batching.presets]
@@ -9479,6 +10114,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sc_allow_precomputed_vismembers.presets]
@@ -9492,6 +10128,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable use of precomputed vis membership for lights (requires map restart)"
 
 [sc_barnlight_enable_precomputed_vis.presets]
@@ -9505,6 +10142,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "was true"
 
 [sc_cache_envmap_lpv_lookup.presets]
@@ -9519,6 +10157,7 @@ default = "0.0075"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Screen-size where clutter will be full density"
 
 [sc_clutter_density_full_size.presets]
@@ -9533,6 +10172,7 @@ default = "0.0035"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Screen-size where clutter will be gone"
 
 [sc_clutter_density_none_size.presets]
@@ -9547,6 +10187,7 @@ default = "true"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Small clutter props. Off also improves visibility."
 
 [sc_clutter_enable.presets]
@@ -9565,6 +10206,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default: false"
 
 [sc_disable_baked_lighting.presets]
@@ -9579,6 +10221,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Skips calculating bounding boxes for culling"
 
 [sc_disable_culling_boxes.presets]
@@ -9592,6 +10235,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables rendering, ie the screen is black."
 
 [sc_disable_procedural_layer_rendering.presets]
@@ -9604,6 +10248,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "kai's cfg"
 
 [sc_disable_shadow_materials.presets]
@@ -9618,6 +10263,7 @@ default = "false"
 apply = "live_cheat"
 impact = "medium"
 denylist = false
+gameinfo_ignored = true
 notes = "Skips spotlight shadow rendering."
 
 [sc_disable_spotlight_shadows.presets]
@@ -9634,6 +10280,7 @@ default = "0.075"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Percentage of the transition between two lods we will apply a dither"
 
 [sc_dithered_lod_transition_amt.presets]
@@ -9648,6 +10295,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default true"
 
 [sc_enable_discard.presets]
@@ -9664,6 +10312,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Scale on the distance at which objects fade in and out. -1 is the engine default."
 
 [sc_fade_distance_scale_override.presets]
@@ -9682,6 +10331,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "I would imagine this functions as the variable is named."
 
 [sc_force_materials_batchable.presets]
@@ -9700,6 +10350,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sc_force_single_display_list_per_layer.presets]
@@ -9715,6 +10366,7 @@ default = "-1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Override default setting for HDR rendering. -1 default, 0 NoHdr, 1 Hdr, 2 Hdr 1010102 3 Hdr 111110"
 
 [sc_hdr_enabled_override.presets]
@@ -9730,6 +10382,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "SceneSystem/Instanced/Draw Instanced"
 
 [sc_instanced_mesh_enable.presets]
@@ -9742,6 +10395,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Toggles GPU culling of instanced meshes"
 
 [sc_instanced_mesh_gpu_culling.presets]
@@ -9755,6 +10409,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Toggles density culling (if enabled)"
 
 [sc_instanced_mesh_gpu_density_culling.presets]
@@ -9769,6 +10424,7 @@ default = "1.25"
 apply = "restart"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "LOD bias for instanced meshes such as foliage and clutter."
 
 [sc_instanced_mesh_lod_bias.presets]
@@ -9787,6 +10443,7 @@ default = "1.75"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Bias for LOD selection of instanced meshes in shadowmaps"
 
 [sc_instanced_mesh_lod_bias_shadow.presets]
@@ -9803,6 +10460,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Toggles mesh shader rendering for instanced meshes"
 
 [sc_instanced_mesh_mesh_shader.presets]
@@ -9817,6 +10475,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Toggles motion vector support for instanced meshes"
 
 [sc_instanced_mesh_motion_vectors.presets]
@@ -9835,6 +10494,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Toggles fade support for instanced meshes"
 
 [sc_instanced_mesh_opaque_fade.presets]
@@ -9853,6 +10513,7 @@ default = "1.5"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Bias for size culling of instanced meshes"
 
 [sc_instanced_mesh_size_cull_bias.presets]
@@ -9871,6 +10532,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Bias for size culling instanced meshes in shadowmaps"
 
 [sc_instanced_mesh_size_cull_bias_shadow.presets]
@@ -9889,6 +10551,7 @@ default = "128"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Not fully sure what these do. Don't change them."
 
 [sc_layer_batch_threshold.presets]
@@ -9905,6 +10568,7 @@ default = "80"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Not sure what these do. Jasper said to leave them at default"
 
 [sc_layer_batch_threshold_fullsort.presets]
@@ -9922,6 +10586,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "no idea what this does ngl"
 
 [sc_max_framebuffer_copies_per_layer.presets]
@@ -9938,6 +10603,7 @@ default = "-1"
 apply = "live_cheat"
 impact = "high"
 denylist = false
+gameinfo_ignored = false
 notes = "LOD scale. -1 is the engine default; lower values switch to cheaper models sooner and make heroes look worse."
 
 [sc_screen_size_lod_scale_override.presets]
@@ -9956,6 +10622,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables rendering, ie the screen is black."
 
 [sc_skip_traversal.presets]
@@ -9969,6 +10636,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables rendering, ie the screen is black."
 
 [sc_throw_away_all_layers.presets]
@@ -9981,6 +10649,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable client-side flex (facial) animation (default true)"
 
 [scene_clientflex.presets]
@@ -9994,6 +10663,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Displays a list of the active screen shakes."
 
 [shake_show.presets]
@@ -10007,6 +10677,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Compute LOD mask internally like since 2016, i.e. force all LOD groups' bones to compute"
 
 [skeleton_instance_lod_optimization.presets]
@@ -10025,6 +10696,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable SIMD code path for shoebox reverb processor."
 
 [snd_boxverb_simd.presets]
@@ -10038,6 +10710,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable SIMD code path for diffusor processor."
 
 [snd_diffusor_simd.presets]
@@ -10051,6 +10724,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_disable_mixer_duck.presets]
@@ -10066,6 +10740,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disabling these should help with performance, Yay!"
 
 [snd_enable_subgraph_corenull_passthrough.presets]
@@ -10079,6 +10754,7 @@ default = "100"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_envelope_rate.presets]
@@ -10095,6 +10771,7 @@ type = "string"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_event_browser_default_stack.presets]
@@ -10111,6 +10788,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_event_browser_focus_events.presets]
@@ -10127,6 +10805,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_kaizdisable_mixer_solo.presets]
@@ -10140,6 +10819,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "kai's cfg"
 
 [snd_mix_async.presets]
@@ -10154,6 +10834,7 @@ default = "0.001"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Adds some latency that shouldn't be percivable to save cpu"
 
 [snd_mixahead.presets]
@@ -10172,6 +10853,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Limits audio occlusion to save cpu"
 
 [snd_occlusion_bounces.presets]
@@ -10190,6 +10872,7 @@ default = "4"
 apply = "live_cheat"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Rays traced for sound occlusion. 0 disables occlusion tracing."
 
 [snd_occlusion_rays.presets]
@@ -10205,6 +10888,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_report_audio_nan.presets]
@@ -10222,6 +10906,7 @@ default = "10"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_sos_max_event_base_depth.presets]
@@ -10239,6 +10924,7 @@ default = "Default_Mix"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_soundmixer.presets]
@@ -10256,6 +10942,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_soundmixer_update_maximum_frame_rate.presets]
@@ -10273,6 +10960,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_soundmixer_version.presets]
@@ -10286,6 +10974,7 @@ default = "0"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_spatialize_lerp.presets]
@@ -10300,6 +10989,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Index of active HRTF."
 
 [snd_steamaudio_active_hrtf.presets]
@@ -10316,6 +11006,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_steamaudio_baked_dimensions_probelookup_usealternate.presets]
@@ -10329,6 +11020,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_steamaudio_custombake_dimensions_outsidefield_bake_enabled.presets]
@@ -10342,6 +11034,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_steamaudio_custombake_dimensions_size_and_inout_bake_enabled.presets]
@@ -10355,6 +11048,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_steamaudio_custombake_dimensions_smallsizefield_bake_enabled.presets]
@@ -10368,6 +11062,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_steamaudio_dimensions_grid_height_max.presets]
@@ -10381,6 +11076,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_steamaudio_dimensions_max_ray_length.presets]
@@ -10395,6 +11091,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable custom HRTF loading."
 
 [snd_steamaudio_enable_custom_hrtf.presets]
@@ -10412,6 +11109,7 @@ default = "false"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This variable is checked by soundstack to globally enabling pathing for audio processing."
 
 [snd_steamaudio_enable_pathing.presets]
@@ -10429,6 +11127,7 @@ default = "false"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable perspective correction for 3D audio."
 
 [snd_steamaudio_enable_perspective_correction.presets]
@@ -10443,6 +11142,7 @@ default = "0"
 apply = "live"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Steam Audio reverb processing."
 
 [snd_steamaudio_enable_reverb.presets]
@@ -10460,6 +11160,7 @@ default = "0"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Path length of invalid path in inches. Set this to .0 to use direct distance as path length."
 
 [snd_steamaudio_invalid_path_length.presets]
@@ -10477,6 +11178,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The time delay between a sound being emitted and the last audible reflection in Steam Audio."
 
 [snd_steamaudio_ir_duration.presets]
@@ -10491,6 +11193,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If set, baked dimensions data is loaded."
 
 [snd_steamaudio_load_dimensions_data.presets]
@@ -10507,6 +11210,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If set, baked materials data is loaded."
 
 [snd_steamaudio_load_materials_data.presets]
@@ -10523,6 +11227,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If set, baked occlusion data is loaded."
 
 [snd_steamaudio_load_occlusion_data.presets]
@@ -10539,6 +11244,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If set, baked pathing data is loaded. Steam Audio Hammer entities can successfully use pathing in this case."
 
 [snd_steamaudio_load_pathing_data.presets]
@@ -10556,6 +11262,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "If set, baked reverb data is loaded. Reset it to zero during an format changes of baked data until all data is updated."
 
 [snd_steamaudio_load_reverb_data.presets]
@@ -10573,6 +11280,7 @@ default = "64"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The maximum number of rays that can be traced for volumetric occlusion by Steam Audio."
 
 [snd_steamaudio_max_occlusion_samples.presets]
@@ -10586,6 +11294,7 @@ default = "4294967295"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Maximum number of probes to create when baking custom data (dimensions)."
 
 [snd_steamaudio_max_probes_customdata_dimensions.presets]
@@ -10600,6 +11309,7 @@ default = "2048"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The number of directions considered for ray bounce by Steam Audio."
 
 [snd_steamaudio_num_diffuse_samples.presets]
@@ -10615,6 +11325,7 @@ default = "2"
 apply = "live_cheat"
 impact = "low"
 denylist = false
+gameinfo_ignored = false
 notes = "Threads Steam Audio uses for realtime reflections."
 
 [snd_steamaudio_num_threads.presets]
@@ -10631,6 +11342,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The amount of directional detail in the simulated by Steam Audio."
 
 [snd_steamaudio_pathing_order.presets]
@@ -10645,6 +11357,7 @@ default = "1"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "The amount of directional detail in the rendered audio by Steam Audio."
 
 [snd_steamaudio_pathing_order_rendering.presets]
@@ -10659,6 +11372,7 @@ default = "-3"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Adjust overall volume (dB) of the output from Steam Audio Reverb processor."
 
 [snd_steamaudio_reverb_level_db.presets]
@@ -10673,6 +11387,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Ambisonics order to use for convolution reverb. 0th order = 1 channel, 1st order = 4 channels."
 
 [snd_steamaudio_reverb_order_rendering.presets]
@@ -10686,6 +11401,7 @@ default = "10"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Set the maximum update rate (in Hz) for reverb."
 
 [snd_steamaudio_reverb_update_rate.presets]
@@ -10700,6 +11416,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disables positional audio to save cpu"
 
 [snd_ui_positional.presets]
@@ -10717,6 +11434,7 @@ default = "2.4"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_ui_spatialization_spread.presets]
@@ -10734,6 +11452,7 @@ default = "0"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [snd_use_baked_occlusion.presets]
@@ -10747,6 +11466,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sos_use_guid_filter.presets]
@@ -10764,6 +11484,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "kai's cfg'"
 
 [soundsystem_update_async.presets]
@@ -10778,6 +11499,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable SST runtime layers, for debugging (will exclude geo that CAN render into SST if SST otherwise enabled)"
 
 [sparseshadowtree_disable_add_layers.presets]
@@ -10794,6 +11516,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable SST generation and runtime for viewmodel (use original CSM rendering)."
 
 [sparseshadowtree_disable_for_viewmodel.presets]
@@ -10812,6 +11535,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable use of SST at runtime (static geo rendered into cascades via SST)."
 
 [sparseshadowtree_enable_rendering.presets]
@@ -10830,6 +11554,7 @@ default = "0.0005"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "(viewmodel) precision for depth compression at SST leaf nodes."
 
 [sparseshadowtree_leaf_precision_viewmodel.presets]
@@ -10845,6 +11570,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Split SST tile generation into threadjobs (0 - disabled, 1 - wait on readpixels for job batch, 2 - async readpixels)."
 
 [sparseshadowtree_parallel_generation.presets]
@@ -10859,6 +11585,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Enable steaminput"
 
 [steam_inputhandler_enabled.presets]
@@ -10874,6 +11601,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Makes it so people on windows systems cannot move"
 
 [subtick_buttons_enabled.presets]
@@ -10886,6 +11614,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = ""
 
 [sv_force_transmit_players.presets]
@@ -10898,6 +11627,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = ""
 
 [sv_hide_ent_in_pvs.presets]
@@ -10910,6 +11640,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sv_lagcomp_filterbyviewangle.presets]
@@ -10926,6 +11657,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sv_maxunlag.presets]
@@ -10942,6 +11674,7 @@ type = "float"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sv_maxunlag_player.presets]
@@ -10959,6 +11692,7 @@ default = "98304"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Min bandwidth rate allowed on server, 0 == unlimited"
 
 [sv_minrate.presets]
@@ -10975,6 +11709,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sv_parallel_checktransmit.presets]
@@ -10989,6 +11724,7 @@ default = "2"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "0: run all send jobs on main thread; 1: send jobs run asynchronously (except on dedicated server); 2: send jobs asynchronously; 3: send jobs run in parallel but block to not overlap the next tick; 4: main server clients' send jobs run in parallel, then HLTV server jobs; this approximately matches pre-async profile for a single HLTV server configuration"
 
 [sv_parallel_sendsnapshot.presets]
@@ -11003,6 +11739,7 @@ default = "0"
 apply = "live"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "if set, adds a maximum range to PVS/PAS checks"
 
 [sv_pvs_max_distance.presets]
@@ -11016,6 +11753,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = true
+gameinfo_ignored = false
 notes = "default 0 remove entities from potential view something, basically culling objs outside of view"
 
 [sv_remove_ent_from_pvs.presets]
@@ -11029,6 +11767,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [sv_waterdist.presets]
@@ -11043,6 +11782,7 @@ default = "10"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Limits how much “think” time/entities can process per tick (CPU cap)."
 
 [think_limit.presets]
@@ -11056,6 +11796,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "This command is commented out, represented by the // at the beginning of the line. Editing it will not do anything. To mess with it remove the //"
 
 [this_is_an_example_comment.presets]
@@ -11071,6 +11812,7 @@ default = "-1"
 apply = "live"
 impact = "medium"
 denylist = false
+gameinfo_ignored = false
 notes = "Thread pool mode. -1 is the engine default; presets disagree, so measure on your CPU."
 
 [thread_pool_option.presets]
@@ -11087,6 +11829,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [threadpool_thread_limit.presets]
@@ -11099,6 +11842,7 @@ type = "bool"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Default: true"
 
 [thumper_use_plane_reflection.presets]
@@ -11113,6 +11857,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Indicates whether or not the tv should use delta frames for storage of intermediate frames. This takes more CPU but significantly less memory."
 
 [tv_enable_delta_frames.presets]
@@ -11124,6 +11869,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [update_all_keyframed_in_spatial_partition_update.presets]
@@ -11138,6 +11884,7 @@ default = "false"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "default false"
 
 [update_voices_low_priority.presets]
@@ -11152,6 +11899,7 @@ default = "512"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Hard limit for the v8 heap size (in mBytes)"
 
 [v8_maximum_heap_size_mb.presets]
@@ -11168,6 +11916,7 @@ type = "int"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [version.presets]
@@ -11185,6 +11934,7 @@ default = "54"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [viewmodel_fov.presets]
@@ -11198,6 +11948,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Draw alien blood"
 
 [violence_ablood.presets]
@@ -11216,6 +11967,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Show alien gib entities"
 
 [violence_agibs.presets]
@@ -11234,6 +11986,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Draw human blood"
 
 [violence_hblood.presets]
@@ -11252,6 +12005,7 @@ default = "true"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Show human gib entities"
 
 [violence_hgibs.presets]
@@ -11270,6 +12024,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Toggle whether to use sunlight PVS for sunlight views (0 = sky PVS, 1 = sunlight PVS)"
 
 [vis_sunlight_enable.presets]
@@ -11287,6 +12042,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [voice_in_process.presets]
@@ -11304,6 +12060,7 @@ default = "0.5"
 apply = "live"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Time before we consider a mic stalled out and need to reset it."
 
 [voice_input_stallout.presets]
@@ -11321,6 +12078,7 @@ default = "1"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Scale global volume fog density"
 
 [volume_fog_density_scale.presets]
@@ -11334,6 +12092,7 @@ default = "true"
 apply = "live_cheat"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Don't think I can"
 
 [volume_fog_enable_jitter.presets]
@@ -11349,6 +12108,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "See below"
 
 [volume_fog_intermediate_textures_hdr.presets]
@@ -11367,6 +12127,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Disable fog temporal filter (devonly)"
 
 [volume_fog_temporal_filter.presets]
@@ -11380,6 +12141,7 @@ default = "500"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Larger Vulkan draw-call batches, fewer CPU submissions (devonly, default 500)"
 
 [vulkan_batch_size.presets]
@@ -11393,6 +12155,7 @@ default = "256"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [wind_system_default_resolution_xy.presets]
@@ -11407,6 +12170,7 @@ default = "true"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = ""
 
 [wind_system_temporal_smoothing.presets]
@@ -11421,6 +12185,7 @@ default = "2"
 apply = "restart"
 impact = "unknown"
 denylist = false
+gameinfo_ignored = false
 notes = "Use the new latch motion for getting on a zipline. 0: Dont use 1: Just those with b_UseNewZipLineSetup 2: Everyone use."
 
 [zipline_use_new_latch.presets]

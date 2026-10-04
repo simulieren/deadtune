@@ -254,7 +254,7 @@ notes = "Small clutter props. Off also improves visibility."
 range = [-2, 8]
 step = 1
 impact = "medium"
-notes = "Streams lower-resolution texture mips. Higher values are blurrier and use less VRAM."
+notes = "Streams lower-resolution texture mips. Higher values are blurrier and use less VRAM. Above 4 the Sinner's Sacrifice lights turn into small triangles unless the Sinner's Sacrifice light fix addon is on."
 
 [r_texturefilteringquality]
 range = [0, 5]
@@ -379,9 +379,6 @@ notes = "Steam Audio reverb processing."
 
 # Kind fixes where preset values are junk (`0918`, `kaiz`) or only 0/1 appear.
 
-[r_citadel_npr_outlines]
-type = "bool"
-
 [violence_ablood]
 type = "bool"
 
@@ -392,6 +389,16 @@ type = "bool"
 denylist = true
 
 [r_citadel_outlines]
+denylist = true
+
+[r_citadel_npr_outlines]
+type = "bool"
+denylist = true
+
+[r_citadel_npr_outlines_max_dist]
+denylist = true
+
+[r_citadel_npr_force_solid_outline]
 denylist = true
 
 [r_citadel_selection_outline2_alpha]

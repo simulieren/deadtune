@@ -938,11 +938,14 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
             .unwrap_or_default();
         form(ui, "settings_form", |ui| {
             let path = |ui: &mut egui::Ui, p: &Path| {
-                ui.label(
-                    RichText::new(p.display().to_string())
-                        .monospace()
-                        .size(11.5),
-                );
+                let full = p.display().to_string();
+                let chars: Vec<char> = full.chars().collect();
+                let shown = match chars.len() {
+                    n if n > 64 => format!("...{}", chars[n - 64..].iter().collect::<String>()),
+                    _ => full.clone(),
+                };
+                ui.label(RichText::new(shown).monospace().size(11.5))
+                    .on_hover_text(full);
             };
             form_label(ui, "Deadlock folder");
             path(ui, &state.paths.game_root);

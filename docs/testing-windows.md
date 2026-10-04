@@ -138,6 +138,21 @@ cargo run --release -p dt-core --example texture_downscale -- "C:\Program Files 
 - [ ] Textures look half-resolution up close (props, hero skins) and the map is NOT washed out white. If it is, rerun with `--list` and report which lighting-looking paths were reduced.
 - [ ] VRAM drops: compare the GPU memory counter (Task Manager or `mat_texture_list` in the console) with and without the addon in the same spot.
 - [ ] No pop-in or textures that never sharpen (texture streaming still works with fewer mips).
+
+### 11. Performance addons (Addons section in the sidebar)
+
+Each addon is one `game\citadel\addons\pakNN_dir.vpk` that DeadTune writes and removes (its preferred number is 71 to 76; a number already used by another mod is skipped). `deadtune-cli addons list` shows the same table. The upstream files come from Sqooky's OptimizationLock repository: a build with the `fetch` feature downloads them with a Download button; otherwise download the five `pakNN_dir.vpk` files (or extract the GameBanana archive) and paste the folder into "Import downloaded files". Nothing on the Mac could prove that the game accepts these paks, so every item here is an in-game check.
+
+- [ ] **A-1 Vindicta scope / Sinner light / soul container** (verbatim upstream files at a different pak number): turn one on, Apply, launch. Does the mod work at `pak74`/`pak73`/`pak75` the way it does at its upstream number? Check setup shows "Performance addons: installed: ...".
+- [ ] **A-2 Blur disabler**: turn on, Apply, launch. The minimap frame and menus have no blur. Then turn off only "Menus" in its options, Apply: HUD blur stays off, menu blur returns. The pak is generated from your `pak01` (`panorama/styles/citadel_base_styles.vcss_c` with the two `@define`s set to `none`), not copied from upstream, so this is the real test of that generation.
+- [ ] **A-3 Blur after an update**: after the next Steam update, Check setup says "Addons after update: built for an older game version" and Apply rebuilds it (the Addons card says "Rebuilds on Apply").
+- [ ] **A-4 Particle disabler, all groups**: turn on with everything hidden (the default), Apply, launch, take damage to low health: no red vignette. Compare with upstream `pak02` installed by hand: identical behaviour.
+- [ ] **A-5 Particle disabler, some groups**: in Options untick "Low health vignette" and "Damage and death flashes", Apply. The vignette is back; hero debuff effects (for example Infernus burn) stay hidden. The pak holds only the hidden paths plus `materials/debug/debugempty_color_tga_fd967415.vtex_c`.
+- [ ] **A-6 Hero names in the particle list**: the labels with a codename in brackets (bookworm, butcher, druid, familiar, fencer, frank, hijack, priest, punkgoat, synth) and the guessed ones (Lady Geist for `ghost`, Fathom, Doorman, Wrecker, Paradox's `chrono_sphere`) were not verified. Trigger each effect in the sandbox and write the right hero next to the codename; the table is `crates/dt-core/src/addons/particles.rs`.
+- [ ] **A-7 Slot collision**: with QoL Lite (`pak01`) or another mod at `pak71` present, enabling the particle disabler lands at the next free number (`pak70`) and Apply never touches the other mod's file. Disabling removes only ours.
+- [ ] **A-8 Ranked-safe**: with addons installed, Ranked-safe mode removes every DeadTune pak (HUD too), leaves other mods, and queueing matchmaking still works (**P0-3**). Turning it off brings them back on the next Apply.
+- [ ] **A-9 Foreign file**: overwrite one of our paks with any other file. Check setup says "not what DeadTune wrote"; Apply reinstalls at a new number and never deletes the replaced file.
+- [ ] **A-10 Texture downscaler from the GUI**: same checks as section 10, started from the Addons card (Build button, progress with Cancel, stats line after). Cancel mid-way leaves no `pak76` files behind. The pak number is 76 here (the example in section 10 uses 78).
 - [ ] `--quarter --install` repeats the above with a stronger effect.
 - [ ] Delete the `pak78*` files, relaunch: full quality is back.
 - [ ] A multi-file output (`pak78_dir.vpk` plus `pak78_000.vpk`) mounts. Half size on a full game should produce one.

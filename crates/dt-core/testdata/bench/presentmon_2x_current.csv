@@ -1,0 +1,4 @@
+Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,FrameType,CPUStartTime,MsBetweenSimulationStart,MsBetweenPresents,MsBetweenDisplayChange,MsInPresentAPI,MsRenderPresentLatency,MsUntilDisplayed,MsPCLatency,MsCPUBusy,MsCPUWait,MsGPULatency,MsGPUTime,MsGPUBusy,MsGPUWait,MsAnimationError,AnimationTime,MsAllInputToPhotonLatency,MsClickToPhotonLatency
+deadlock.exe,9120,0x000002B7C41E8F70,DXGI,0,512,1,Hardware: Independent Flip,Application,0.000000,NA,6.944,6.944,0.188,3.902,4.115,NA,5.611,1.333,0.512,5.204,5.190,0.014,NA,0.000000,NA,NA
+deadlock.exe,9120,0x000002B7C41E8F70,DXGI,0,512,1,Hardware: Independent Flip,Application,0.006944,NA,6.944,0.000,0.201,3.950,NA,NA,5.702,1.242,0.520,5.230,5.216,0.014,NA,0.006944,NA,NA
+deadlock.exe,9120,0x000002B7C41E8F70,DXGI,0,512,1,Hardware: Independent Flip,Application,0.013888,NA,13.889,20.833,0.194,4.002,4.290,NA,12.400,1.489,0.508,5.311,5.297,0.014,NA,0.013888,NA,NA

@@ -1,0 +1,9 @@
+v1
+0.7.2
+---------------------SYSTEM INFO---------------------
+os,cpu,gpu,ram,kernel,driver,cpuscheduler
+SteamOS Holo,AMD Custom APU 0405,AMD Custom GPU 0405 (radv),14.5GB,6.5.0-valve22-1-neptune-65,Mesa 24.1.0,
+--------------------FRAME METRICS--------------------
+fps,frametime,cpu_load,cpu_power,gpu_load,cpu_temp,gpu_temp,gpu_core_clock,gpu_mem_clock,gpu_vram_used,gpu_power,ram_used,swap_used,process_rss,cpu_mhz,elapsed
+40,25,52,7,99,68,61,1600,5500,1.02,9,6.8,0.1,2.95,3500,25000000
+50,20,49,7,99,68,61,1600,5500,1.02,9,6.8,0.1,2.95,3500,45000000

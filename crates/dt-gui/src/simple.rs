@@ -334,12 +334,7 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
                     match page {
                         Page::Results => results(ui, state, inline_help, &mut edits),
                         Page::Section(Section::Overview) => overview(ui, state, &mut edits),
-                        Page::Section(Section::Hud) => {
-                            theme::card().show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                crate::hud_view::hud(ui, state);
-                            });
-                        }
+                        Page::Section(Section::Hud) => crate::hud_view::hud(ui, state),
                         Page::Section(Section::Safety) => safety(ui, state),
                         Page::Section(section) => {
                             settings_page(ui, state, section, inline_help, &mut edits)
@@ -372,7 +367,7 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
 fn section_changes(state: &AppState, section: Section) -> usize {
     match section {
         Section::Overview => state.tweak_count(),
-        Section::Hud => state.profile.hud.elements.len(),
+        Section::Hud => state.hud_changed_count(),
         Section::Safety => 0,
         s => state.changed_count(friendly::section_names(s)),
     }

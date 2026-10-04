@@ -134,6 +134,14 @@ impl App {
                 if let Ok(query) = std::env::var("DEADTUNE_SEARCH") {
                     state.ui.query = query;
                 }
+                if let Ok(name) = std::env::var("DEADTUNE_HUD_SELECT")
+                    && !name.is_empty()
+                {
+                    state.ui.hud_selected = dt_core::hud::elements::ELEMENTS
+                        .iter()
+                        .find(|s| s.label.to_lowercase().starts_with(&name.to_lowercase()))
+                        .map(|s| s.id);
+                }
                 self.startup_profile(&mut state);
                 self.screen = Screen::Main(Box::new(state));
             }

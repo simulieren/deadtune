@@ -209,6 +209,33 @@ impl Section {
             Section::Safety => "Undo, restore, ranked-safe mode and instant changes.",
         }
     }
+
+    /// Pages made of setting rows (not Overview, HUD or Safety).
+    pub fn has_rows(self) -> bool {
+        matches!(
+            self,
+            Section::Display
+                | Section::Shadows
+                | Section::Effects
+                | Section::World
+                | Section::Performance
+        )
+    }
+}
+
+/// What Apply would write, as the action bar headlines it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Pending {
+    Nothing,
+    /// The preset changed since the last Apply, so the whole profile lands with its tweaks.
+    Preset {
+        label: String,
+        tweaks: usize,
+    },
+    /// Settings edited since the last Apply on the same preset.
+    Tweaks(usize),
+    /// HUD or video edits only.
+    Other,
 }
 
 /// When pending changes reach the game, for the action bar.
@@ -260,6 +287,10 @@ pub struct UiState {
     pub new_profile_name: String,
     pub hud_selected: Option<ElementId>,
     pub section: Section,
+    /// The simple-view row whose help the side panel explains: hovered or last edited.
+    pub focus: Option<&'static str>,
+    /// Simple-view search; non-empty shows the Results page instead of the section.
+    pub query: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -683,6 +714,52 @@ impl AppState {
         match &self.preview {
             Ok(plan) => Timing::of(plan, self.ctx.game_running),
             Err(_) => Timing::Nothing,
+        }
+    }
+
+    /// Every setting the profile moves away from the preset, whatever view edited it.
+    pub fn tweak_count(&self) -> usize {
+        self.profile.convars.set.len() + self.profile.convars.comment.len()
+    }
+
+    pub fn preset_label(&self) -> String {
+        match &self.profile.base {
+            BaseRef::Preset(id) => dt_core::preset::info(*id).label.to_string(),
+            BaseRef::File(_) => "My original settings".into(),
+        }
+    }
+
+    pub fn pending(&self) -> Pending {
+        if !self.preview.as_ref().is_ok_and(|p| !p.is_empty()) {
+            return Pending::Nothing;
+        }
+        let was = match &self.saved {
+            Some(saved) if saved.base == self.profile.base => &saved.convars,
+            _ => {
+                return Pending::Preset {
+                    label: self.preset_label(),
+                    tweaks: self.tweak_count(),
+                };
+            }
+        };
+        let now = &self.profile.convars;
+        let edited = now
+            .set
+            .keys()
+            .chain(was.set.keys())
+            .chain(&now.comment)
+            .chain(&was.comment)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .filter(|n| {
+                now.set.get(*n) != was.set.get(*n)
+                    || now.comment.contains(n) != was.comment.contains(n)
+            })
+            .count();
+        if edited > 0 {
+            Pending::Tweaks(edited)
+        } else {
+            Pending::Other
         }
     }
 
@@ -1563,5 +1640,40 @@ mod tests {
         assert_eq!(state.timing(), Timing::Instant);
         state.set_convar(RESTART, "true".into()).unwrap();
         assert_eq!(state.timing(), Timing::Mixed { now: 1, later: 1 });
+    }
+
+    #[test]
+    fn pending_names_the_preset_switch_or_counts_edits_since_the_last_apply() {
+        let (_dir, mut state) = state();
+        assert_eq!(state.pending(), Pending::Nothing);
+        state.set_convar(LIVE, "144".into()).unwrap();
+        state.set_convar(RESTART, "true".into()).unwrap();
+        assert_eq!(state.pending(), Pending::Tweaks(2));
+        state.apply().unwrap();
+        state.save_profile().unwrap();
+        assert_eq!(state.pending(), Pending::Nothing, "applied and saved");
+        state.set_convar(LIVE, "90".into()).unwrap();
+        assert_eq!(
+            state.pending(),
+            Pending::Tweaks(1),
+            "only the edit since the last Apply counts"
+        );
+        state.set_base(BaseRef::Preset(PresetId::KaizMinspec));
+        assert_eq!(
+            state.pending(),
+            Pending::Preset {
+                label: "Kaizuchaneru minimum spec".into(),
+                tweaks: 2
+            },
+            "a preset switch carries every tweak"
+        );
+        state.reset_to_preset();
+        assert_eq!(
+            state.pending(),
+            Pending::Preset {
+                label: "Kaizuchaneru minimum spec".into(),
+                tweaks: 0
+            }
+        );
     }
 }

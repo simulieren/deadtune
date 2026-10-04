@@ -154,7 +154,7 @@ pub const ROWS: &[Row] = &[
         "csm_max_shadow_dist_override",
         "Sun shadow reach",
         "How far from you sun shadows are drawn.",
-        slider(Unit::Distance, &[(-1.0, "Game default"), (0.0, "Off")]),
+        slider(Unit::Distance, &[(-1.0, "Auto"), (0.0, "Off")]),
     ),
     entry(
         "csm_max_visible_dist",
@@ -298,7 +298,7 @@ pub const ROWS: &[Row] = &[
         "r_farz",
         "View distance",
         "How far you can see. Too low makes buildings and distant players pop in.",
-        slider(Unit::Distance, &[(-1.0, "Map default")]),
+        slider(Unit::Distance, &[(-1.0, "Auto")]),
     ),
     entry(
         "r_propsmaxdist",
@@ -316,13 +316,13 @@ pub const ROWS: &[Row] = &[
         "sc_fade_distance_scale_override",
         "Fade-in distance",
         "How early objects fade in as you approach.",
-        slider(Unit::Scale, &[(-1.0, "Game default")]),
+        slider(Unit::Scale, &[(-1.0, "Auto")]),
     ),
     entry(
         "sc_screen_size_lod_scale_override",
         "Model detail",
         "Lower switches to simpler models sooner. Heroes look worse up close.",
-        slider(Unit::Multiplier, &[(-1.0, "Game default")]),
+        slider(Unit::Multiplier, &[(-1.0, "Auto")]),
     ),
     entry(
         "sc_instanced_mesh_lod_bias",
@@ -374,14 +374,14 @@ pub const ROWS: &[Row] = &[
     ),
 ];
 
-/// The handful on the Overview, biggest FPS wins first.
+/// The handful on the Overview, biggest FPS wins first. Five fit under the goal cards at
+/// 1280x800 without scrolling.
 pub const KEY_SETTINGS: &[&str] = &[
     "fps_max",
     "r_citadel_upscaling",
     "r_citadel_shadow_quality",
     "r_ssao",
     "r_texture_stream_mip_bias",
-    "r_farz",
 ];
 
 pub fn groups(section: Section) -> &'static [Group] {
@@ -610,6 +610,76 @@ pub const PRESET_SPECTRUM: &[(PresetId, &str)] = &[
     (PresetId::KaizExtremelow, "Bare minimum"),
 ];
 
+/// The Overview's goal cards, best looking first. Each is one community preset; the rest sit
+/// in the "All presets" dropdown.
+pub const GOALS: &[(PresetId, &str, &str)] = &[
+    (
+        PresetId::Vanilla,
+        "Best looks",
+        "The game as Valve ships it",
+    ),
+    (PresetId::Sqooky, "Balanced", "More FPS, small visual cost"),
+    (
+        PresetId::KaizMinspec,
+        "More FPS",
+        "Big FPS gain, looks worse",
+    ),
+    (
+        PresetId::OptilockPotato,
+        "Max FPS",
+        "Everything off, for old PCs",
+    ),
+];
+
+/// Typed slider text back to a raw value: a special name, or a number in the unit shown.
+pub fn parse(control: Control, text: &str) -> Option<f64> {
+    let Control::Slider { unit, special } = control else {
+        return None;
+    };
+    let text = text.trim();
+    if let Some((v, _)) = special
+        .iter()
+        .find(|(_, name)| name.eq_ignore_ascii_case(text))
+    {
+        return Some(*v);
+    }
+    let digits: String = text
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E'))
+        .collect();
+    let number: f64 = digits.parse().ok()?;
+    Some(match unit {
+        Unit::Distance if text.ends_with("km") => number * 1000.0 / METRES_PER_UNIT,
+        Unit::Distance => number / METRES_PER_UNIT,
+        _ => number,
+    })
+}
+
+/// Rows whose label, help or convar name contains every word of `query`, in table order.
+pub fn search(query: &str) -> Vec<&'static Row> {
+    let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    if words.is_empty() {
+        return Vec::new();
+    }
+    ROWS.iter()
+        .filter(|r| {
+            let text = format!("{} {} {}", r.label, r.help, r.name).to_lowercase();
+            words.iter().all(|w| text.contains(w))
+        })
+        .collect()
+}
+
+pub fn section_of(name: &str) -> Option<Section> {
+    Section::ALL
+        .into_iter()
+        .filter(|s| s.has_rows())
+        .find(|s| groups(*s).iter().any(|g| g.names.contains(&name)))
+}
+
+pub fn group_of(name: &str) -> Option<&'static Group> {
+    section_of(name).and_then(|s| groups(s).iter().find(|g| g.names.contains(&name)))
+}
+
 /// One line per preset for the welcome cards; `None` hides it from the simple picker.
 pub fn preset_blurb(id: PresetId) -> Option<&'static str> {
     match id {
@@ -771,7 +841,7 @@ mod tests {
         assert_eq!(display(upscale, "4"), "DLSS / FSR");
         assert_eq!(display(upscale, "2"), "Custom");
         let farz = row("r_farz").unwrap().control;
-        assert_eq!(display(farz, "-1"), "Map default");
+        assert_eq!(display(farz, "-1"), "Auto");
         assert_eq!(display(farz, "7000"), "178 m");
         let effects = row("r_particle_max_draw_distance").unwrap().control;
         assert_eq!(display(effects, "1e+06"), "25.4 km");
@@ -800,11 +870,48 @@ mod tests {
     }
 
     #[test]
-    fn spectrum_covers_every_listed_preset() {
-        for info in dt_core::preset::all() {
-            let listed = PRESET_SPECTRUM.iter().any(|(id, _)| *id == info.id);
-            assert_eq!(listed, preset_blurb(info.id).is_some(), "{:?}", info.id);
+    fn goals_are_blurbed_presets_from_best_looks_to_max_fps() {
+        for (id, _, _) in GOALS {
+            assert!(preset_blurb(*id).is_some(), "{id:?}");
         }
+        assert_eq!(GOALS.first().unwrap().0, PresetId::Vanilla);
+        assert_eq!(GOALS.last().unwrap().0, PresetId::OptilockPotato);
+    }
+
+    #[test]
+    fn typed_values_parse_back_through_the_unit() {
+        let fps = row("fps_max").unwrap().control;
+        assert_eq!(parse(fps, "144"), Some(144.0));
+        assert_eq!(parse(fps, "144 FPS"), Some(144.0));
+        assert_eq!(parse(fps, "unlimited"), Some(0.0));
+        assert_eq!(parse(fps, "lots"), None);
+        let farz = row("r_farz").unwrap().control;
+        assert_eq!(parse(farz, "Auto"), Some(-1.0));
+        assert_eq!(parse(farz, "2 km").map(f64::round), Some(78740.0));
+        assert_eq!(parse(farz, "178 m").map(f64::round), Some(7008.0));
+        let count = row("cl_particle_max_count").unwrap().control;
+        assert_eq!(parse(count, "800 particles"), Some(800.0));
+        let levels = row("r_citadel_shadow_quality").unwrap().control;
+        assert_eq!(parse(levels, "2"), None, "only sliders take typed text");
+    }
+
+    #[test]
+    fn search_matches_label_help_or_convar_name_with_every_word() {
+        let names = |q: &str| search(q).iter().map(|r| r.name).collect::<Vec<_>>();
+        assert!(names("shadow").contains(&"r_citadel_shadow_quality"));
+        assert!(
+            names("shadow").contains(&"r_ssao"),
+            "help text mentions shadows"
+        );
+        assert_eq!(names("farz"), vec!["r_farz"], "convar name");
+        assert_eq!(names("SUN reach"), vec!["csm_max_shadow_dist_override"]);
+        assert!(names("").is_empty());
+        assert!(names("zzz").is_empty());
+        for r in search("shadow") {
+            assert!(section_of(r.name).is_some(), "{} has a section", r.name);
+        }
+        assert_eq!(section_of("r_farz"), Some(Section::World));
+        assert_eq!(group_of("r_farz").map(|g| g.title), Some("Distance"));
     }
 
     #[test]

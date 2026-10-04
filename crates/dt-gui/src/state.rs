@@ -13,7 +13,9 @@ use dt_core::backup::{BackupEntry, BackupStore, FileKind, sha256_hex};
 use dt_core::bridge::ConsoleCmd;
 use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::gi::{self, Override};
-use dt_core::hud::layout::HudLayout;
+use dt_core::hud::elements::ElementId;
+use dt_core::hud::install::HudPlan;
+use dt_core::hud::layout::{ElementEdit, HudLayout};
 use dt_core::locate::GamePaths;
 use dt_core::preset::PresetId;
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
@@ -122,6 +124,7 @@ pub enum Tab {
     #[default]
     ConVars,
     Video,
+    Hud,
     Profiles,
     Backups,
     Bench,
@@ -130,9 +133,10 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Tab; 7] = [
+    pub const ALL: [Tab; 8] = [
         Tab::ConVars,
         Tab::Video,
+        Tab::Hud,
         Tab::Profiles,
         Tab::Backups,
         Tab::Bench,
@@ -144,6 +148,7 @@ impl Tab {
         match self {
             Tab::ConVars => "ConVars",
             Tab::Video => "Video",
+            Tab::Hud => "HUD",
             Tab::Profiles => "Profiles",
             Tab::Backups => "Backups",
             Tab::Bench => "Bench",
@@ -171,6 +176,7 @@ pub struct UiState {
     /// Path field for overrides.gi import/export on the Profiles tab.
     pub overrides_path: String,
     pub new_profile_name: String,
+    pub hud_selected: Option<ElementId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -212,6 +218,9 @@ pub struct AppState {
     pub ui: UiState,
     pub status: Option<Status>,
     pub welcome: Option<Welcome>,
+    /// HUD plan for the layout it was built from; building reads the game archive, so it is
+    /// rebuilt only when the layout changes or files on disk do.
+    hud_cache: Option<(HudLayout, Result<Option<HudPlan>, String>)>,
     /// Creation time of the backup the last Undo restored; cleared by Apply.
     pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
@@ -301,6 +310,7 @@ impl AppState {
             ui: UiState::default(),
             status: None,
             welcome: None,
+            hud_cache: None,
             undo_cursor: None,
             checks: None,
             #[cfg(feature = "remote")]
@@ -410,19 +420,28 @@ impl AppState {
             TargetSource::Profile => &self.profile.hud,
             TargetSource::RankedSafe => &HudLayout::default(),
         };
-        let hud = apply::hud_plan(&self.paths, layout, &self.store);
+        let hud = match &self.hud_cache {
+            Some((cached, plan)) if cached == layout => plan.clone(),
+            _ => {
+                let plan =
+                    apply::hud_plan(&self.paths, layout, &self.store).map_err(|e| e.to_string());
+                self.hud_cache = Some((layout.clone(), plan.clone()));
+                plan
+            }
+        };
+        // A HUD that cannot be built (missing game archive, foreign addon) must not block
+        // convar changes; the HUD tab shows the reason instead.
+        let hud = hud.unwrap_or(None);
         let target = match self.settings.source {
             TargetSource::Profile => match &self.base {
-                Ok(base) => hud.and_then(|hud| {
-                    apply::target(
-                        &self.live.gameinfo,
-                        self.live.video.as_deref(),
-                        &base.texts,
-                        &self.profile,
-                        self.catalog,
-                        hud,
-                    )
-                }),
+                Ok(base) => apply::target(
+                    &self.live.gameinfo,
+                    self.live.video.as_deref(),
+                    &base.texts,
+                    &self.profile,
+                    self.catalog,
+                    hud,
+                ),
                 Err(e) => {
                     self.preview = Err(e.clone());
                     self.preview_diff.clear();
@@ -430,7 +449,7 @@ impl AppState {
                 }
             },
             TargetSource::RankedSafe => {
-                hud.and_then(|hud| apply::ranked_safe_target(&self.live.gameinfo, &self.store, hud))
+                apply::ranked_safe_target(&self.live.gameinfo, &self.store, hud)
             }
         };
         self.preview = target
@@ -626,6 +645,29 @@ impl AppState {
         }
         self.known_gameinfo_sha = new_sha;
         self.live = new;
+        self.hud_cache = None;
+        self.refresh_preview();
+    }
+
+    /// Why the HUD layout cannot be applied right now, if it cannot.
+    pub fn hud_error(&self) -> Option<&str> {
+        match &self.hud_cache {
+            Some((_, Err(e))) => Some(e),
+            _ => None,
+        }
+    }
+
+    pub fn set_hud_element(&mut self, id: ElementId, edit: ElementEdit) {
+        if edit == ElementEdit::default() {
+            self.profile.hud.elements.remove(&id);
+        } else {
+            self.profile.hud.elements.insert(id, edit);
+        }
+        self.refresh_preview();
+    }
+
+    pub fn reset_hud(&mut self) {
+        self.profile.hud = HudLayout::default();
         self.refresh_preview();
     }
 
@@ -693,6 +735,7 @@ impl AppState {
         self.known_gameinfo_sha = sha256_hex(self.live.gameinfo.as_bytes());
         self.banner = None;
         self.undo_cursor = None;
+        self.hud_cache = None;
         self.refresh_preview();
         Ok(applied)
     }
@@ -797,6 +840,7 @@ impl AppState {
         };
         self.store.restore(entry, live)?;
         self.live = LiveFiles::read(&self.paths)?;
+        self.hud_cache = None;
         self.known_gameinfo_sha = sha256_hex(self.live.gameinfo.as_bytes());
         self.refresh_preview();
         Ok(())
@@ -1299,6 +1343,37 @@ mod tests {
                 .unwrap_err()
                 .contains("not changed")
         );
+    }
+
+    #[test]
+    fn hud_edit_marks_dirty_and_a_missing_archive_does_not_block_convars() {
+        let (_dir, mut state) = state();
+        let edit = ElementEdit {
+            visibility: dt_core::hud::layout::Visibility::Hidden,
+            ..ElementEdit::default()
+        };
+        state.set_hud_element(ElementId::Minimap, edit);
+        assert!(state.is_dirty());
+        assert!(
+            state
+                .hud_error()
+                .is_some_and(|e| e.contains("pak01_dir.vpk")),
+            "fake install has no game archive: {:?}",
+            state.hud_error()
+        );
+        state.set_convar(LIVE, "90".into()).unwrap();
+        assert!(
+            plan(&state).gameinfo.is_some(),
+            "convar changes still planned"
+        );
+        state.set_hud_element(ElementId::Minimap, ElementEdit::default());
+        assert!(
+            state.profile.hud.elements.is_empty(),
+            "identity edit removed"
+        );
+        assert_eq!(state.hud_error(), None);
+        state.revert_convar(LIVE);
+        assert!(!state.is_dirty());
     }
 
     #[test]

@@ -336,6 +336,7 @@ fn full_ui(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Settings
         tab => {
             egui::CentralPanel::default().show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| match tab {
+                    Tab::Hud => crate::hud_view::hud(ui, state),
                     Tab::Profiles => views::profiles(ui, state),
                     Tab::Backups => views::backups(ui, state),
                     Tab::Bench => views::bench(ui, state),

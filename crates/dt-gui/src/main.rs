@@ -4,6 +4,7 @@ mod app;
 mod bench;
 mod chart;
 mod friendly;
+mod hud_view;
 mod live;
 mod png;
 mod profiles;

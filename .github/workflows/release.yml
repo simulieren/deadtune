@@ -1,0 +1,63 @@
+name: Release
+
+# Manual run: rolling `testing` prerelease from any pushed ref (scripts/release-testing.sh).
+# Tag `v*`: a normal release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  ZIP: deadtune-windows-x64.zip
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc -p dt-gui -p dt-cli
+          cargo build --release --target x86_64-pc-windows-msvc -p dt-core --example hud_build
+      - name: package
+        shell: pwsh
+        run: |
+          $rel = "target/x86_64-pc-windows-msvc/release"
+          New-Item -ItemType Directory stage | Out-Null
+          Copy-Item "$rel/deadtune.exe", "$rel/deadtune-cli.exe", "$rel/examples/hud_build.exe" stage/
+          Copy-Item crates/dt-core/examples/hud_layout.sample.toml, docs/testing-windows.md stage/
+          "$env:GITHUB_REF_NAME $env:GITHUB_SHA" | Set-Content stage/BUILD.txt
+          Compress-Archive -Path stage/* -DestinationPath $env:ZIP
+          (Get-FileHash $env:ZIP -Algorithm SHA256).Hash.ToLower() + "  $env:ZIP" | Set-Content "$env:ZIP.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: deadtune-windows-x64.zip*
+
+  publish:
+    needs: windows
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+      - name: testing prerelease
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          short=${GITHUB_SHA::7}
+          gh release delete testing --cleanup-tag --yes || true
+          gh release create testing $ZIP $ZIP.sha256 --prerelease --target "$GITHUB_SHA" \
+            --title "Testing build $short ($GITHUB_REF_NAME)" \
+            --notes "Untested build of \`$GITHUB_REF_NAME\` at $GITHUB_SHA. Get it on Windows with \`scripts/get-testing.ps1\`."
+      - name: tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gh release create "$GITHUB_REF_NAME" $ZIP $ZIP.sha256 --verify-tag --generate-notes

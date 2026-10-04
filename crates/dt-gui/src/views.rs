@@ -191,6 +191,11 @@ pub fn control(
                 Some([lo, hi]) if lo < hi => {
                     ui.spacing_mut().slider_width = CONTROL_WIDTH - 70.0;
                     let mut slider = egui::Slider::new(&mut v, lo..=hi);
+                    slider = if integer {
+                        slider.integer()
+                    } else {
+                        slider.max_decimals(3)
+                    };
                     if step > 0.0 {
                         slider = slider.step_by(step);
                     }
@@ -232,6 +237,19 @@ pub fn control(
     }
 }
 
+/// A label left-aligned in a fixed-width slot (`add_sized` would center it).
+pub fn left_label(ui: &mut egui::Ui, width: f32, label: egui::Label) -> egui::Response {
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, ROW_HEIGHT),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_width(width);
+            ui.add(label)
+        },
+    )
+    .inner
+}
+
 fn convar_row(ui: &mut egui::Ui, state: &AppState, name: &str) -> Option<Edit> {
     let entry = state.catalog.get(name);
     let denied = state.catalog.is_denied(name);
@@ -255,7 +273,7 @@ fn convar_row(ui: &mut egui::Ui, state: &AppState, name: &str) -> Option<Edit> {
             }
             _ => RichText::new(name).monospace(),
         };
-        ui.add_sized([NAME_WIDTH, ROW_HEIGHT], egui::Label::new(label).truncate())
+        left_label(ui, NAME_WIDTH, egui::Label::new(label).truncate())
             .on_hover_ui(|ui| entry_hover(ui, name, entry));
         ui.allocate_ui_with_layout(
             egui::vec2(CONTROL_WIDTH, ROW_HEIGHT),

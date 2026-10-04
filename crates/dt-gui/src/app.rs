@@ -226,7 +226,12 @@ impl App {
             && job.frames == 5
             && let Screen::Main(state) = &mut self.screen
         {
-            views::run_apply(ctx, state);
+            match state.settings.view {
+                View::Simple => simple::apply(ctx, state),
+                View::Advanced => {
+                    views::run_apply(ctx, state);
+                }
+            }
         }
         if job.frames == 20 && !job.requested {
             job.requested = true;

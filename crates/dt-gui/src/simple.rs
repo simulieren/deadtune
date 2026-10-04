@@ -188,7 +188,7 @@ fn pick_start(ui: &mut egui::Ui, state: &mut AppState, choice: Option<StartChoic
 }
 
 /// Apply with a plain-language result.
-fn apply(ctx: &egui::Context, state: &mut AppState) {
+pub fn apply(ctx: &egui::Context, state: &mut AppState) {
     match state.apply() {
         Ok(applied) => {
             let mut msg = String::from("Saved.");
@@ -441,11 +441,8 @@ fn settings_list(ui: &mut egui::Ui, state: &mut AppState) {
         let setting = state.setting(name);
         let value = state.current_value(name);
         ui.horizontal(|ui| {
-            ui.add_sized(
-                [230.0, 22.0],
-                egui::Label::new(RichText::new(friendly::label(name).unwrap_or(name)).strong())
-                    .truncate(),
-            );
+            let label = RichText::new(friendly::label(name).unwrap_or(name)).strong();
+            views::left_label(ui, 230.0, egui::Label::new(label).truncate());
             if let Some(v) = views::control(ui, name, Some(entry), value.as_deref()) {
                 edits.push((name, Some(v)));
             }

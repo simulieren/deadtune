@@ -180,6 +180,8 @@ Each addon is one `game\citadel\addons\pakNN_dir.vpk` that DeadTune writes and r
 - [ ] A multi-file output (`pak78_dir.vpk` plus `pak78_000.vpk`) mounts. Half size on a full game should produce one.
 - [ ] Matchmaking still queues with the addon mounted (same question as **H0-4**).
 
+- [ ] Links open: an author credit opens the browser, and System check's "Open Windows Settings" opens the right Settings page (`ms-settings:` links).
+
 ### 10. Developer checks (repo checkout on Windows)
 - [ ] `cargo test --workspace --all-features` passes, including the Windows-only `push_uses_crlf_on_windows`.
 - [ ] With `core.autocrlf=true`, a fresh clone still passes the catalog drift test.

@@ -72,8 +72,18 @@ pub fn effective_values(text: &str) -> Result<BTreeMap<String, String>, GiError>
 
 /// `[def: "x"]` becomes `default`, the rest becomes `description`.
 pub fn parse_comment_meta(comment: &str) -> CommentMeta {
-    let _ = comment;
-    todo!()
+    let text = comment.trim().trim_start_matches("//").trim();
+    let Some(start) = ["[def:", "[default:"].iter().find_map(|tag| text.find(tag).map(|i| (i, tag.len()))) else {
+        return CommentMeta { default: None, description: text.to_string() };
+    };
+    let (open, tag_len) = start;
+    let rest = &text[open + tag_len..];
+    let close = rest.find(']').unwrap_or(rest.len());
+    let raw = rest[..close].trim().trim_matches('"');
+    let default = (raw != "null").then(|| raw.to_string());
+    let after = rest.get(close + 1..).unwrap_or("");
+    let description = format!("{} {}", text[..open].trim(), after.trim()).trim().to_string();
+    CommentMeta { default, description }
 }
 
 /// Applies overrides in place; unknown `Set`s go into the managed block, which is
@@ -88,4 +98,36 @@ pub fn apply_overrides(text: &str, overrides: &Overrides) -> Result<ApplyOutcome
 pub fn replace_convars_block(target: &str, source: &str) -> Result<String, GiError> {
     let _ = (target, source);
     todo!()
+}
+
+#[cfg(test)]
+mod comment_meta_tests {
+    use super::*;
+
+    fn meta(default: Option<&str>, description: &str) -> CommentMeta {
+        CommentMeta { default: default.map(str::to_string), description: description.to_string() }
+    }
+
+    #[test]
+    fn quoted_default_and_description() {
+        assert_eq!(
+            parse_comment_meta(r#"// Disables creep animations [def: "0"]"#),
+            meta(Some("0"), "Disables creep animations")
+        );
+    }
+
+    #[test]
+    fn annotation_variants() {
+        assert_eq!(parse_comment_meta(r#"[def:"1"]"#), meta(Some("1"), ""));
+        assert_eq!(parse_comment_meta(r#"[def: "0]"#), meta(Some("0"), ""));
+        assert_eq!(parse_comment_meta("[def: 0.55] tweak"), meta(Some("0.55"), "tweak"));
+        assert_eq!(parse_comment_meta(r#"[default: "128"]"#), meta(Some("128"), ""));
+        assert_eq!(parse_comment_meta("[def: null]"), meta(None, ""));
+        assert_eq!(parse_comment_meta(r#"[def: "" ]"#), meta(Some(""), ""));
+    }
+
+    #[test]
+    fn no_annotation() {
+        assert_eq!(parse_comment_meta("  just words "), meta(None, "just words"));
+    }
 }

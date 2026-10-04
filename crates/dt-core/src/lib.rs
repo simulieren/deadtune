@@ -14,5 +14,6 @@ pub mod locate;
 pub mod power;
 pub mod preset;
 pub mod profile;
+pub mod texture;
 pub mod video;
 pub mod watch;

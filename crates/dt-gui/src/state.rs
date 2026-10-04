@@ -1040,6 +1040,13 @@ impl AppState {
     }
 
     /// Why the addons cannot be planned right now, if they cannot.
+    /// Forgets a failed addon plan so the next preview tries again (e.g. after Steam finished
+    /// updating the game files).
+    pub fn retry_addons(&mut self) {
+        self.addons_cache = None;
+        self.refresh_preview();
+    }
+
     pub fn addons_error(&self) -> Option<&str> {
         match &self.addons_cache {
             Some((_, Err(e))) => Some(e),

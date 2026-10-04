@@ -29,17 +29,31 @@ enum Edit {
     #[cfg(feature = "fetch")]
     Fetch(AddonId),
     Build,
+    Retry,
 }
 
 pub fn addons(ui: &mut Ui, state: &mut AppState) {
     let mut edits = Vec::new();
-    if let Some(e) = state.addons_error() {
-        ui.colored_label(
-            WARN,
-            "Addons can't be planned right now; other settings still apply.",
-        )
-        .on_hover_text(e);
-        ui.add_space(6.0);
+    if let Some(e) = state.addons_error().map(str::to_owned) {
+        egui::Frame::group(ui.style())
+            .stroke(egui::Stroke::new(1.0, BAD))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new("DeadTune couldn't check your addons").color(BAD).strong());
+                ui.label(format!("Reason: {e}"));
+                ui.label(
+                    RichText::new(
+                        "Nothing was changed. Your other settings still apply normally. If Steam is \
+                         updating Deadlock, wait for it to finish; if the reason mentions game files, \
+                         run Steam > Deadlock > Properties > Installed Files > Verify integrity. Then press Retry.",
+                    )
+                    .color(WEAK),
+                );
+                if ui.button("Retry").clicked() {
+                    edits.push(Edit::Retry);
+                }
+            });
+        ui.add_space(10.0);
     }
     let states = state.addon_states();
     for info in addons::all() {
@@ -93,6 +107,7 @@ pub fn addons(ui: &mut Ui, state: &mut AppState) {
                 });
             }
             Edit::Build => state.start_texture_build(),
+            Edit::Retry => state.retry_addons(),
         }
     }
 }
@@ -122,7 +137,19 @@ fn status(
     let building = info.id == AddonId::TextureDownscaler && state.texture_build.is_some();
     match state.addon_action(info.id) {
         _ if building => (ACCENT, "Building now".into(), None),
-        None if on => (WEAK, "Waiting for the plan".into(), None),
+        None if on => match (state.addons_error(), &state.preview) {
+            (Some(e), _) => (
+                BAD,
+                "Couldn't check this addon: see the message at the top".into(),
+                Some(e.to_owned()),
+            ),
+            (None, Err(e)) => (
+                BAD,
+                "Can't work out changes until the problem in the action bar is fixed".into(),
+                Some(e.clone()),
+            ),
+            (None, Ok(_)) => (WEAK, "Checking…".into(), None),
+        },
         None => (WEAK, "Off".into(), None),
         Some(Action::Keep) => (GOOD, "Installed".into(), None),
         Some(Action::Write(_)) if is_installed => (ACCENT, "Rebuilds on Apply".into(), None),

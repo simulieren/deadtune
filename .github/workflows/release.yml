@@ -23,7 +23,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build
         run: |
-          cargo build --release --target x86_64-pc-windows-msvc -p dt-gui -p dt-cli
+          cargo build --release --target x86_64-pc-windows-msvc -p dt-gui -p dt-cli --features dt-gui/fetch,dt-cli/fetch
           cargo build --release --target x86_64-pc-windows-msvc -p dt-core --example hud_build
       - name: package
         shell: pwsh

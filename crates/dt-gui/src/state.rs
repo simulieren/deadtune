@@ -20,6 +20,7 @@ use dt_core::gi::{self, Override};
 use dt_core::hud::elements::ElementId;
 use dt_core::hud::install::HudPlan;
 use dt_core::hud::layout::{ElementEdit, HudLayout};
+use dt_core::hud::minimap_colors::{self, Color, IconId};
 use dt_core::locate::GamePaths;
 use dt_core::preset::PresetId;
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
@@ -338,6 +339,7 @@ pub struct UiState {
     pub overrides_path: String,
     pub new_profile_name: String,
     pub hud_selected: Option<ElementId>,
+    pub hud_page: HudPage,
     pub section: Section,
     /// The simple-view row whose help the side panel explains: hovered or last edited.
     pub focus: Option<&'static str>,
@@ -412,6 +414,70 @@ impl HudPreset {
             elements: elements.into_iter().collect(),
             ..HudLayout::default()
         }
+    }
+}
+
+/// The HUD tab's two pages.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HudPage {
+    #[default]
+    Layout,
+    Colors,
+}
+
+/// The game's own enemy colour setting (2026-09-29 accessibility update).
+pub const CUSTOM_UI_COLORS: &str = "citadel_custom_ui_colors";
+pub const ENEMY_UI_COLOR: [&str; 3] = [
+    "citadel_enemy_ui_color_r",
+    "citadel_enemy_ui_color_g",
+    "citadel_enemy_ui_color_b",
+];
+
+/// Minimap colour schemes, as plain `IconId` values the user can keep editing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MinimapPreset {
+    ColorBlind,
+    HighContrast,
+}
+
+impl MinimapPreset {
+    pub const ALL: [MinimapPreset; 2] = [MinimapPreset::ColorBlind, MinimapPreset::HighContrast];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            MinimapPreset::ColorBlind => "Colour-blind friendly",
+            MinimapPreset::HighContrast => "High contrast",
+        }
+    }
+
+    pub fn blurb(self) -> &'static str {
+        match self {
+            MinimapPreset::ColorBlind => {
+                "Allies blue, enemies orange. Allied objectives keep their lane colours."
+            }
+            MinimapPreset::HighContrast => {
+                "Allies cyan, enemies magenta, fully saturated. Allied objectives keep their lane colours."
+            }
+        }
+    }
+
+    pub fn colors(self) -> BTreeMap<IconId, Color> {
+        let (ally, enemy) = match self {
+            MinimapPreset::ColorBlind => ([0x56, 0xB4, 0xE9, 255], [0xE6, 0x9F, 0x00, 255]),
+            MinimapPreset::HighContrast => ([0x00, 0xF0, 0xFF, 255], [0xFF, 0x00, 0xD4, 255]),
+        };
+        [
+            (IconId::AllyHero, ally),
+            (IconId::AllyHeroArrow, ally),
+            (IconId::AllyUrnReturn, ally),
+            (IconId::EnemyHero, enemy),
+            (IconId::EnemyHeroArrow, enemy),
+            (IconId::EnemyObjective, enemy),
+            (IconId::EnemyUrnReturn, enemy),
+        ]
+        .into_iter()
+        .map(|(id, rgba)| (id, Color(rgba)))
+        .collect()
     }
 }
 
@@ -1203,11 +1269,6 @@ impl AppState {
         self.refresh_preview();
     }
 
-    pub fn reset_hud(&mut self) {
-        self.profile.hud = HudLayout::default();
-        self.refresh_preview();
-    }
-
     pub fn hud_edit(&self, id: ElementId) -> ElementEdit {
         self.profile
             .hud
@@ -1222,16 +1283,84 @@ impl AppState {
         self.profile.hud.elements.len()
     }
 
+    /// Layout presets leave the minimap colours alone; those have their own page.
     pub fn apply_hud_preset(&mut self, preset: HudPreset) {
-        self.profile.hud = preset.layout();
+        let minimap_colors = std::mem::take(&mut self.profile.hud.minimap_colors);
+        self.profile.hud = HudLayout {
+            minimap_colors,
+            ..preset.layout()
+        };
         self.refresh_preview();
     }
 
-    /// The toolbar preset the current layout equals, if any.
+    /// The toolbar preset the current layout equals, if any, ignoring minimap colours.
     pub fn hud_preset(&self) -> Option<HudPreset> {
-        HudPreset::ALL
+        HudPreset::ALL.into_iter().find(|p| {
+            HudLayout {
+                minimap_colors: self.profile.hud.minimap_colors.clone(),
+                ..p.layout()
+            } == self.profile.hud
+        })
+    }
+
+    /// Stores `color` for `id`; the vanilla colour itself is not stored, like identity layout edits.
+    pub fn set_minimap_color(&mut self, id: IconId, color: Color) {
+        let vanilla = minimap_colors::spec(id)
+            .vanilla
+            .and_then(|v| v.parse::<Color>().ok());
+        if vanilla == Some(color) {
+            self.profile.hud.minimap_colors.remove(&id);
+        } else {
+            self.profile.hud.minimap_colors.insert(id, color);
+        }
+        self.refresh_preview();
+    }
+
+    pub fn reset_minimap_color(&mut self, id: IconId) {
+        self.profile.hud.minimap_colors.remove(&id);
+        self.refresh_preview();
+    }
+
+    /// Replaces every minimap colour; `None` is Reset all.
+    pub fn apply_minimap_preset(&mut self, preset: Option<MinimapPreset>) {
+        self.profile.hud.minimap_colors = preset.map(MinimapPreset::colors).unwrap_or_default();
+        self.refresh_preview();
+    }
+
+    pub fn minimap_preset(&self) -> Option<MinimapPreset> {
+        MinimapPreset::ALL
             .into_iter()
-            .find(|p| p.layout() == self.profile.hud)
+            .find(|p| p.colors() == self.profile.hud.minimap_colors)
+    }
+
+    /// The enemy colour the game would use, from the profile or the catalog default.
+    pub fn enemy_ui_color(&self) -> [u8; 3] {
+        ENEMY_UI_COLOR.map(|name| {
+            self.current_value(name)
+                .and_then(|v| v.trim().parse::<f64>().ok())
+                .map_or(0, |v| v.clamp(0.0, 255.0).round() as u8)
+        })
+    }
+
+    pub fn set_enemy_ui_color(&mut self, rgb: [u8; 3]) {
+        let current = self.enemy_ui_color();
+        for ((name, value), old) in ENEMY_UI_COLOR.iter().zip(rgb).zip(current) {
+            if value != old {
+                self.set_convar(name, value.to_string())
+                    .expect("enemy colour ConVars are not denylisted");
+            }
+        }
+    }
+
+    pub fn custom_ui_colors(&self) -> bool {
+        self.current_value(CUSTOM_UI_COLORS)
+            .is_some_and(|v| parse_bool(&v))
+    }
+
+    pub fn set_custom_ui_colors(&mut self, on: bool) {
+        let like = self.current_value(CUSTOM_UI_COLORS);
+        self.set_convar(CUSTOM_UI_COLORS, bool_text(on, like.as_deref()))
+            .expect("citadel_custom_ui_colors is not denylisted");
     }
 
     pub fn bridge_target(&self) -> BridgeTarget<'_> {
@@ -2096,8 +2225,79 @@ mod tests {
         assert_eq!(state.hud_changed_count(), 4);
         state.set_hud_element(ElementId::TopBar, ElementEdit::default());
         assert_eq!(state.hud_preset(), Some(HudPreset::Competitive));
-        state.reset_hud();
+        state.apply_hud_preset(HudPreset::Vanilla);
         assert_eq!(state.hud_preset(), Some(HudPreset::Vanilla));
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn minimap_colors_edit_the_profile_hud_and_presets_round_trip() {
+        let (_dir, mut state) = state();
+        let blue = Color([0, 0x72, 0xB2, 255]);
+        state.set_minimap_color(IconId::EnemyHero, blue);
+        assert_eq!(state.profile.hud.minimap_colors[&IconId::EnemyHero], blue);
+        assert!(state.is_dirty());
+        state.set_minimap_color(IconId::EnemyHero, "#FF410D".parse().unwrap());
+        assert!(
+            state.profile.hud.minimap_colors.is_empty(),
+            "the vanilla colour is not stored"
+        );
+        assert!(!state.is_dirty());
+
+        state.set_minimap_color(IconId::Shop, blue);
+        state.reset_minimap_color(IconId::Shop);
+        assert!(state.profile.hud.minimap_colors.is_empty());
+
+        assert_eq!(state.minimap_preset(), None);
+        for preset in MinimapPreset::ALL {
+            state.apply_minimap_preset(Some(preset));
+            assert_eq!(state.minimap_preset(), Some(preset));
+            let patch = dt_core::hud::layout::compile(&state.profile.hud).unwrap();
+            let css = &patch.files[minimap_colors::MINIMAP_STYLE];
+            assert!(css.contains(".player.enemy #BackgroundImage"), "{css}");
+            assert!(
+                !state
+                    .profile
+                    .hud
+                    .minimap_colors
+                    .contains_key(&IconId::AllyObjective),
+                "{preset:?} keeps the lane colours"
+            );
+        }
+        state.apply_hud_preset(HudPreset::Clean);
+        assert_eq!(state.hud_preset(), Some(HudPreset::Clean));
+        assert_eq!(
+            state.minimap_preset(),
+            Some(MinimapPreset::HighContrast),
+            "a layout preset keeps the colours"
+        );
+        state.apply_hud_preset(HudPreset::Vanilla);
+        let cb = MinimapPreset::ColorBlind.colors();
+        assert_ne!(cb[&IconId::AllyHero], cb[&IconId::EnemyHero]);
+        state.apply_minimap_preset(None);
+        assert!(state.profile.hud.minimap_colors.is_empty());
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn enemy_ui_color_goes_through_live_convar_edits() {
+        let (_dir, mut state) = state();
+        for name in ENEMY_UI_COLOR.iter().chain([&CUSTOM_UI_COLORS]) {
+            assert_eq!(state.catalog.apply_class(name), ApplyClass::Live, "{name}");
+        }
+        assert_eq!(state.enemy_ui_color(), [215, 50, 50], "catalog default");
+        assert!(!state.custom_ui_colors());
+        state.set_enemy_ui_color([0, 213, 255]);
+        state.set_custom_ui_colors(true);
+        assert_eq!(state.enemy_ui_color(), [0, 213, 255]);
+        assert!(state.custom_ui_colors());
+        let set = &state.profile.convars.set;
+        assert_eq!(set["citadel_enemy_ui_color_r"], "0");
+        assert_eq!(set["citadel_enemy_ui_color_b"], "255");
+        assert_eq!(set[CUSTOM_UI_COLORS], "true");
+        assert!(state.is_dirty());
+        state.reset_convars(ENEMY_UI_COLOR.iter().copied().chain([CUSTOM_UI_COLORS]));
+        assert_eq!(state.enemy_ui_color(), [215, 50, 50]);
         assert!(!state.is_dirty());
     }
 

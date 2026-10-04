@@ -14,7 +14,7 @@ use eframe::egui::{
     Rect, RichText, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
 
-use crate::state::{AppState, HudPreset};
+use crate::state::{AppState, HudPage, HudPreset};
 use crate::theme::{self, ACCENT, BORDER, CARD, CARD_HOVER, RAIL, TEXT, WARN, WEAK};
 
 const INSPECTOR_WIDTH: f32 = 250.0;
@@ -50,7 +50,15 @@ enum Guide {
 }
 
 pub fn hud(ui: &mut Ui, state: &mut AppState) {
-    let mut actions = Vec::new();
+    let pages = [HudPage::Layout, HudPage::Colors];
+    let selected = pages
+        .iter()
+        .position(|p| *p == state.ui.hud_page)
+        .unwrap_or(0);
+    if let Some(i) = crate::widgets::segmented(ui, &["Layout", "Minimap colours"], selected) {
+        state.ui.hud_page = pages[i];
+    }
+    ui.add_space(8.0);
     if let Some(e) = state.hud_error() {
         ui.colored_label(
             WARN,
@@ -58,6 +66,11 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
         )
         .on_hover_text(e);
     }
+    if state.ui.hud_page == HudPage::Colors {
+        crate::minimap_view::page(ui, state);
+        return;
+    }
+    let mut actions = Vec::new();
     toolbar(ui, state, &mut actions);
     ui.add_space(6.0);
     if ui.available_width() >= 720.0 {
@@ -91,7 +104,7 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
             Action::Select(id) => state.ui.hud_selected = id,
             Action::Set(id, edit) => state.set_hud_element(id, edit),
             Action::Preset(p) => state.apply_hud_preset(p),
-            Action::ResetAll => state.reset_hud(),
+            Action::ResetAll => state.apply_hud_preset(HudPreset::Vanilla),
         }
     }
 }
@@ -926,7 +939,7 @@ mod tests {
                     Action::Select(id) => state.ui.hud_selected = id,
                     Action::Set(id, edit) => state.set_hud_element(id, edit),
                     Action::Preset(p) => state.apply_hud_preset(p),
-                    Action::ResetAll => state.reset_hud(),
+                    Action::ResetAll => state.apply_hud_preset(HudPreset::Vanilla),
                 }
             }
         });

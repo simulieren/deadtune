@@ -9,6 +9,7 @@ mod compact;
 mod friendly;
 mod hud_view;
 mod live;
+mod minimap_view;
 mod png;
 mod profiles;
 mod relaunch;

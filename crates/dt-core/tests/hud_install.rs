@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use dt_core::hud::StylePatch;
 use dt_core::hud::install::{self, ADDON_FILE, GAME_PAK, HudAction, HudError, InstalledState};
 use dt_core::hud::resource::{Resource, style_text};
 use dt_core::hud::vpk::{self, VpkDir, VpkError};
+use dt_core::hud::{ElementEdit, ElementId, HudLayout, StylePatch, layout};
 use dt_core::locate::{self, GamePaths};
 
 const HUD: &str = "panorama/styles/hud.vcss_c";
@@ -275,4 +275,47 @@ fn style_file_absent_from_game_pak_is_missing() {
     files.insert("panorama/styles/nope.vcss_c".to_string(), CSS.to_string());
     let err = install::plan_patch(&fake.paths, StylePatch { files }, &fake.state).unwrap_err();
     assert!(matches!(err, HudError::Vpk(VpkError::Missing(_))), "{err}");
+}
+
+#[test]
+fn layout_compiles_installs_and_vanilla_removes() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    hud.elements.insert(
+        ElementId::Minimap,
+        ElementEdit {
+            scale_pct: 120,
+            ..ElementEdit::default()
+        },
+    );
+    hud.elements.insert(
+        ElementId::TopBar,
+        ElementEdit {
+            offset_y: 30,
+            ..ElementEdit::default()
+        },
+    );
+    let css = layout::compile(&hud).unwrap().files[HUD].clone();
+    assert!(
+        css.contains("#minimap_persp{") && css.contains("#TopBar{"),
+        "{css}"
+    );
+
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    assert!(matches!(plan.action, HudAction::Write(_)));
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    let addon = VpkDir::open(&fake.addon()).unwrap();
+    let res = Resource::parse(&addon.read(HUD).unwrap()).unwrap();
+    assert!(style_text(&res).unwrap().ends_with(&css));
+    assert_eq!(
+        install::plan(&fake.paths, &hud, &fake.state)
+            .unwrap()
+            .action,
+        HudAction::Nothing
+    );
+
+    let plan = install::plan(&fake.paths, &HudLayout::default(), &fake.state).unwrap();
+    assert_eq!(plan.action, HudAction::Remove);
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    assert!(!fake.addon().exists());
 }

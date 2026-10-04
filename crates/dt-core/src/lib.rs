@@ -27,7 +27,10 @@ mod version_policy {
     fn version_is_minor_only() {
         let parts: Vec<u64> = env!("CARGO_PKG_VERSION")
             .split('.')
-            .map(|p| p.parse().expect("plain numeric semver, no pre-release suffix"))
+            .map(|p| {
+                p.parse()
+                    .expect("plain numeric semver, no pre-release suffix")
+            })
             .collect();
         assert!(
             matches!(parts[..], [0, _, 0]),

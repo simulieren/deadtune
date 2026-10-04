@@ -2,3 +2,4 @@
 /_incoming
 *.zip
 .DS_Store
+/.claude

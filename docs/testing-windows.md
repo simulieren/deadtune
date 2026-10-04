@@ -14,9 +14,9 @@ Everything you need is `deadtune.exe`. The `tools` folder is for developers.
 
 ## Get a newer build
 
-Builds are published as the `testing` prerelease on GitHub. The repo is private, so downloads go through the GitHub CLI.
+DeadTune updates itself. It checks once a day and shows a banner when a new version is out; **Update and restart** downloads it, checks its signature and swaps the exe. To get every in-between build, set the update channel to **Testing** in Safety & setup (simple view) or the Settings tab (advanced view).
 
-One-time setup, in PowerShell:
+Builds are also published on the [Releases page](https://github.com/simulieren/deadtune/releases): versioned releases plus a rolling `testing` prerelease. The script below fetches them from PowerShell. It uses the GitHub CLI; one-time setup:
 
 ```powershell
 winget install GitHub.cli
@@ -58,7 +58,7 @@ Every release (testing and versioned) also publishes `deadtune-windows-x64.exe`,
 
 ```sh
 scripts/release-local.sh              # build committed HEAD, replace the testing prerelease
-scripts/release-local.sh --no-upload  # build the zip in target/release-local only
+scripts/release-local.sh --no-upload  # build the zip, signed exe and latest.json in target/release-local only
 scripts/release-local.sh minor        # bump 0.Y.0 -> 0.(Y+1).0, tag, publish a versioned release
 ```
 

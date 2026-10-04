@@ -75,7 +75,8 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let handle = thread::spawn(move || {
             let (mut sock, _) = listener.accept().unwrap();
-            sock.write_all(b"Deadlock netcon\r\n> ").unwrap();
+            // The client may already be gone (unsafe_batch_sends_nothing drops at once).
+            let _ = sock.write_all(b"Deadlock netcon\r\n> ");
             sock.set_read_timeout(Some(T)).unwrap();
             let mut got = Vec::new();
             let mut buf = [0u8; 1024];

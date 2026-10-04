@@ -374,7 +374,7 @@ fn section_changes(state: &AppState, section: Section) -> usize {
 }
 
 /// Small uppercase caption above a group of rows or a fact.
-fn caption(ui: &mut Ui, text: &str) {
+pub(crate) fn caption(ui: &mut Ui, text: &str) {
     ui.label(
         RichText::new(text.to_uppercase())
             .size(11.5)
@@ -445,7 +445,7 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
 }
 
 /// Full-width text box styled like the other inputs, with a clear button once it has text.
-fn search_box(ui: &mut Ui, query: &mut String) {
+pub(crate) fn search_box(ui: &mut Ui, query: &mut String) {
     let height = 28.0;
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
     ui.painter().rect(
@@ -1037,7 +1037,7 @@ fn setting_row(
     }
 }
 
-fn control(
+pub(crate) fn control(
     ui: &mut Ui,
     control: Control,
     entry: &CatalogEntry,

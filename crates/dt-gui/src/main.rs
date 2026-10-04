@@ -3,6 +3,7 @@
 mod app;
 mod bench;
 mod chart;
+mod compact;
 mod friendly;
 mod hud_view;
 mod live;
@@ -73,7 +74,7 @@ fn main() -> anyhow::Result<()> {
     let size_arg = args.size;
     let app = app::App::new(data_dir, settings, args, screenshot);
     let size = size_arg.unwrap_or(if compact {
-        app::COMPACT_SIZE
+        compact::SIZE
     } else {
         app::FULL_SIZE
     });

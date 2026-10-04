@@ -291,6 +291,8 @@ pub struct UiState {
     pub focus: Option<&'static str>,
     /// Simple-view search; non-empty shows the Results page instead of the section.
     pub query: String,
+    /// Narrows the mini window's list.
+    pub mini_filter: String,
 }
 
 /// Starting layouts on the HUD tab. Each is plain `HudLayout` values, so a user
@@ -1141,12 +1143,15 @@ impl AppState {
         }
     }
 
-    /// Rows for the center list (full mode) or the compact list.
+    pub fn toggle_pin(&mut self, name: &str) {
+        if !self.settings.pinned.remove(name) {
+            self.settings.pinned.insert(name.to_string());
+        }
+    }
+
+    /// Rows for the advanced view's center list.
     pub fn visible_rows(&self) -> Vec<String> {
-        let scope = match self.ui.mode {
-            Mode::Compact => &Scope::Favourites,
-            Mode::Full => &self.ui.scope,
-        };
+        let scope = &self.ui.scope;
         let query = self.ui.search.to_lowercase();
         let matches = |name: &str| query.is_empty() || name.to_lowercase().contains(&query);
         match scope {
@@ -1502,7 +1507,7 @@ mod tests {
     }
 
     #[test]
-    fn rows_follow_search_scope_and_mode() {
+    fn rows_follow_search_and_scope() {
         let (_dir, mut state) = state();
         state.ui.search = "farz".into();
         assert!(state.visible_rows().contains(&CHEAT.to_string()));
@@ -1512,15 +1517,22 @@ mod tests {
         state.ui.scope = Scope::Changed;
         state.set_convar(LIVE, "77".into()).unwrap();
         assert_eq!(state.visible_rows(), vec![LIVE.to_string()]);
+        state.ui.scope = Scope::Favourites;
         state.toggle_favourite(CHEAT);
-        state.ui.mode = Mode::Compact;
-        assert_eq!(
-            state.visible_rows(),
-            vec![CHEAT.to_string()],
-            "compact shows favourites"
-        );
+        assert_eq!(state.visible_rows(), vec![CHEAT.to_string()]);
         state.toggle_favourite(CHEAT);
         assert!(state.visible_rows().is_empty());
+    }
+
+    #[test]
+    fn pins_toggle_and_stay_apart_from_favourites() {
+        let (_dir, mut state) = state();
+        assert!(!state.settings.pinned.contains(LIVE));
+        state.toggle_pin(LIVE);
+        assert!(state.settings.pinned.contains(LIVE));
+        assert!(!state.settings.favourites.contains(LIVE));
+        state.toggle_pin(LIVE);
+        assert!(!state.settings.pinned.contains(LIVE));
     }
 
     #[test]

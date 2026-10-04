@@ -1,4 +1,4 @@
-//! The eframe shell: screens, per-frame polling, top bar, banner, footer and compact mode.
+//! The eframe shell: screens, per-frame polling, top bar, banner and footer.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
@@ -8,16 +8,15 @@ use dt_core::launch;
 use dt_core::locate::{self, GamePaths};
 use dt_core::preset;
 use dt_core::profile::Profile;
-use eframe::egui::{self, Color32, RichText, ViewportCommand, WindowLevel};
+use eframe::egui::{self, Color32, RichText, ViewportCommand};
 
 use crate::live::PushOutcome;
 use crate::relaunch::{self, Relaunch};
 use crate::settings::{Settings, TargetSource, View};
 use crate::state::{AppState, Mode, Section, Status, Tab};
-use crate::{Args, profiles, simple, views};
+use crate::{Args, compact, profiles, simple, views};
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
-pub const COMPACT_SIZE: [f32; 2] = [320.0, 560.0];
 const GAME_POLL: Duration = Duration::from_secs(2);
 
 pub enum Screen {
@@ -287,16 +286,6 @@ pub fn report_push(ctx: &egui::Context, state: &mut AppState, result: Result<Pus
     });
 }
 
-pub fn set_mode(ctx: &egui::Context, state: &mut AppState, mode: Mode) {
-    state.ui.mode = mode;
-    let (level, size) = match mode {
-        Mode::Compact => (WindowLevel::AlwaysOnTop, COMPACT_SIZE),
-        Mode::Full => (WindowLevel::Normal, FULL_SIZE),
-    };
-    ctx.send_viewport_cmd(ViewportCommand::WindowLevel(level));
-    ctx.send_viewport_cmd(ViewportCommand::InnerSize(size.into()));
-}
-
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
@@ -319,7 +308,7 @@ impl eframe::App for App {
             }
             Screen::Main(state) if state.welcome.is_some() => simple::welcome(ui, state),
             Screen::Main(state) => match (state.ui.mode, state.settings.view) {
-                (Mode::Compact, _) => compact_ui(ui, state),
+                (Mode::Compact, _) => compact::ui(ui, state),
                 (Mode::Full, View::Simple) => simple::simple(ui, state),
                 (Mode::Full, View::Advanced) => full_ui(ui, state, &mut reopen),
             },
@@ -422,7 +411,7 @@ fn top_bar(ui: &mut egui::Ui, state: &mut AppState) {
             state.settings.view = View::Simple;
         }
         if ui.button("Compact").on_hover_text("Small always-on-top window with favourites").clicked() {
-            set_mode(ui.ctx(), state, Mode::Compact);
+            compact::enter(ui.ctx(), state);
         }
     });
     ui.horizontal(|ui| {
@@ -489,57 +478,5 @@ fn footer(ui: &mut egui::Ui, state: &AppState) {
                 Status::Error(m) => ui.colored_label(Color32::LIGHT_RED, m),
             };
         }
-    });
-}
-
-fn compact_ui(ui: &mut egui::Ui, state: &mut AppState) {
-    egui::Panel::bottom("compact_footer").show(ui, |ui| {
-        ui.horizontal(|ui| {
-            if ui
-                .button("Push")
-                .on_hover_text("Send live changes through the active bridge")
-                .clicked()
-            {
-                let result = state.push_now();
-                report_push(ui.ctx(), state, result);
-            }
-            let can_apply = state.preview.as_ref().is_ok_and(|p| !p.is_empty());
-            if ui
-                .add_enabled(can_apply, egui::Button::new("Apply"))
-                .clicked()
-            {
-                views::run_apply(ui.ctx(), state);
-            }
-            if ui.button("Full").clicked() {
-                set_mode(ui.ctx(), state, Mode::Full);
-            }
-        });
-        if let Some(status) = &state.status {
-            match status {
-                Status::Info(m) => ui.small(m),
-                Status::Error(m) => ui.colored_label(Color32::LIGHT_RED, m),
-            };
-        }
-    });
-    egui::CentralPanel::default().show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.strong(&state.profile.name);
-            if state.is_dirty() {
-                ui.weak("(edited)");
-            }
-            if state.ctx.game_running {
-                ui.colored_label(Color32::LIGHT_GREEN, "running");
-            }
-        });
-        ui.add(egui::TextEdit::singleline(&mut state.ui.search).hint_text("Filter favourites"));
-        let rows = state.visible_rows();
-        if rows.is_empty() {
-            ui.weak("No favourites yet. Star convars in the full view.");
-        }
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for name in rows {
-                views::compact_row(ui, state, &name);
-            }
-        });
     });
 }

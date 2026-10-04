@@ -330,26 +330,6 @@ fn convar_row(ui: &mut egui::Ui, state: &AppState, name: &str) -> Option<Edit> {
     edit
 }
 
-pub fn compact_row(ui: &mut egui::Ui, state: &mut AppState, name: &str) {
-    let entry = state.catalog.get(name);
-    let value = state.current_value(name);
-    let denied = state.catalog.is_denied(name);
-    let mut edit = None;
-    ui.label(RichText::new(name).monospace().small())
-        .on_hover_ui(|ui| entry_hover(ui, name, entry));
-    ui.horizontal(|ui| {
-        ui.add_enabled_ui(!denied, |ui| {
-            if let Some(v) = control(ui, name, entry, value.as_deref()) {
-                edit = Some(Edit::Set(v));
-            }
-        });
-        class_badge(ui, state.catalog.apply_class(name));
-    });
-    if let Some(edit) = edit {
-        apply_edit(state, name, edit);
-    }
-}
-
 pub fn categories(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add(
         egui::TextEdit::singleline(&mut state.ui.search)

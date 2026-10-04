@@ -30,6 +30,7 @@ enum Edit {
     Fetch(AddonId),
     Build,
     Retry,
+    RemoveNow(AddonId),
 }
 
 pub fn addons(ui: &mut Ui, state: &mut AppState) {
@@ -108,6 +109,18 @@ pub fn addons(ui: &mut Ui, state: &mut AppState) {
             }
             Edit::Build => state.start_texture_build(),
             Edit::Retry => state.retry_addons(),
+            Edit::RemoveNow(id) => {
+                let name = addons::info(id).name;
+                state.status = Some(match state.remove_addon_now(id) {
+                    Ok(true) => Status::Info(format!(
+                        "Removed {name} from the game folder. The original look is back the next time Deadlock starts."
+                    )),
+                    Ok(false) => {
+                        Status::Info(format!("{name} is switched off; nothing was installed."))
+                    }
+                    Err(e) => Status::Error(format!("Couldn't remove {name}: {e}")),
+                });
+            }
         }
     }
 }
@@ -212,11 +225,33 @@ fn card(
                 );
             });
             ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                let (color, text, hover) = status(state, info, installed);
-                let label = ui.label(RichText::new(text).color(color).strong());
-                if let Some(hover) = hover {
-                    label.on_hover_text(hover);
-                }
+                ui.vertical(|ui| {
+                    ui.with_layout(Layout::top_down(Align::Max), |ui| {
+                        let (color, text, hover) = status(state, info, installed);
+                        let label = ui.label(RichText::new(text).color(color).strong());
+                        if let Some(hover) = hover {
+                            label.on_hover_text(hover);
+                        }
+                        let ours = matches!(
+                            installed,
+                            Some(InstalledState::Current(_) | InstalledState::Stale(_))
+                        );
+                        if ours
+                            && ui
+                                .add(
+                                    egui::Button::new(RichText::new("Remove from game").color(BAD))
+                                        .stroke(egui::Stroke::new(1.0, BAD)),
+                                )
+                                .on_hover_text(
+                                    "Deletes DeadTune's pak for this addon from game/citadel/addons right now \
+                                     and switches it off. Game files are never touched, so this fully undoes it.",
+                                )
+                                .clicked()
+                        {
+                            edits.push(Edit::RemoveNow(info.id));
+                        }
+                    });
+                });
             });
         });
         for c in state.addon_conflicts(info.id) {
@@ -451,8 +486,9 @@ fn texture_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     }
     ui.label(
         RichText::new(
-            "Originals are never modified: DeadTune writes its own pak with the smaller copies. \
-             Build again after a game update or after changing the options above.",
+            "Build writes DeadTune's own pak with the smaller copies straight into the game's addons \
+             folder (it takes effect the next time Deadlock starts). Original textures are never modified; \
+             Remove from game deletes the pak again. Build again after a game update or after changing the options above.",
         )
         .small()
         .color(WEAK),

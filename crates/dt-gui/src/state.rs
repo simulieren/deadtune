@@ -1162,6 +1162,17 @@ impl AppState {
         self.profile.addons.enabled.len()
     }
 
+    /// Deletes our installed pak for `id` immediately and switches the addon off in the
+    /// profile, so the next Apply doesn't put it back.
+    pub fn remove_addon_now(&mut self, id: AddonId) -> Result<bool, String> {
+        let removed = addons::install::remove_now(id, &self.paths, &self.store.root)
+            .map_err(|e| e.to_string())?;
+        self.profile.addons.set_enabled(id, false);
+        self.addons_cache = None;
+        self.refresh_preview();
+        Ok(removed)
+    }
+
     pub fn set_addon_enabled(&mut self, id: AddonId, on: bool) {
         self.profile.addons.set_enabled(id, on);
         self.refresh_preview();
@@ -2252,6 +2263,17 @@ mod tests {
         assert!(!state.settings.favourites.contains(LIVE));
         state.toggle_pin(LIVE);
         assert!(!state.is_pinned(LIVE));
+    }
+
+    #[test]
+    fn remove_addon_now_switches_the_addon_off_even_when_nothing_is_installed() {
+        let (_dir, mut state) = state();
+        state.set_addon_enabled(AddonId::TextureDownscaler, true);
+        assert_eq!(
+            state.remove_addon_now(AddonId::TextureDownscaler),
+            Ok(false)
+        );
+        assert!(!state.profile.addons.is_enabled(AddonId::TextureDownscaler));
     }
 
     #[test]

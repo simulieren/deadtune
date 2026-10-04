@@ -526,6 +526,26 @@ fn ensure_writable(
     }
 }
 
+/// Deletes DeadTune's pak (and chunk files) for `id` right away, without a plan. Returns
+/// false when nothing of ours is installed; a file someone else replaced is refused.
+pub fn remove_now(id: AddonId, paths: &GamePaths, state_dir: &Path) -> Result<bool, AddonError> {
+    let mut record = read_record(state_dir)?;
+    let Some(entry) = record.installed.get(id.key()).cloned() else {
+        return Ok(false);
+    };
+    let dir = addons_dir(paths);
+    ensure_writable(&dir.join(&entry.file), Some(&entry), None)?;
+    for file in std::iter::once(&entry.file).chain(&entry.chunks) {
+        match std::fs::remove_file(dir.join(file)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        }
+    }
+    record.installed.remove(id.key());
+    write_record(state_dir, &record)?;
+    Ok(true)
+}
+
 /// Writes and removes pak files atomically, updating `state_dir/addons.toml` after each
 /// one. Does not touch gameinfo.gi and does not build textures. Returns whether any
 /// file changed.
@@ -759,6 +779,49 @@ pub(crate) mod tests {
             .unwrap_or_default();
         names.sort();
         names
+    }
+
+    #[test]
+    fn remove_now_deletes_only_our_pak_and_forgets_it() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        assert!(
+            !remove_now(AddonId::SinnerLightFix, &paths, &state).unwrap(),
+            "nothing installed"
+        );
+        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
+        let config = enabled(&[AddonId::SinnerLightFix]);
+        execute(&plan(&paths, &config, &state).unwrap(), &paths, &state).unwrap();
+        let dir = addons_dir(&paths);
+        std::fs::write(dir.join("pak01_dir.vpk"), b"someone else's mod").unwrap();
+        assert!(remove_now(AddonId::SinnerLightFix, &paths, &state).unwrap());
+        assert_eq!(
+            files(&dir),
+            vec!["pak01_dir.vpk".to_string()],
+            "foreign mod untouched"
+        );
+        assert!(installed_state(&paths, &state).unwrap().is_empty());
+        assert!(
+            !remove_now(AddonId::SinnerLightFix, &paths, &state).unwrap(),
+            "idempotent"
+        );
+    }
+
+    #[test]
+    fn remove_now_refuses_a_pak_someone_replaced() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
+        let config = enabled(&[AddonId::SinnerLightFix]);
+        let planned = plan(&paths, &config, &state).unwrap();
+        execute(&planned, &paths, &state).unwrap();
+        let ours = planned.get(AddonId::SinnerLightFix).unwrap().path.clone();
+        std::fs::write(&ours, b"replaced by another tool").unwrap();
+        assert!(matches!(
+            remove_now(AddonId::SinnerLightFix, &paths, &state),
+            Err(AddonError::Foreign(_))
+        ));
+        assert!(ours.exists());
     }
 
     #[test]

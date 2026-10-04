@@ -347,6 +347,7 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
                         Page::Results => results(ui, state, inline_help, &mut edits),
                         Page::Section(Section::Overview) => overview(ui, state, &mut edits),
                         Page::Section(Section::Hud) => crate::hud_view::hud(ui, state),
+                        Page::Section(Section::Addons) => crate::addons_view::addons(ui, state),
                         Page::Section(Section::Safety) => safety(ui, state),
                         Page::Section(section) => {
                             settings_page(ui, state, section, inline_help, &mut edits)
@@ -382,6 +383,7 @@ fn section_changes(state: &AppState, section: Section) -> usize {
     match section {
         Section::Overview => state.tweak_count(),
         Section::Hud => state.hud_changed_count(),
+        Section::Addons => state.addons_enabled_count(),
         Section::Safety => 0,
         s => state.changed_count(friendly::section_names(s)),
     }
@@ -634,7 +636,7 @@ fn header(ui: &mut Ui, state: &AppState, page: Page, edits: &mut Vec<Edit>) {
     ui.add_space(12.0);
 }
 
-fn card_title(ui: &mut Ui, title: &str) {
+pub(crate) fn card_title(ui: &mut Ui, title: &str) {
     ui.label(
         RichText::new(title)
             .text_style(egui::TextStyle::Heading)
@@ -1165,7 +1167,7 @@ pub(crate) fn control(
     }
 }
 
-fn switch(ui: &mut Ui, on: bool) -> egui::Response {
+pub(crate) fn switch(ui: &mut Ui, on: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(vec2(40.0, 22.0), Sense::click());
     let t = ui.ctx().animate_bool_responsive(response.id, on);
     let fill = if on {
@@ -1259,7 +1261,7 @@ fn apply_bar(ui: &mut Ui, state: &mut AppState) {
                     format!("Ready to apply: {label} preset + {}", tweaks(*n))
                 }
                 Pending::Tweaks(n) => format!("Ready to apply: {}", tweaks(*n)),
-                Pending::Other => "Ready to apply: HUD changes".to_string(),
+                Pending::Other => "Ready to apply: HUD or addon changes".to_string(),
             };
             match &file_changes {
                 Err(raw) => {

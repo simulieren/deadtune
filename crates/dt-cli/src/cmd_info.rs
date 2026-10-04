@@ -74,6 +74,9 @@ pub fn status(env: &Env, args: &Args) -> CliResult {
     for line in cmd_hud::report_lines(env, &paths) {
         println!("{line}");
     }
+    for line in crate::cmd_addons::report_lines(env, &paths) {
+        println!("{line}");
+    }
     if let Some(file) = args.value("profile") {
         let profile = env::load_profile(Path::new(file))?;
         println!("pending for profile {:?}:", profile.name);

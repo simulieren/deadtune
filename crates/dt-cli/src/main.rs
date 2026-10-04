@@ -1,6 +1,7 @@
 //! `deadtune-cli`: the DeadTune core as a small scriptable CLI.
 
 mod args;
+mod cmd_addons;
 mod cmd_apply;
 mod cmd_bench;
 mod cmd_game;

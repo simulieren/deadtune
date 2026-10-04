@@ -105,6 +105,7 @@ fn healthy_install_has_no_failures_and_leaves_the_game_untouched() {
         "Write cfg folder",
         "Game archive (HUD)",
         "HUD addon",
+        "Performance addons",
         "DeadTune data folder",
         "Backups",
         "Live console (netcon)",

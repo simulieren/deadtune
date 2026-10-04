@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::addons::install::{self as addons_install, AddonsPlan};
+use crate::addons::{AddonError, AddonsConfig};
 use crate::backup::{BackupStore, FileKind, atomic_write};
 use crate::bridge::{Bridge, BridgeError, ConsoleCmd};
 use crate::catalog::{ApplyClass, Catalog};
@@ -58,6 +60,8 @@ pub struct Target {
     pub denied: Vec<String>,
     /// The HUD addon to write or remove, from [`hud_plan`].
     pub hud: Option<HudPlan>,
+    /// The performance addon paks to write or remove, from [`addons_plan`].
+    pub addons: Option<AddonsPlan>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -74,6 +78,7 @@ pub struct ApplyPlan {
     pub video: Option<FileWrite>,
     pub video_changes: BTreeMap<String, String>,
     pub hud: Option<HudPlan>,
+    pub addons: Option<AddonsPlan>,
 }
 
 impl ApplyPlan {
@@ -85,6 +90,22 @@ impl ApplyPlan {
                 .hud
                 .as_ref()
                 .is_none_or(|h| h.action == HudAction::Nothing)
+            && self.addons.as_ref().is_none_or(AddonsPlan::is_empty)
+    }
+
+    /// Addon paks written or removed on Apply.
+    pub fn addon_changes(&self) -> usize {
+        self.addons.as_ref().map_or(0, |a| {
+            a.addons
+                .iter()
+                .filter(|p| {
+                    matches!(
+                        p.action,
+                        crate::addons::Action::Write(_) | crate::addons::Action::Remove
+                    )
+                })
+                .count()
+        })
     }
 }
 
@@ -99,6 +120,8 @@ pub struct ApplyReport {
     pub bridge_error: Option<String>,
     /// The HUD addon was written or removed.
     pub hud_changed: bool,
+    /// A performance addon pak was written or removed.
+    pub addons_changed: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -113,6 +136,8 @@ pub enum ApplyError {
     Bridge(#[from] BridgeError),
     #[error("hud: {0}")]
     Hud(#[from] HudError),
+    #[error("addons: {0}")]
+    Addons(#[from] AddonError),
     #[error("{0} changed on disk since the plan was made; re-plan before applying")]
     Stale(PathBuf),
     #[error("base file {0}: {1}")]
@@ -155,9 +180,21 @@ pub fn hud_plan(
     Ok(Some(hud_install::plan(paths, layout, &store.root)?))
 }
 
+/// The performance addon plan for `config`, or `None` when there is nothing of ours to touch:
+/// nothing enabled and nothing recorded as installed. The record and the download cache live
+/// in `store.root`.
+pub fn addons_plan(
+    paths: &GamePaths,
+    config: &AddonsConfig,
+    store: &BackupStore,
+) -> Result<Option<AddonsPlan>, ApplyError> {
+    let plan = addons_install::plan(paths, config, &store.root)?;
+    Ok((!plan.addons.is_empty()).then_some(plan))
+}
+
 /// Base ConVars block swapped into the live gameinfo (so SearchPaths edits survive), then the
 /// profile's convar overrides minus denylisted names; base video settings + profile video edits.
-/// When the HUD plan needs it, `Game citadel/addons` is added to SearchPaths.
+/// When the HUD or addons plan needs it, `Game citadel/addons` is added to SearchPaths.
 pub fn target(
     live_gameinfo: &str,
     live_video: Option<&str>,
@@ -165,6 +202,7 @@ pub fn target(
     profile: &Profile,
     catalog: &Catalog,
     hud: Option<HudPlan>,
+    addons: Option<AddonsPlan>,
 ) -> Result<Target, ApplyError> {
     let (denied, allowed): (Overrides, Overrides) = profile
         .overrides()
@@ -172,7 +210,9 @@ pub fn target(
         .partition(|(name, _)| catalog.is_denied(name));
     let swapped = gi::replace_convars_block(live_gameinfo, &base.gameinfo)?;
     let mut gameinfo = gi::apply_overrides(&swapped, &allowed)?.text;
-    if hud.as_ref().is_some_and(|h| h.needs_search_path) {
+    if hud.as_ref().is_some_and(|h| h.needs_search_path)
+        || addons.as_ref().is_some_and(|a| a.needs_search_path)
+    {
         gameinfo = searchpaths::ensure_addons(&gameinfo).map_err(HudError::from)?;
     }
     let video = live_video
@@ -189,6 +229,7 @@ pub fn target(
         video,
         denied: denied.into_keys().collect(),
         hud,
+        addons,
     })
 }
 
@@ -207,6 +248,7 @@ pub fn plan(
     let mut plan = ApplyPlan {
         denied: target.denied.clone(),
         hud: target.hud.clone(),
+        addons: target.addons.clone(),
         ..ApplyPlan::default()
     };
 
@@ -259,12 +301,14 @@ fn file_write(path: &Path, before: &str, after: &str) -> Option<FileWrite> {
 }
 
 /// Ranked-safe target: the original (or vanilla preset) ConVars block, video.txt untouched.
-/// Pass `hud_plan(paths, &HudLayout::default(), store)` as `hud` to remove our addon too;
+/// Pass `hud_plan(paths, &HudLayout::default(), store)` as `hud` and
+/// `addons_plan(paths, &AddonsConfig::default(), store)` as `addons` to remove our addons too;
 /// SearchPaths is left as is, so a `Game citadel/addons` line stays (harmless, see `execute`).
 pub fn ranked_safe_target(
     live_gameinfo: &str,
     store: &BackupStore,
     hud: Option<HudPlan>,
+    addons: Option<AddonsPlan>,
 ) -> Result<Target, ApplyError> {
     let stock = match store.original(FileKind::GameInfo) {
         Some(entry) => fs::read_to_string(&entry.path)?,
@@ -275,6 +319,7 @@ pub fn ranked_safe_target(
         video: None,
         denied: Vec::new(),
         hud,
+        addons,
     })
 }
 
@@ -318,17 +363,24 @@ pub fn execute(
     if let Some(hud) = &plan.hud {
         hud_install::execute(hud, paths, &store.root)?;
         hud_changed = hud.action != HudAction::Nothing;
-        // A mounted search path whose directory is missing is a state we cannot vouch for in
-        // game, so the addons dir outlives our addon.
-        if searchpaths::has_addons(&fs::read_to_string(&paths.gameinfo)?).unwrap_or(false) {
-            fs::create_dir_all(hud_install::addons_dir(paths))?;
-        }
+    }
+    let mut addons_changed = false;
+    if let Some(addons) = &plan.addons {
+        addons_changed = addons_install::execute(addons, paths, &store.root)?;
+    }
+    // A mounted search path whose directory is missing is a state we cannot vouch for in
+    // game, so the addons dir outlives our addons.
+    if (plan.hud.is_some() || plan.addons.is_some())
+        && searchpaths::has_addons(&fs::read_to_string(&paths.gameinfo)?).unwrap_or(false)
+    {
+        fs::create_dir_all(hud_install::addons_dir(paths))?;
     }
 
     let mut report = ApplyReport {
         wrote_gameinfo: plan.gameinfo.is_some(),
         wrote_video: plan.video.is_some(),
         hud_changed,
+        addons_changed,
         ..ApplyReport::default()
     };
     if let (Some(bridge), false) = (bridge, plan.live.is_empty()) {
@@ -341,6 +393,7 @@ pub fn execute(
         || !plan.queued_cheat.is_empty()
         || report.wrote_video
         || report.hud_changed
+        || report.addons_changed
         || report.pushed_live < plan.live.len();
     Ok(report)
 }

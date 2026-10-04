@@ -1,6 +1,7 @@
 //! DeadTune core: everything except UI. No module here touches the game process;
 //! all effects go through files, launch options and the official console.
 
+pub mod addons;
 pub mod apply;
 pub mod backup;
 pub mod bench;

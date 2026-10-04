@@ -310,6 +310,15 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
             .frame(crate::update_view::banner_frame(Margin::symmetric(16, 10)))
             .show(ui, |ui| crate::update_view::banner(ui, state));
     }
+    if state.guard.failure.is_some() {
+        egui::Panel::top("simple_guard_banner")
+            .frame(
+                egui::Frame::new()
+                    .fill(BAD.gamma_multiply(0.18))
+                    .inner_margin(Margin::symmetric(16, 10)),
+            )
+            .show(ui, |ui| crate::addons_view::guard_banner(ui, state));
+    }
     egui::Panel::bottom("simple_apply")
         .frame(
             egui::Frame::new()
@@ -1709,6 +1718,20 @@ pub fn check_setup(ui: &mut Ui, state: &mut AppState, plain: bool) {
             ui.spinner();
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        if ui
+            .button("Copy diagnostic report")
+            .on_hover_text(
+                "Plain text for a bug report: DeadTune version, the gameinfo.gi SearchPaths block, what is in \
+                 game/citadel/addons and who owns it, DeadTune's records, the launch guard, the last launch \
+                 arguments, the last 80 console.log lines and a read-back of every installed pak.",
+            )
+            .clicked()
+        {
+            ui.ctx().copy_text(state.diagnostic_report());
+            state.status = Some(Status::Info(
+                "Diagnostic report copied. Paste it into your notes or the bug report.".into(),
+            ));
         }
     });
     let Some(checks) = &state.checks else { return };

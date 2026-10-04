@@ -192,6 +192,26 @@ impl App {
                 if let Ok(id) = std::env::var("DEADTUNE_ADDON_EXPAND") {
                     state.ui.addon_expanded = AddonId::parse(id.trim());
                 }
+                // `DEADTUNE_FAKE_TRIAL=failed` shows the launch guard's failure banner for the
+                // addons in `DEADTUNE_ADDONS` (every one if unset), with a captured FATAL line.
+                if std::env::var("DEADTUNE_FAKE_TRIAL").is_ok_and(|v| v == "failed") {
+                    let ids: Vec<AddonId> = std::env::var("DEADTUNE_ADDONS")
+                        .ok()
+                        .map(|list| {
+                            list.split(',')
+                                .filter_map(|s| AddonId::parse(s.trim()))
+                                .collect()
+                        })
+                        .filter(|ids: &Vec<AddonId>| !ids.is_empty())
+                        .unwrap_or_else(|| AddonId::ALL.to_vec());
+                    state.inject_trial_failure(
+                        ids,
+                        Some(
+                            "FATAL ERROR: Unable to read default keybinding configuration user_keys_default"
+                                .into(),
+                        ),
+                    );
+                }
                 // Screenshot lever: `DEADTUNE_FAKE_PUSH=waiting|confirmed|mixed|timeout` shows
                 // that live-status; `DEADTUNE_FAKE_BOOT=1` pretends the boot cfg ran.
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_PUSH") {
@@ -342,6 +362,13 @@ impl App {
                     views::run_apply(ctx, state);
                 }
             }
+        }
+        // `DEADTUNE_FAKE_TRIAL=verified` marks whatever Apply just installed as started with.
+        if job.frames == 6
+            && std::env::var("DEADTUNE_FAKE_TRIAL").is_ok_and(|v| v == "verified")
+            && let Screen::Main(state) = &mut self.screen
+        {
+            state.inject_trial_verified();
         }
         if job.frames == 20 && !job.requested {
             job.requested = true;

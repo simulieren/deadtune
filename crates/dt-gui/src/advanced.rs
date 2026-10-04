@@ -79,6 +79,15 @@ pub fn full_ui(ui: &mut Ui, state: &mut AppState, reopen: &mut Option<Settings>)
             .frame(crate::update_view::banner_frame(Margin::symmetric(12, 8)))
             .show(ui, |ui| crate::update_view::banner(ui, state));
     }
+    if state.guard.failure.is_some() {
+        egui::Panel::top("adv_guard_banner")
+            .frame(
+                egui::Frame::new()
+                    .fill(BAD.gamma_multiply(0.18))
+                    .inner_margin(Margin::symmetric(12, 8)),
+            )
+            .show(ui, |ui| crate::addons_view::guard_banner(ui, state));
+    }
     egui::Panel::bottom("adv_footer")
         .frame(
             egui::Frame::new()

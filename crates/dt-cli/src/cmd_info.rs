@@ -123,18 +123,32 @@ pub fn catalog(_: &Env, args: &Args) -> CliResult {
     Ok(())
 }
 
-/// Prints the shared `dt_core::doctor` checks; exits 1 if any failed.
+/// Prints the shared `dt_core::doctor` checks; exits 1 if any failed. `--report` prints
+/// the diagnostic report instead, the same text the GUI's button copies.
 pub fn doctor(env: &Env, args: &Args) -> CliResult {
     args.positionals::<0>("no positional arguments")?;
+    let paths = env
+        .paths()
+        .map_err(|e| eprintln!("locate: {}", e.message()))
+        .ok();
+    if args.switch("report") {
+        let launch = launch::with_boot(&dt_core::launch::LaunchOptions::default(), false);
+        print!(
+            "{}",
+            doctor::report(
+                paths.as_ref(),
+                &env.data_dir,
+                env!("CARGO_PKG_VERSION"),
+                &launch.args
+            )
+        );
+        return Ok(());
+    }
     println!(
         "deadtune-cli {} doctor on {}",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS
     );
-    let paths = env
-        .paths()
-        .map_err(|e| eprintln!("locate: {}", e.message()))
-        .ok();
     let checks = doctor::run(paths.as_ref(), &env.data_dir);
     for c in &checks {
         let tag = match c.status {

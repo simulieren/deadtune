@@ -26,6 +26,8 @@ struct Entry<'a> {
 
 struct Block<'a> {
     entries: Vec<Entry<'a>>,
+    /// Byte offset of the `SearchPaths` line.
+    header_start: usize,
     /// Byte offset of the line holding the closing brace.
     close_line_start: usize,
     close_indent: &'a str,
@@ -34,6 +36,16 @@ struct Block<'a> {
 /// True if an uncommented `Game citadel/addons` (any whitespace, optional quotes) exists.
 pub fn has_addons(gameinfo: &str) -> Result<bool, SearchPathsError> {
     Ok(find_addons(&parse_block(gameinfo)?))
+}
+
+/// The `SearchPaths` block verbatim, from its header line through its closing brace.
+pub fn block_text(gameinfo: &str) -> Result<&str, SearchPathsError> {
+    let block = parse_block(gameinfo)?;
+    let close_len = gameinfo[block.close_line_start..]
+        .split_inclusive('\n')
+        .next()
+        .map_or(0, str::len);
+    Ok(&gameinfo[block.header_start..block.close_line_start + close_len])
 }
 
 /// Inserts `Game citadel/addons` immediately before the first plain `Game` entry, after
@@ -141,16 +153,16 @@ fn parse_block(text: &str) -> Result<Block<'_>, SearchPathsError> {
         (start, l)
     });
 
-    let mut found = false;
-    for (_, line) in lines.by_ref() {
+    let mut header_start = None;
+    for (start, line) in lines.by_ref() {
         if strip_comment(line).trim() == "SearchPaths" {
-            found = true;
+            header_start = Some(start);
             break;
         }
     }
-    if !found {
+    let Some(header_start) = header_start else {
         return Err(SearchPathsError::Missing);
-    }
+    };
 
     let mut depth = 0usize;
     let mut opened = false;
@@ -180,6 +192,7 @@ fn parse_block(text: &str) -> Result<Block<'_>, SearchPathsError> {
             let trimmed = code.trim_start();
             return Ok(Block {
                 entries,
+                header_start,
                 close_line_start: start,
                 close_indent: &code[..code.len() - trimmed.len()],
             });
@@ -231,6 +244,21 @@ mod tests {
     fn assert_only_block_changed(before: &str, after: &str) {
         assert_eq!(outside(before), outside(after));
         assert!(after.len() > before.len());
+    }
+
+    #[test]
+    fn block_text_is_the_verbatim_block() {
+        let block = block_text(VANILLA).unwrap();
+        assert!(
+            block.starts_with("\t\tSearchPaths\n") || block.trim_start().starts_with("SearchPaths")
+        );
+        assert!(block.trim_end().ends_with('}'), "{block}");
+        assert!(block.contains("Game \"citadel\""), "{block}");
+        assert!(!block.contains("ConVars"), "stops at the closing brace");
+        assert!(VANILLA.contains(block));
+        let with = ensure_addons(VANILLA).unwrap();
+        assert!(block_text(&with).unwrap().contains(ADDONS_LINE_VALUE));
+        assert_eq!(block_text("nothing here"), Err(SearchPathsError::Missing));
     }
 
     #[test]

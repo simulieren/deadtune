@@ -253,11 +253,8 @@ pub enum Timing {
 
 impl Timing {
     pub fn of(plan: &ApplyPlan, game_running: bool) -> Timing {
-        let now = if game_running { plan.live.len() } else { 0 };
-        let later = plan.restart.len()
-            + plan.queued_cheat.len()
-            + plan.video_changes.len()
-            + (plan.live.len() - now);
+        let s = PlanSummary::of(plan, game_running);
+        let (now, later) = (s.live_now, s.queued + s.next_launch);
         match (now, later) {
             (0, 0) if plan.is_empty() => Timing::Nothing,
             (0, _) => Timing::NextLaunch,
@@ -265,6 +262,50 @@ impl Timing {
             (now, later) => Timing::Mixed { now, later },
         }
     }
+}
+
+/// Pending changes by when they reach the game, for the advanced view's pending panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PlanSummary {
+    /// Live-class changes the running game picks up from the console.
+    pub live_now: usize,
+    /// Cheat-flagged changes held back until the player is in hideout or sandbox.
+    pub queued: usize,
+    /// Written to the files and read when Deadlock starts.
+    pub next_launch: usize,
+    /// Denylisted edits that are never written.
+    pub refused: usize,
+}
+
+impl PlanSummary {
+    pub fn of(plan: &ApplyPlan, game_running: bool) -> PlanSummary {
+        let live_now = if game_running { plan.live.len() } else { 0 };
+        PlanSummary {
+            live_now,
+            queued: plan.queued_cheat.len(),
+            next_launch: plan.restart.len()
+                + plan.video_changes.len()
+                + (plan.live.len() - live_now),
+            refused: plan.denied.len(),
+        }
+    }
+}
+
+/// Rows in one advanced-view list scope, and how many the profile changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct ScopeCount {
+    pub rows: usize,
+    pub changed: usize,
+}
+
+/// What the advanced view's category rail shows next to each entry, under the current search.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct RailCounts {
+    pub all: ScopeCount,
+    pub changed: usize,
+    pub favourites: usize,
+    /// Every catalog category, including those the search empties.
+    pub categories: BTreeMap<String, ScopeCount>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -1143,10 +1184,38 @@ impl AppState {
 
     /// Rows for the center list (full mode) or the compact list.
     pub fn visible_rows(&self) -> Vec<String> {
-        let scope = match self.ui.mode {
-            Mode::Compact => &Scope::Favourites,
-            Mode::Full => &self.ui.scope,
+        match self.ui.mode {
+            Mode::Compact => self.rows_in(&Scope::Favourites),
+            Mode::Full => self.rows_in(&self.ui.scope),
+        }
+    }
+
+    pub fn rail_counts(&self) -> RailCounts {
+        let mut counts = RailCounts {
+            changed: self.rows_in(&Scope::Changed).len(),
+            favourites: self.rows_in(&Scope::Favourites).len(),
+            categories: self
+                .catalog
+                .categories()
+                .into_iter()
+                .map(|c| (c.to_string(), ScopeCount::default()))
+                .collect(),
+            ..RailCounts::default()
         };
+        for (name, entry) in self.catalog.search(&self.ui.search) {
+            let changed = usize::from(self.is_changed(name));
+            for count in [
+                &mut counts.all,
+                counts.categories.entry(entry.category.clone()).or_default(),
+            ] {
+                count.rows += 1;
+                count.changed += changed;
+            }
+        }
+        counts
+    }
+
+    fn rows_in(&self, scope: &Scope) -> Vec<String> {
         let query = self.ui.search.to_lowercase();
         let matches = |name: &str| query.is_empty() || name.to_lowercase().contains(&query);
         match scope {
@@ -1521,6 +1590,74 @@ mod tests {
         );
         state.toggle_favourite(CHEAT);
         assert!(state.visible_rows().is_empty());
+    }
+
+    #[test]
+    fn rail_counts_follow_search_edits_and_favourites() {
+        let (_dir, mut state) = state();
+        let counts = state.rail_counts();
+        assert_eq!(counts.all.rows, state.catalog.entries.len());
+        assert_eq!(
+            (counts.all.changed, counts.changed, counts.favourites),
+            (0, 0, 0)
+        );
+        assert_eq!(
+            counts.categories.values().map(|c| c.rows).sum::<usize>(),
+            counts.all.rows
+        );
+        state.set_convar(LIVE, "144".into()).unwrap();
+        state.set_convar(RESTART, "true".into()).unwrap();
+        state.toggle_favourite(CHEAT);
+        let counts = state.rail_counts();
+        assert_eq!(
+            (counts.all.changed, counts.changed, counts.favourites),
+            (2, 2, 1)
+        );
+        let live_cat = &state.catalog.get(LIVE).unwrap().category;
+        assert!(counts.categories[live_cat].changed >= 1, "{live_cat}");
+        state.ui.search = "farz".into();
+        let counts = state.rail_counts();
+        assert!(counts.all.rows > 0 && counts.all.rows < 20, "{counts:?}");
+        assert_eq!(counts.all.changed, 0, "neither edit matches farz");
+        assert_eq!(
+            counts.categories.len(),
+            state.catalog.categories().len(),
+            "emptied categories stay listed"
+        );
+        assert_eq!(
+            counts.categories.values().map(|c| c.rows).sum::<usize>(),
+            counts.all.rows
+        );
+    }
+
+    #[test]
+    fn plan_summary_sorts_changes_by_when_they_land() {
+        let (_dir, mut state) = state();
+        assert_eq!(PlanSummary::of(plan(&state), false), PlanSummary::default());
+        state.set_convar(LIVE, "144".into()).unwrap();
+        state.set_convar(CHEAT, "6000".into()).unwrap();
+        state.set_convar(RESTART, "true".into()).unwrap();
+        let closed = PlanSummary::of(plan(&state), false);
+        assert_eq!(
+            closed,
+            PlanSummary {
+                live_now: 0,
+                queued: 1,
+                next_launch: 2,
+                refused: 0
+            },
+            "game closed: live edits wait for launch too"
+        );
+        let running = PlanSummary::of(plan(&state), true);
+        assert_eq!((running.live_now, running.next_launch), (1, 1));
+        state.set_in_sandbox(true);
+        let sandbox = PlanSummary::of(plan(&state), true);
+        assert_eq!((sandbox.live_now, sandbox.queued), (2, 0));
+        let refused = ApplyPlan {
+            denied: vec![DENIED.into()],
+            ..ApplyPlan::default()
+        };
+        assert_eq!(PlanSummary::of(&refused, false).refused, 1);
     }
 
     #[test]

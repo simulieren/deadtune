@@ -131,6 +131,15 @@ impl App {
                 {
                     state.ui.section = section;
                 }
+                // `DEADTUNE_TAB=video` opens the advanced view on that tab.
+                if let Ok(name) = std::env::var("DEADTUNE_TAB")
+                    && let Some(tab) = Tab::ALL
+                        .into_iter()
+                        .find(|t| t.label().to_lowercase().starts_with(&name.to_lowercase()))
+                {
+                    state.settings.view = View::Advanced;
+                    state.ui.tab = tab;
+                }
                 if let Ok(query) = std::env::var("DEADTUNE_SEARCH") {
                     state.ui.query = query;
                 }

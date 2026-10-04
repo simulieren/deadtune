@@ -1,0 +1,455 @@
+# Hand-curated overlay on the generated catalog. Every field is optional and replaces
+# the generated value: category, type (+ options for "enum"), range, step, impact,
+# denylist, notes. Regenerate after editing: cargo run -p dt-core --example gen_catalog
+
+# Shadows
+
+[r_citadel_shadow_quality]
+range = [0, 3]
+step = 1
+impact = "high"
+notes = "Overall shadow quality level. 0 is lowest; most FPS presets use 0."
+
+[r_shadows]
+impact = "high"
+notes = "Master switch for shadow rendering. Off is a large GPU win but flattens the scene."
+
+[csm_max_num_cascades_override]
+range = [-1, 4]
+step = 1
+impact = "high"
+notes = "Number of sun shadow cascades. -1 uses the engine default; fewer cascades means less shadow detail at range."
+
+[csm_max_shadow_dist_override]
+range = [-1, 8000]
+step = 250
+impact = "high"
+notes = "How far sun shadows reach. -1 uses the engine default."
+
+[csm_max_visible_dist]
+range = [0, 7500]
+step = 250
+impact = "high"
+notes = "Distance beyond which sun shadows are not drawn."
+
+[csm_sst_max_visible_dist]
+range = [0, 2000]
+step = 100
+impact = "medium"
+notes = "Visible distance of the sparse shadow tree (static shadows)."
+
+[lb_enable_shadow_casting]
+impact = "high"
+notes = "Lets stationary and dynamic lights cast shadows."
+
+[lb_dynamic_shadow_resolution]
+impact = "medium"
+notes = "Lets the engine scale shadow map resolution with load."
+
+[lb_shadow_texture_width_override]
+range = [-1, 8192]
+step = 256
+impact = "medium"
+notes = "Shadow atlas width. -1 uses the engine default; tiny values make shadows blocky."
+
+[lb_shadow_texture_height_override]
+range = [-1, 8192]
+step = 256
+impact = "medium"
+notes = "Shadow atlas height. -1 uses the engine default; tiny values make shadows blocky."
+
+[r_citadel_distancefield_shadows]
+impact = "medium"
+notes = "Ray-marched distance-field soft shadows."
+
+[sc_disable_spotlight_shadows]
+impact = "medium"
+notes = "Skips spotlight shadow rendering."
+
+[cl_globallight_shadow_mode]
+range = [0, 2]
+step = 1
+impact = "medium"
+notes = "Global (sun) light shadow mode. Presets set 0 to turn it off."
+
+[csm_viewmodel_shadows]
+impact = "low"
+notes = "Shadows cast by your own weapon and hands."
+
+# Lighting and post-processing
+
+[r_citadel_ssao_quality]
+range = [0, 3]
+step = 1
+impact = "high"
+notes = "Screen-space ambient occlusion quality. 0 is lowest."
+
+[r_ssao]
+impact = "high"
+notes = "Screen-space ambient occlusion (contact shadows in corners)."
+
+[lb_enable_dynamic_lights]
+impact = "high"
+notes = "Dynamic lights from abilities and effects. Off also leaves hero portraits uncoloured in the shop and end screen."
+
+[lb_max_visible_barn_lights_override]
+range = [-1, 64]
+step = 1
+impact = "medium"
+notes = "Cap on visible barn (spot) lights. -1 means no cap."
+
+[lb_max_visible_envmaps_override]
+range = [-1, 64]
+step = 1
+impact = "medium"
+notes = "Cap on visible environment-map reflections. -1 means no cap."
+
+[lb_enable_envmaps]
+impact = "medium"
+notes = "Environment-map reflections. Off makes characters render black, so presets leave it commented out."
+
+[r_citadel_fog_quality]
+range = [0, 2]
+step = 1
+impact = "medium"
+notes = "Fog quality level. 0 is lowest."
+
+[r_enable_volume_fog]
+impact = "medium"
+notes = "Volumetric fog."
+
+[r_effects_bloom]
+impact = "medium"
+notes = "Bloom on effects such as abilities and particles."
+
+[r_post_bloom]
+impact = "low"
+notes = "Post-process bloom."
+
+[r_depth_of_field]
+impact = "low"
+notes = "Depth of field blur."
+
+[r_light_flickering_enabled]
+impact = "low"
+notes = "Flickering light effects where maps use them."
+
+[mat_max_lighting_complexity]
+range = [0, 8]
+step = 1
+impact = "low"
+notes = "Shader lighting complexity cap. Little measured effect."
+
+# Particles and effects
+
+[cl_particle_max_count]
+range = [0, 5000]
+step = 100
+impact = "high"
+notes = "Particle cap. 0 means unlimited. Too low makes abilities and fights hard to read."
+
+[r_particle_max_detail_level]
+range = [0, 3]
+step = 1
+impact = "high"
+notes = "Highest particle detail level spawned. 0 spawns only the cheapest variants."
+
+[r_particle_max_draw_distance]
+range = [10000, 1000000]
+step = 10000
+impact = "medium"
+notes = "Distance beyond which particles are not drawn."
+
+[cl_particle_fallback_base]
+range = [0, 10]
+step = 1
+impact = "medium"
+notes = "Base for falling back to cheaper particle effects under load."
+
+[cl_particle_fallback_multiplier]
+range = [0, 10]
+step = 1
+impact = "medium"
+notes = "Multiplier for falling back to cheaper particle effects under load."
+
+[r_RainParticleDensity]
+range = [0, 1]
+step = 0.1
+impact = "low"
+notes = "Rain particle density, 0 to 1."
+
+[cl_max_particle_pvs_aabb_edge_length]
+range = [0, 200]
+step = 10
+impact = "low"
+notes = "Culls particle systems outside a smaller visibility box."
+
+[r_drawtracers_firstperson]
+impact = "low"
+notes = "Your own bullet tracers."
+
+[r_decals]
+range = [0, 2048]
+step = 64
+impact = "low"
+notes = "Maximum decals (bullet holes, blood, impact marks)."
+
+[cl_ragdoll_limit]
+range = [-1, 20]
+step = 1
+impact = "low"
+notes = "Maximum ragdolls shown at once. -1 removes the limit."
+
+# Render distance and LOD
+
+[r_farz]
+range = [-1, 16000]
+step = 500
+impact = "high"
+notes = "Far clip plane. -1 uses the map's fog controller. Lower values make buildings and distant players pop in."
+
+[r_propsmaxdist]
+range = [0, 2000]
+step = 50
+impact = "medium"
+notes = "Prop draw distance (boxes and other props). Too low hides breakables."
+
+[sc_screen_size_lod_scale_override]
+range = [-1, 2]
+step = 0.05
+impact = "high"
+notes = "LOD scale. -1 is the engine default; lower values switch to cheaper models sooner and make heroes look worse."
+
+[sc_fade_distance_scale_override]
+range = [-1, 200]
+step = 5
+impact = "medium"
+notes = "Scale on the distance at which objects fade in and out. -1 is the engine default."
+
+[r_size_cull_threshold]
+range = [0, 2]
+step = 0.05
+impact = "medium"
+notes = "Objects smaller than this percentage of the screen are culled. Higher values also cull trooper health bars and boxes earlier."
+
+[sc_instanced_mesh_lod_bias]
+range = [0, 20]
+step = 0.25
+impact = "medium"
+notes = "LOD bias for instanced meshes such as foliage and clutter."
+
+[r_grass_quality]
+range = [0, 4]
+step = 1
+impact = "medium"
+notes = "Grass quality: 0 off, 1 low, 2 medium, 3 high, 4 ultra."
+
+[sc_clutter_enable]
+impact = "medium"
+notes = "Small clutter props. Off also improves visibility."
+
+# Textures and resolution
+
+[r_texture_stream_mip_bias]
+range = [-2, 8]
+step = 1
+impact = "medium"
+notes = "Streams lower-resolution texture mips. Higher values are blurrier and use less VRAM."
+
+[r_texturefilteringquality]
+range = [0, 5]
+step = 1
+impact = "low"
+notes = "0 bilinear, 1 trilinear, 2 to 5 anisotropic 2x to 16x. Very low FPS impact."
+
+[r_texture_lod_scale]
+range = [1, 8]
+step = 1
+impact = "medium"
+notes = "Scale on requested texture size. Higher values are blurrier and use less VRAM."
+
+[r_citadel_upscaling]
+range = [0, 4]
+step = 1
+impact = "high"
+notes = "Upscaler selection. 0 disables upscaling; the default 4 uses DLSS or FSR."
+
+[r_citadel_antialiasing]
+range = [0, 1]
+step = 1
+impact = "medium"
+notes = "Anti-aliasing. 0 disables it."
+
+# UI and Panorama
+
+[panorama_max_fps]
+range = [10, 240]
+step = 5
+impact = "medium"
+notes = "Frame cap for menus such as the shop."
+
+[panorama_max_overlay_fps]
+range = [10, 240]
+step = 5
+impact = "low"
+notes = "Frame cap for the settings and escape menu overlay."
+
+[panorama_disable_blur]
+impact = "medium"
+notes = "Disables UI blur."
+
+[panorama_disable_box_shadow]
+impact = "low"
+notes = "Disables UI box shadows."
+
+[panorama_allow_transitions]
+impact = "low"
+notes = "UI animations in the shop and menus."
+
+[r_citadel_enable_pano_world_blur]
+impact = "high"
+notes = "World blur behind the shop. Off makes the shop dramatically faster."
+
+# Threads and jobs
+
+[thread_pool_option]
+range = [-1, 2]
+step = 1
+impact = "medium"
+notes = "Thread pool mode. -1 is the engine default; presets disagree, so measure on your CPU."
+
+[r_threaded_particles]
+impact = "medium"
+notes = "Simulates particles on worker threads."
+
+[cl_parallel_readpacketentities]
+impact = "low"
+notes = "Reads entity snapshots on worker threads."
+
+[fs_async_threads]
+range = [-1, 16]
+step = 1
+impact = "low"
+notes = "Async filesystem I/O threads. -1 picks automatically."
+
+[snd_steamaudio_num_threads]
+range = [1, 8]
+step = 1
+impact = "low"
+notes = "Threads Steam Audio uses for realtime reflections."
+
+# Frame rate and latency
+
+[fps_max]
+range = [0, 1000]
+step = 1
+impact = "high"
+notes = "Frame rate cap. 0 removes the cap. Capping near your refresh rate saves battery and heat."
+
+[fps_max_ui]
+range = [0, 1000]
+step = 1
+impact = "low"
+notes = "Frame rate cap while the game UI is open. 0 removes the cap."
+
+[r_low_latency]
+range = [0, 2]
+step = 1
+impact = "low"
+notes = "NVIDIA Reflex / AMD Anti-Lag 2. 0 off, 1 on, 2 NVIDIA only with boost."
+
+[engine_no_focus_sleep]
+range = [0, 100]
+step = 5
+impact = "low"
+notes = "Milliseconds to sleep per frame while alt-tabbed. 0 keeps full speed but burns CPU in the background."
+
+# Audio
+
+[snd_occlusion_rays]
+range = [0, 8]
+step = 1
+impact = "low"
+notes = "Rays traced for sound occlusion. 0 disables occlusion tracing."
+
+[snd_steamaudio_enable_reverb]
+type = "bool"
+impact = "low"
+notes = "Steam Audio reverb processing."
+
+# Kind fixes where preset values are junk (`0918`, `kaiz`) or only 0/1 appear.
+
+[r_citadel_npr_outlines]
+type = "bool"
+
+[violence_ablood]
+type = "bool"
+
+# Competitive information. DeadTune will not change these: they alter what you can see
+# of other players (outlines, glow through walls, visibility culling, minimap info).
+
+[citadel_player_outline_enemies]
+denylist = true
+
+[r_citadel_outlines]
+denylist = true
+
+[r_citadel_selection_outline2_alpha]
+denylist = true
+
+[r_citadel_selection_outline2_offset]
+denylist = true
+
+[r_citadel_selection_outline2_width]
+denylist = true
+
+[citadel_trooper_outline_enabled]
+denylist = true
+
+[citadel_unit_status_allies_see_thru_walls]
+denylist = true
+
+[citadel_unit_status_allies_see_thru_walls_max_distance]
+denylist = true
+
+[r_citadel_glow_health_bars]
+denylist = true
+
+[cl_glow_brightness]
+denylist = true
+
+[citadel_player_glow_disabled]
+denylist = true
+
+[citadel_trooper_friendly_glow_disabled]
+denylist = true
+
+[citadel_use_pvs_for_players]
+denylist = true
+
+[citadel_visibility_queue_rate]
+denylist = true
+
+[citadel_fibonnaci_sphere_trace_los_max]
+denylist = true
+
+[sv_force_transmit_players]
+denylist = true
+
+[sv_hide_ent_in_pvs]
+denylist = true
+
+[sv_remove_ent_from_pvs]
+denylist = true
+
+[sv_pvs_max_distance]
+denylist = true
+
+[minimap_update_rate_hz]
+denylist = true
+
+[minimap_trooper_update_rate_hz]
+denylist = true
+
+[citadel_minimap_overlap_scan_distance]
+denylist = true

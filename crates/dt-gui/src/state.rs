@@ -564,6 +564,24 @@ impl AppState {
         self.refresh_preview();
     }
 
+    /// Drops every per-setting edit so the profile is the preset again. Video and HUD edits stay.
+    pub fn reset_to_preset(&mut self) {
+        self.profile.convars = ConVarEdits::default();
+        self.refresh_preview();
+    }
+
+    /// Settings that differ from the preset: overridden or commented out.
+    pub fn changed_from_preset(&self) -> usize {
+        self.profile.convars.set.len() + self.profile.convars.comment.len()
+    }
+
+    pub fn is_changed(&self, name: &str) -> bool {
+        matches!(
+            self.setting(name),
+            Setting::Override(_) | Setting::CommentedOut
+        )
+    }
+
     pub fn set_video(&mut self, key: &str, value: String) {
         self.profile.video.insert(key.to_string(), value);
         self.refresh_preview();
@@ -1063,6 +1081,25 @@ mod tests {
         state.revert_all();
         assert!(!state.is_dirty());
         assert!(plan(&state).is_empty());
+    }
+
+    #[test]
+    fn reset_to_preset_clears_every_edit_but_keeps_the_preset() {
+        let (_dir, mut state) = state();
+        state.set_base(BaseRef::Preset(PresetId::Sqooky));
+        state.set_convar(LIVE, "144".into()).unwrap();
+        state.set_convar(RESTART, "true".into()).unwrap();
+        state.comment_convar(CHEAT).unwrap();
+        assert_eq!(state.changed_from_preset(), 3);
+        assert!(state.is_changed(LIVE) && state.is_changed(CHEAT));
+        assert!(!state.is_changed("r_shadows"), "preset value is not a change");
+        state.revert_convar(CHEAT);
+        assert_eq!(state.changed_from_preset(), 2);
+        state.reset_to_preset();
+        assert_eq!(state.changed_from_preset(), 0);
+        assert!(!state.is_changed(LIVE));
+        assert_eq!(state.profile.base, BaseRef::Preset(PresetId::Sqooky));
+        assert_eq!(state.setting(LIVE), Setting::Base("400".into()));
     }
 
     #[test]

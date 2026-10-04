@@ -3,10 +3,11 @@
 //! Apply class is the most conservative of the two dumps: devonly in either
 //! `cvarlist.txt` or `convars.txt` means restart.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
 
 use super::elements::ElementId;
-use crate::catalog::CatalogEntry;
+use crate::catalog::{ApplyClass, CatalogEntry, Impact, Kind};
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HudConVar {
@@ -17,9 +18,228 @@ pub struct HudConVar {
 }
 
 pub fn embedded() -> &'static BTreeMap<String, HudConVar> {
-    todo!()
+    static HUD: OnceLock<BTreeMap<String, HudConVar>> = OnceLock::new();
+    HUD.get_or_init(|| {
+        toml::from_str(include_str!("../../../../catalog/hud.toml"))
+            .expect("embedded hud.toml is checked by embedded_hud_catalog_matches_a_fresh_generate")
+    })
 }
 
 pub fn for_element(id: ElementId) -> impl Iterator<Item = (&'static str, &'static HudConVar)> {
-    embedded().iter().filter(move |(_, c)| c.element == Some(id)).map(|(n, c)| (n.as_str(), c))
+    embedded()
+        .iter()
+        .filter(move |(_, c)| c.element == Some(id))
+        .map(|(n, c)| (n.as_str(), c))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum HudCatalogError {
+    #[error("toml: {0}")]
+    TomlDe(#[from] toml::de::Error),
+    #[error("toml: {0}")]
+    TomlSer(#[from] toml::ser::Error),
+    #[error("hud_curated.toml: {0}")]
+    Curated(String),
+}
+
+/// One curated entry. `category` is the label after "HUD: "; `notes` is appended to the dump description.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Curated {
+    category: String,
+    element: Option<ElementId>,
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    range: Option<[f64; 2]>,
+    step: Option<f64>,
+    #[serde(default)]
+    impact: Impact,
+    #[serde(default)]
+    denylist: bool,
+    #[serde(default)]
+    notes: String,
+}
+
+#[derive(Default)]
+struct Dump {
+    flags: BTreeSet<String>,
+    default: Option<String>,
+    description: String,
+}
+
+/// `name | flags | Default: x<br>description`, after a two-line header.
+fn parse_cvarlist(text: &str) -> BTreeMap<&str, Dump> {
+    text.lines()
+        .skip(2)
+        .filter_map(|line| {
+            let mut cols = line.splitn(3, " | ");
+            let (name, flags, rest) = (cols.next()?, cols.next()?, cols.next().unwrap_or(""));
+            let (default, description) = match rest.strip_prefix("Default: ") {
+                Some(r) => {
+                    let (d, desc) = r.split_once("<br>").unwrap_or((r, ""));
+                    (Some(d.trim().to_string()), desc)
+                }
+                None => (None, rest),
+            };
+            let flags = flags.split(',').map(|f| f.trim().to_string()).collect();
+            Some((
+                name,
+                Dump {
+                    flags,
+                    default,
+                    description: description.trim().to_string(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// `name value (flags...)` at column 0; description lines are indented.
+fn parse_convars(text: &str) -> BTreeMap<&str, BTreeSet<String>> {
+    text.lines()
+        .filter(|l| !l.is_empty() && !l.starts_with(char::is_whitespace))
+        .filter_map(|line| {
+            let name = line.split_whitespace().next()?;
+            let flags = line.trim_end().strip_suffix(')')?.rsplit_once('(')?.1;
+            Some((name, flags.split_whitespace().map(str::to_string).collect()))
+        })
+        .collect()
+}
+
+fn infer_kind(default: Option<&str>) -> Kind {
+    match default {
+        Some("true" | "false") => Kind::Bool,
+        Some(d) if d.parse::<i64>().is_ok() => Kind::Int,
+        Some(d) if d.parse::<f64>().is_ok() => Kind::Float,
+        _ => Kind::String,
+    }
+}
+
+fn kind_from_name(name: &str) -> Option<Kind> {
+    Some(match name {
+        "bool" => Kind::Bool,
+        "int" => Kind::Int,
+        "float" => Kind::Float,
+        "string" => Kind::String,
+        _ => return None,
+    })
+}
+
+/// Most conservative of both dumps: devonly in either is restart, else cheat in either is live_cheat.
+fn apply_class(a: &BTreeSet<String>, b: &BTreeSet<String>) -> ApplyClass {
+    let has = |words: &[&str]| a.iter().chain(b).any(|f| words.contains(&f.as_str()));
+    if has(&["devonly", "developmentonly"]) {
+        ApplyClass::Restart
+    } else if has(&["cheat"]) {
+        ApplyClass::LiveCheat
+    } else {
+        ApplyClass::Live
+    }
+}
+
+/// Builds hud.toml text from the two ConVar dumps and the curated mapping.
+pub fn generate(cvarlist: &str, convars: &str, curated: &str) -> Result<String, HudCatalogError> {
+    let dump = parse_cvarlist(cvarlist);
+    let flags2 = parse_convars(convars);
+    let curated: BTreeMap<String, Curated> = toml::from_str(curated)?;
+    let mut out = BTreeMap::new();
+    for (name, c) in curated {
+        let err = |msg: &str| HudCatalogError::Curated(format!("{name}: {msg}"));
+        let d = dump
+            .get(name.as_str())
+            .ok_or_else(|| err("not in cvarlist.txt"))?;
+        // convars.txt is an incomplete dump; a missing row adds no flags.
+        let f2 = flags2.get(name.as_str()).cloned().unwrap_or_default();
+        let kind = match &c.kind {
+            Some(k) => kind_from_name(k).ok_or_else(|| err("unknown type"))?,
+            None => infer_kind(d.default.as_deref()),
+        };
+        let notes = [d.description.as_str(), c.notes.as_str()]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" ");
+        out.insert(
+            name.clone(),
+            HudConVar {
+                element: c.element,
+                entry: CatalogEntry {
+                    category: format!("HUD: {}", c.category),
+                    kind,
+                    range: c.range,
+                    step: c.step,
+                    default: d.default.clone(),
+                    apply: apply_class(&d.flags, &f2),
+                    impact: c.impact,
+                    denylist: c.denylist,
+                    notes,
+                    presets: BTreeMap::new(),
+                },
+            },
+        );
+    }
+    Ok(format!(
+        "# Generated by `cargo run -p dt-core --example gen_hud_catalog`. Edit catalog/hud_curated.toml instead.\n\n{}",
+        toml::to_string(&out)?
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CVARLIST: &str =
+        include_str!("../../../../research/configs/OptimizationLock/cvarlist.txt");
+    const CONVARS: &str = include_str!("../../../../research/configs/OptimizationLock/convars.txt");
+    const CURATED: &str = include_str!("../../../../catalog/hud_curated.toml");
+    const HUD_TOML: &str = include_str!("../../../../catalog/hud.toml");
+
+    #[test]
+    fn embedded_parses_and_is_not_empty() {
+        assert!(embedded().len() > 100);
+    }
+
+    #[test]
+    fn element_tags_round_trip() {
+        for (name, c) in embedded() {
+            let Some(id) = c.element else { continue };
+            let s = toml::to_string(&HudConVar {
+                element: Some(id),
+                entry: c.entry.clone(),
+            })
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+            let back: HudConVar = toml::from_str(&s).unwrap();
+            assert_eq!(back.element, Some(id), "{name}");
+            assert!(c.entry.category.starts_with("HUD: "), "{name}");
+        }
+        assert!(for_element(ElementId::Minimap).count() > 0);
+    }
+
+    #[test]
+    fn denylisted_live_entries_carry_a_note() {
+        for (name, c) in embedded() {
+            if c.entry.denylist && c.entry.apply == ApplyClass::Live {
+                assert!(
+                    !c.entry.notes.is_empty(),
+                    "{name} is denylisted and live without a note"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn crosshair_is_restart_because_convars_txt_says_developmentonly() {
+        let c = &embedded()["citadel_crosshair_color_r"];
+        assert_eq!(c.entry.apply, ApplyClass::Restart);
+    }
+
+    #[test]
+    fn embedded_hud_catalog_matches_a_fresh_generate() {
+        let fresh = generate(CVARLIST, CONVARS, CURATED).unwrap();
+        assert!(
+            fresh == HUD_TOML,
+            "catalog/hud.toml is stale; run `cargo run -p dt-core --example gen_hud_catalog`"
+        );
+    }
 }

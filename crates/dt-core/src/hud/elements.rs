@@ -81,16 +81,34 @@ pub static ELEMENTS: &[ElementSpec] = &[
         selector: "#TopBar",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 100,
-        vanilla: VanillaBox { h: HAlign::Center, v: VAlign::Top, width: 1260.0, height: 100.0, dx: 0.0, dy: 0.0, collapsed: false },
+        vanilla: VanillaBox {
+            h: HAlign::Center,
+            v: VAlign::Top,
+            width: 1260.0,
+            height: 100.0,
+            dx: 0.0,
+            dy: 0.0,
+            collapsed: false,
+        },
         notes: "Hero portraits, souls, clock. Layout lives on the CitadelHudTopBar rule in citadel_hud_top_bar.vcss_c (full height, fit-children width); the box is the 1260px #TeamsContainer strip with an estimated 100px height. Hidden during death replay and in the hideout.",
     },
     ElementSpec {
         id: ElementId::Minimap,
         label: "Minimap",
         selector: "#minimap_persp",
-        scale: ScaleProp::PreTransform { origin: "100% 100%" },
+        scale: ScaleProp::PreTransform {
+            origin: "100% 100%",
+        },
         vanilla_ui_scale_pct: 100,
-        vanilla: VanillaBox { h: HAlign::Right, v: VAlign::Bottom, width: 440.0, height: 520.0, dx: 0.0, dy: -15.0, collapsed: false },
+        vanilla: VanillaBox {
+            h: HAlign::Right,
+            v: VAlign::Bottom,
+            width: 440.0,
+            height: 520.0,
+            dx: 0.0,
+            dy: -15.0,
+            collapsed: false,
+        },
         notes: "Scales from the bottom-right corner. Sits inside .clamp_width, so on 21:9 it hugs the 1920px clamp, not the screen edge. Vanilla transitions pre-transform-scale2d (hideout uses 0.9), so state rules like .InHideout override the scale.",
     },
     ElementSpec {
@@ -99,7 +117,15 @@ pub static ELEMENTS: &[ElementSpec] = &[
         selector: "#health_and_abilities_container",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 120,
-        vanilla: VanillaBox { h: HAlign::Center, v: VAlign::Bottom, width: 300.0, height: 456.0, dx: -495.0, dy: -20.0, collapsed: false },
+        vanilla: VanillaBox {
+            h: HAlign::Center,
+            v: VAlign::Bottom,
+            width: 300.0,
+            height: 456.0,
+            dx: -495.0,
+            dy: -20.0,
+            collapsed: false,
+        },
         notes: "250x380 at ui-scale 120%, centred between margin-left 300px and margin-right 1290px; whether ui-scale also scales those margins is unverified, so x is approximate. 21:9 and 16:10 rules change the margins.",
     },
     ElementSpec {
@@ -108,7 +134,15 @@ pub static ELEMENTS: &[ElementSpec] = &[
         selector: "#hud_signature",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 90,
-        vanilla: VanillaBox { h: HAlign::Center, v: VAlign::Bottom, width: 330.0, height: 200.0, dx: 0.0, dy: 0.0, collapsed: true },
+        vanilla: VanillaBox {
+            h: HAlign::Center,
+            v: VAlign::Bottom,
+            width: 330.0,
+            height: 200.0,
+            dx: 0.0,
+            dy: 0.0,
+            collapsed: true,
+        },
         notes: "Inside #AbilitiesContainer (1140x420, bottom centre). Size is fit-children, estimated from four 220px-tall ability columns at ui-scale 90%. The base rule collapses it; .viewing_as_player and .ShowGoldAndAPOnHud show it. Shrinks to 75% while the shop is open.",
     },
     ElementSpec {
@@ -117,7 +151,15 @@ pub static ELEMENTS: &[ElementSpec] = &[
         selector: "#ActiveAbilitiesMenu",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 100,
-        vanilla: VanillaBox { h: HAlign::Center, v: VAlign::Bottom, width: 340.0, height: 100.0, dx: 300.0, dy: 0.0, collapsed: false },
+        vanilla: VanillaBox {
+            h: HAlign::Center,
+            v: VAlign::Bottom,
+            width: 340.0,
+            height: 100.0,
+            dx: 300.0,
+            dy: 0.0,
+            collapsed: false,
+        },
         notes: "Active items 1 to 4. Right-aligned with margin-right 100px inside #AbilitiesContainer (1140px wide, centred), so it ends 330px right of screen centre; the 340px width is an estimate (fit-children).",
     },
     ElementSpec {
@@ -126,7 +168,15 @@ pub static ELEMENTS: &[ElementSpec] = &[
         selector: "#hud_passive_items",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 130,
-        vanilla: VanillaBox { h: HAlign::Center, v: VAlign::Bottom, width: 780.0, height: 78.0, dx: 0.0, dy: -322.0, collapsed: true },
+        vanilla: VanillaBox {
+            h: HAlign::Center,
+            v: VAlign::Bottom,
+            width: 780.0,
+            height: 78.0,
+            dx: 0.0,
+            dy: -322.0,
+            collapsed: true,
+        },
         notes: "Collapsed in vanilla; Shown reveals it (what QoL Lite does). 600x60 at ui-scale 130%, top-aligned with a 20px margin inside #AbilitiesContainer, whose top is 420px above the screen bottom. Collapsed again while the shop is open.",
     },
     ElementSpec {
@@ -135,7 +185,15 @@ pub static ELEMENTS: &[ElementSpec] = &[
         selector: "#StatsAndModsContainer",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 100,
-        vanilla: VanillaBox { h: HAlign::Left, v: VAlign::Bottom, width: 400.0, height: 360.0, dx: 0.0, dy: 0.0, collapsed: false },
+        vanilla: VanillaBox {
+            h: HAlign::Left,
+            v: VAlign::Bottom,
+            width: 400.0,
+            height: 360.0,
+            dx: 0.0,
+            dy: 0.0,
+            collapsed: false,
+        },
         notes: "Stats, souls and purchased mods in the lower left. The container itself is full screen; the box is an estimate of #LowerLeft's content (#hudPlayerStats is 300px wide). Hidden while editing builds and in spectator mode.",
     },
     ElementSpec {
@@ -144,7 +202,15 @@ pub static ELEMENTS: &[ElementSpec] = &[
         selector: "#ammo_panel",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 100,
-        vanilla: VanillaBox { h: HAlign::Center, v: VAlign::Center, width: 120.0, height: 40.0, dx: 0.0, dy: 80.0, collapsed: false },
+        vanilla: VanillaBox {
+            h: HAlign::Center,
+            v: VAlign::Center,
+            width: 120.0,
+            height: 40.0,
+            dx: 0.0,
+            dy: 80.0,
+            collapsed: false,
+        },
         notes: "Next to the crosshair. Defined in ability_hud_elements/element_gun.xml (y: 80px, centred), not in hud.xml; whether a hud.vcss_c rule reaches it is unverified, it may need element_gun.vcss_c. Size is an estimate.",
     },
     ElementSpec {
@@ -153,7 +219,15 @@ pub static ELEMENTS: &[ElementSpec] = &[
         selector: "#DataFeed",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 100,
-        vanilla: VanillaBox { h: HAlign::Left, v: VAlign::Top, width: 1000.0, height: 240.0, dx: 0.0, dy: 200.0, collapsed: false },
+        vanilla: VanillaBox {
+            h: HAlign::Left,
+            v: VAlign::Top,
+            width: 1000.0,
+            height: 240.0,
+            dx: 0.0,
+            dy: 200.0,
+            collapsed: false,
+        },
         notes: "HudDataFeed root is full screen; the box is #EventFeed (1000px wide, 200px from the top, from hud_data_feed.vcss_c) with an estimated height. Hidden during death replay.",
     },
     ElementSpec {
@@ -162,13 +236,24 @@ pub static ELEMENTS: &[ElementSpec] = &[
         selector: "#Chat",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 100,
-        vanilla: VanillaBox { h: HAlign::Center, v: VAlign::Bottom, width: 350.0, height: 240.0, dx: 0.0, dy: -200.0, collapsed: false },
+        vanilla: VanillaBox {
+            h: HAlign::Center,
+            v: VAlign::Bottom,
+            width: 350.0,
+            height: 240.0,
+            dx: 0.0,
+            dy: -200.0,
+            collapsed: false,
+        },
         notes: "350px wide (chat.vcss_c), 200px above the bottom; height is the 200px message area plus an estimated input row.",
     },
 ];
 
 pub fn spec(id: ElementId) -> &'static ElementSpec {
-    ELEMENTS.iter().find(|s| s.id == id).expect("every ElementId has a row in ELEMENTS")
+    ELEMENTS
+        .iter()
+        .find(|s| s.id == id)
+        .expect("every ElementId has a row in ELEMENTS")
 }
 
 #[cfg(test)]
@@ -185,7 +270,11 @@ mod tests {
         assert_eq!(ids.len(), 10);
         for s in ELEMENTS {
             assert_eq!(spec(s.id).selector, s.selector);
-            assert!(s.selector.starts_with('#'), "{:?} targets a hud.xml id", s.id);
+            assert!(
+                s.selector.starts_with('#'),
+                "{:?} targets a hud.xml id",
+                s.id
+            );
         }
     }
 }

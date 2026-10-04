@@ -226,7 +226,10 @@ pub fn minify(text: &str) -> Result<String, CssError> {
             i += 1;
             continue;
         }
-        let tight_after = matches!(out.as_bytes().last(), None | Some(b'{' | b'}' | b':' | b';' | b','));
+        let tight_after = matches!(
+            out.as_bytes().last(),
+            None | Some(b'{' | b'}' | b':' | b';' | b',')
+        );
         // At depth 0 a space before `:` separates a descendant from a pseudo-class (`.a :hover`).
         let tight_before = matches!(c, b'{' | b'}' | b';' | b',') || (c == b':' && depth > 0);
         if pending_space && !tight_after && !tight_before {
@@ -299,7 +302,10 @@ mod tests {
             rules[0].decls,
             vec![
                 ("width".to_string(), "10px".to_string()),
-                ("background-image".to_string(), "url(\"a;b{c.png\")".to_string()),
+                (
+                    "background-image".to_string(),
+                    "url(\"a;b{c.png\")".to_string()
+                ),
                 ("margin".to_string(), "0px 4px".to_string()),
             ]
         );
@@ -319,18 +325,27 @@ mod tests {
         let css = ".a #m{width:1px;height:2px}.b, #m {width:3px;opacity:.5}#mm{width:9px}";
         assert_eq!(
             decls_for(css, "#m").unwrap(),
-            vec![("width".into(), "3px".into()), ("opacity".into(), ".5".into())]
+            vec![
+                ("width".into(), "3px".into()),
+                ("opacity".into(), ".5".into())
+            ]
         );
         assert_eq!(
             decls_for(css, ".a   #m").unwrap(),
-            vec![("width".into(), "1px".into()), ("height".into(), "2px".into())]
+            vec![
+                ("width".into(), "1px".into()),
+                ("height".into(), "2px".into())
+            ]
         );
         assert_eq!(get(css, "#m", "width").as_deref(), Some("3px"));
     }
 
     #[test]
     fn emit() {
-        assert_eq!(emit_rule("#a", &[("opacity", "0.5".into())]), "#a{opacity:0.5;}");
+        assert_eq!(
+            emit_rule("#a", &[("opacity", "0.5".into())]),
+            "#a{opacity:0.5;}"
+        );
         assert_eq!(emit_rule("#a", &[]), "#a{}");
     }
 
@@ -362,7 +377,10 @@ mod tests {
                 })
                 .collect()
         };
-        assert_eq!(tight(parse_rules(&min).unwrap()), tight(parse_rules(&text).unwrap()));
+        assert_eq!(
+            tight(parse_rules(&min).unwrap()),
+            tight(parse_rules(&text).unwrap())
+        );
         assert!(min.len() < text.len());
         assert!(parse_rules(&text).unwrap().len() > 100);
     }
@@ -371,7 +389,10 @@ mod tests {
     fn vanilla_values() {
         let t = vanilla();
         assert_eq!(get(&t, "#minimap_persp", "width").as_deref(), Some("440px"));
-        assert_eq!(get(&t, "#minimap_persp", "height").as_deref(), Some("520px"));
+        assert_eq!(
+            get(&t, "#minimap_persp", "height").as_deref(),
+            Some("520px")
+        );
         assert_eq!(
             get(&t, "#health_and_abilities_container", "width").as_deref(),
             Some("250px")
@@ -383,9 +404,17 @@ mod tests {
     fn dump_vanilla_values() {
         let t = vanilla();
         for sel in [
-            "#minimap_persp", "#minimap_container", "#TopBar", "#hud_signature",
-            "#ActiveAbilitiesMenu", "#hud_passive_items", "#StatsAndModsContainer",
-            "#ammo_panel", "#DataFeed", "#Chat", "#AbilitiesContainer",
+            "#minimap_persp",
+            "#minimap_container",
+            "#TopBar",
+            "#hud_signature",
+            "#ActiveAbilitiesMenu",
+            "#hud_passive_items",
+            "#StatsAndModsContainer",
+            "#ammo_panel",
+            "#DataFeed",
+            "#Chat",
+            "#AbilitiesContainer",
             "#health_and_abilities_container",
         ] {
             println!("{sel}: {:?}", decls_for(&t, sel).unwrap());

@@ -623,7 +623,6 @@ pub fn base_picker(ui: &mut egui::Ui, state: &mut AppState) {
 }
 
 pub fn profile_picker(ui: &mut egui::Ui, state: &mut AppState) {
-    let saved = profiles::list(&state.profiles_dir());
     let mut picked = None;
     ui.label("Profile:");
     let name = if state.is_dirty() {
@@ -635,12 +634,12 @@ pub fn profile_picker(ui: &mut egui::Ui, state: &mut AppState) {
         .selected_text(name)
         .width(180.0)
         .show_ui(ui, |ui| {
-            for p in &saved {
+            for p in profiles::list(&state.profiles_dir()) {
                 if ui
                     .selectable_label(p.name == state.profile.name, &p.name)
                     .clicked()
                 {
-                    picked = Some((p.clone(), true));
+                    picked = Some((p, true));
                 }
             }
             ui.separator();

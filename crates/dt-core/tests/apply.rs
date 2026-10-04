@@ -195,9 +195,26 @@ fn target_takes_base_block_plus_edits_and_keeps_live_outside_convars() {
         !effective.contains_key(DENIED),
         "denylisted set is never written"
     );
-    assert_eq!(tgt.denied, vec![DENIED.to_string()]);
+    assert_eq!(
+        tgt.denied,
+        [
+            DENIED,
+            "citadel_use_pvs_for_players",
+            "minimap_trooper_update_rate_hz",
+            "r_citadel_npr_force_solid_outline",
+        ],
+        "the profile edit plus the denylisted values kaiz sets"
+    );
+    let stock = effective_values(VANILLA).unwrap();
+    for name in &tgt.denied {
+        assert_eq!(
+            effective.get(name),
+            stock.get(name),
+            "{name} is back to stock"
+        );
+    }
     for (name, value) in &base_effective {
-        if name != CHEAT_SET && name != LIVE_COMMENTED {
+        if name != CHEAT_SET && name != LIVE_COMMENTED && !tgt.denied.contains(name) {
             assert_eq!(
                 effective.get(name),
                 Some(value),
@@ -310,7 +327,19 @@ fn plan_buckets_follow_catalog_apply_classes() {
                 .is_some_and(|v| live.get(name.as_str()) == Some(&v));
             let queued = plan.queued_cheat.contains(name);
             let restart = plan.restart.contains(name);
-            match (value.is_some(), catalog().apply_class(name), in_sandbox) {
+            let ignored = plan.ignored.contains(name);
+            let class = catalog().apply_class(name);
+            let pushed = value.is_some()
+                && (class == ApplyClass::Live || (class == ApplyClass::LiveCheat && in_sandbox));
+            if !pushed && catalog().is_gameinfo_ignored(name) {
+                assert!(
+                    ignored && !in_live && !queued && !restart,
+                    "{name}: the game ignores it in gameinfo.gi"
+                );
+                continue;
+            }
+            assert!(!ignored, "{name} is not flagged gameinfo_cannot_override");
+            match (value.is_some(), class, in_sandbox) {
                 (false, _, _) => {
                     assert!(
                         restart && !in_live && !queued,
@@ -340,11 +369,12 @@ fn plan_buckets_follow_catalog_apply_classes() {
         );
         assert!(removed_count > 0, "kaiz comments out some stock convars");
         assert_eq!(
-            live.len() + plan.queued_cheat.len() + plan.restart.len(),
+            live.len() + plan.queued_cheat.len() + plan.restart.len() + plan.ignored.len(),
             seen,
             "every change lands in exactly one bucket"
         );
-        assert_eq!(plan.denied, vec![DENIED.to_string()]);
+        assert!(!plan.ignored.is_empty(), "kaiz sets r_shadows and friends");
+        assert_eq!(plan.denied.first().map(String::as_str), Some(DENIED));
         let write = plan.gameinfo.as_ref().unwrap();
         assert_eq!(write.path, install.paths.gameinfo);
         assert_eq!(write.before, VANILLA);
@@ -788,4 +818,28 @@ fn enabled_addon_installs_its_pak_mounts_addons_then_ranked_safe_removes_it() {
         None,
         "nothing enabled and nothing installed: no plan at all"
     );
+}
+
+#[test]
+fn no_preset_writes_a_denylisted_value() {
+    let stock = effective_values(VANILLA).unwrap();
+    for p in preset::all() {
+        let profile = Profile {
+            base: BaseRef::Preset(p.id),
+            convars: ConVarEdits::default(),
+            ..kaiz_profile()
+        };
+        let base = resolve_base(&profile).unwrap();
+        let tgt = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
+        for (name, value) in effective_values(&tgt.gameinfo).unwrap() {
+            if catalog().is_denied(&name) {
+                assert_eq!(
+                    stock.get(&name),
+                    Some(&value),
+                    "{:?} writes denylisted {name}",
+                    p.id
+                );
+            }
+        }
+    }
 }

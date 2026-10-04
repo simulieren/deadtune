@@ -2,7 +2,7 @@
 //!
 //! Pipeline: live files + profile -> `Target` (pure) -> `ApplyPlan` (pure) -> `execute` (effects).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -11,7 +11,7 @@ use crate::addons::{AddonError, AddonsConfig};
 use crate::backup::{BackupStore, FileKind, atomic_write};
 use crate::bridge::{Bridge, BridgeError, ConsoleCmd, Receipt};
 use crate::catalog::{ApplyClass, Catalog};
-use crate::gi::{self, GiError, Overrides};
+use crate::gi::{self, GiError, Override, Overrides};
 use crate::hud::install::{self as hud_install, HudAction, HudError, HudPlan, InstalledState};
 use crate::hud::{HudLayout, searchpaths};
 use crate::locate::GamePaths;
@@ -56,7 +56,8 @@ pub struct BaseTexts {
 pub struct Target {
     pub gameinfo: String,
     pub video: Option<String>,
-    /// Profile edits dropped because the convar is on the denylist.
+    /// Denylisted convars refused: profile edits dropped, and base preset values put back to
+    /// stock. Sorted.
     pub denied: Vec<String>,
     /// The HUD addon to write or remove, from [`hud_plan`].
     pub hud: Option<HudPlan>,
@@ -72,7 +73,10 @@ pub struct ApplyPlan {
     pub queued_cheat: Vec<String>,
     /// devonly/unknown changes, and removals with no known default; take effect next launch.
     pub restart: Vec<String>,
-    /// Profile edits refused because the convar is on the denylist.
+    /// Changes the engine will not take from gameinfo.gi (`gameinfo_cannot_override`). They are
+    /// written but do nothing, now or next launch.
+    pub ignored: Vec<String>,
+    /// Denylisted convars refused, from the profile or the base preset.
     pub denied: Vec<String>,
     pub gameinfo: Option<FileWrite>,
     pub video: Option<FileWrite>,
@@ -196,6 +200,8 @@ pub fn addons_plan(
 
 /// Base ConVars block swapped into the live gameinfo (so SearchPaths edits survive), then the
 /// profile's convar overrides minus denylisted names; base video settings + profile video edits.
+/// Denylisted convars the base sets away from the vanilla preset go back to the vanilla value,
+/// or are commented out when vanilla does not set them: presets carry some of them.
 /// When the HUD or addons plan needs it, `Game citadel/addons` is added to SearchPaths.
 pub fn target(
     live_gameinfo: &str,
@@ -211,7 +217,23 @@ pub fn target(
         .into_iter()
         .partition(|(name, _)| catalog.is_denied(name));
     let swapped = gi::replace_convars_block(live_gameinfo, &base.gameinfo)?;
-    let mut gameinfo = gi::apply_overrides(&swapped, &allowed)?.text;
+    let stock = gi::effective_values(preset::info(PresetId::Vanilla).pinned_gameinfo)?;
+    let base_denied: Overrides = gi::effective_values(&swapped)?
+        .into_iter()
+        .filter(|(name, value)| catalog.is_denied(name) && stock.get(name) != Some(value))
+        .map(|(name, _)| {
+            let back = stock
+                .get(&name)
+                .map_or(Override::Comment, |v| Override::Set(v.clone()));
+            (name, back)
+        })
+        .collect();
+    let refused: BTreeSet<String> = denied
+        .into_keys()
+        .chain(base_denied.keys().cloned())
+        .collect();
+    let overrides: Overrides = base_denied.into_iter().chain(allowed).collect();
+    let mut gameinfo = gi::apply_overrides(&swapped, &overrides)?.text;
     if hud.as_ref().is_some_and(|h| h.needs_search_path)
         || addons.as_ref().is_some_and(|a| a.needs_search_path)
     {
@@ -229,7 +251,7 @@ pub fn target(
     Ok(Target {
         gameinfo,
         video,
-        denied: denied.into_keys().collect(),
+        denied: refused.into_iter().collect(),
         hud,
         addons,
     })
@@ -268,6 +290,7 @@ pub fn plan(
             (Some(value), ApplyClass::LiveCheat) if ctx.in_sandbox => {
                 plan.live.push(cmd(name, value))
             }
+            _ if catalog.is_gameinfo_ignored(name) => plan.ignored.push(name.clone()),
             (Some(_), ApplyClass::LiveCheat) => plan.queued_cheat.push(name.clone()),
             (None, _) | (Some(_), ApplyClass::Restart) => plan.restart.push(name.clone()),
         }

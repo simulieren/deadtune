@@ -104,7 +104,13 @@ pub fn catalog(_: &Env, args: &Args) -> CliResult {
     let mut n = 0;
     for (name, e) in Catalog::embedded().search(&query) {
         n += 1;
-        let deny = if e.denylist { "  DENYLIST" } else { "" };
+        let deny = if e.denylist {
+            "  DENYLIST"
+        } else if e.gameinfo_ignored {
+            "  IGNORED-IN-GAMEINFO"
+        } else {
+            ""
+        };
         println!(
             "{name:<48} {:<10} impact={:<7} default={:<10} {}{deny}",
             format!("{:?}", e.apply),

@@ -350,7 +350,8 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
                         Page::Section(Section::Overview) => overview(ui, state, &mut edits),
                         Page::Section(Section::Hud) => crate::hud_view::hud(ui, state),
                         Page::Section(Section::Addons) => crate::addons_view::addons(ui, state),
-                        Page::Section(Section::Safety) => safety(ui, state),
+                        Page::Section(Section::System) => system(ui, state),
+                        Page::Section(Section::Safety) => safety(ui, state, &mut edits),
                         Page::Section(section) => {
                             settings_page(ui, state, section, inline_help, &mut edits)
                         }
@@ -386,6 +387,7 @@ fn section_changes(state: &AppState, section: Section) -> usize {
         Section::Overview => state.tweak_count(),
         Section::Hud => state.hud_changed_count(),
         Section::Addons => state.addons_enabled_count(),
+        Section::System => state.check_problems(),
         Section::Safety => 0,
         s => state.changed_count(friendly::section_names(s)),
     }
@@ -1056,6 +1058,14 @@ fn setting_row(
             if inline_help {
                 ui.label(RichText::new(row.help).small().color(WEAK));
             }
+            if entry.gameinfo_ignored {
+                ui.label(
+                    RichText::new("Deadlock ignores this in gameinfo.gi")
+                        .small()
+                        .color(WARN),
+                )
+                .on_hover_text("Ignored: the engine flags this gameinfo_cannot_override, so Deadlock skips it in gameinfo.gi. If it is cheat-flagged, the console still takes it in hideout or sandbox.");
+            }
             if changed {
                 let was = friendly::display(row.control, &preset);
                 ui.label(RichText::new(format!("Preset: {was}")).small().color(WEAK));
@@ -1426,7 +1436,18 @@ fn fps_meter(ui: &mut Ui, filled: usize) {
     }
 }
 
-fn safety(ui: &mut Ui, state: &mut AppState) {
+/// Runs the checks the first time the page opens, so there is always something to read.
+fn system(ui: &mut Ui, state: &mut AppState) {
+    if state.checks.is_none() && !state.checks_running() {
+        state.run_checks();
+    }
+    theme::card().show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        check_setup(ui, state, true);
+    });
+}
+
+fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     let wide = ui.available_width() >= 900.0;
     let undo = |ui: &mut Ui, state: &mut AppState| {
         theme::card().show(ui, |ui| {
@@ -1527,7 +1548,12 @@ fn safety(ui: &mut Ui, state: &mut AppState) {
     }
     theme::card().show(ui, |ui| {
         ui.set_width(ui.available_width());
-        check_setup(ui, state, true);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Something not working?").strong());
+            if ui.button("Open System check").clicked() {
+                edits.push(Edit::Go(Section::System));
+            }
+        });
     });
     ui.add_space(10.0);
     ui.label(

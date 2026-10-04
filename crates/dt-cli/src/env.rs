@@ -212,6 +212,10 @@ pub fn print_plan(plan: &ApplyPlan, diffs: bool) {
     print_list("queued until sandbox (cheat)", &plan.queued_cheat);
     print_list("next launch", &plan.restart);
     print_list("video settings", &video);
+    print_list(
+        "ignored by the game (gameinfo_cannot_override)",
+        &plan.ignored,
+    );
     print_list("refused (denylist)", &plan.denied);
     if let Some(hud) = &plan.hud {
         let action = match &hud.action {

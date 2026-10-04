@@ -72,6 +72,7 @@ pub fn show(_: &env::Env, args: &Args) -> CliResult {
 fn note(catalog: &Catalog, name: &str) -> String {
     match catalog.get(name) {
         Some(e) if e.denylist => "  (denylisted: will be refused)".into(),
+        Some(e) if e.gameinfo_ignored => "  (the game ignores it in gameinfo.gi)".into(),
         Some(e) => format!("  ({:?})", e.apply),
         None => "  (not in catalog: restart)".into(),
     }

@@ -645,6 +645,12 @@ fn convar_row(ui: &mut Ui, state: &AppState, name: &str) -> Option<Edit> {
                 BAD,
                 "Denylisted: it shows information competitive play should not have. DeadTune never changes it.",
             )
+        } else if state.catalog.is_gameinfo_ignored(name) {
+            (
+                "Ignored",
+                WARN,
+                "Ignored: the engine flags this gameinfo_cannot_override, so Deadlock skips it in gameinfo.gi. If it is cheat-flagged, the console still takes it in hideout or sandbox.",
+            )
         } else {
             match state.catalog.apply_class(name) {
                 ApplyClass::Live => (
@@ -883,6 +889,13 @@ fn pending(ui: &mut Ui, state: &mut AppState) {
         summary.next_launch,
         "next launch",
         &next_launch,
+    );
+    summary_row(
+        ui,
+        WARN,
+        summary.ignored,
+        "ignored by the game",
+        &plan.ignored,
     );
     summary_row(ui, BAD, summary.refused, "refused (denylist)", &plan.denied);
     if running && !plan.is_empty() {

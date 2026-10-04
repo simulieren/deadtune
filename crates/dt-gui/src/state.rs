@@ -179,11 +179,12 @@ pub enum Section {
     Performance,
     Hud,
     Addons,
+    System,
     Safety,
 }
 
 impl Section {
-    pub const ALL: [Section; 9] = [
+    pub const ALL: [Section; 10] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -192,6 +193,7 @@ impl Section {
         Section::Performance,
         Section::Hud,
         Section::Addons,
+        Section::System,
         Section::Safety,
     ];
 
@@ -205,6 +207,7 @@ impl Section {
             Section::Performance => "Performance",
             Section::Hud => "HUD",
             Section::Addons => "Addons",
+            Section::System => "System check",
             Section::Safety => "Safety & setup",
         }
     }
@@ -220,6 +223,9 @@ impl Section {
             Section::Hud => "Move and resize parts of the in-game HUD.",
             Section::Addons => {
                 "Community performance mods, rebuilt by DeadTune so they survive game updates."
+            }
+            Section::System => {
+                "Is everything set up for good FPS? Checks the game files, DeadTune and your Windows settings."
             }
             Section::Safety => "Undo, restore, ranked-safe mode and instant changes.",
         }
@@ -288,6 +294,8 @@ pub struct PlanSummary {
     pub queued: usize,
     /// Written to the files and read when Deadlock starts.
     pub next_launch: usize,
+    /// Written, but the engine does not take them from gameinfo.gi.
+    pub ignored: usize,
     /// Denylisted edits that are never written.
     pub refused: usize,
 }
@@ -302,6 +310,7 @@ impl PlanSummary {
                 + plan.video_changes.len()
                 + plan.addon_changes()
                 + (plan.live.len() - live_now),
+            ignored: plan.ignored.len(),
             refused: plan.denied.len(),
         }
     }
@@ -720,6 +729,16 @@ impl AppState {
             let _ = tx.send(dt_core::doctor::run(Some(&paths), &data_dir));
         });
         self.checks_rx = Some(rx);
+    }
+
+    /// Warnings and failures from the last system check, for the sidebar badge.
+    pub fn check_problems(&self) -> usize {
+        self.checks.as_ref().map_or(0, |checks| {
+            checks
+                .iter()
+                .filter(|c| c.status != dt_core::doctor::CheckStatus::Pass)
+                .count()
+        })
     }
 
     pub fn checks_running(&self) -> bool {
@@ -2238,6 +2257,7 @@ mod tests {
                 live_now: 0,
                 queued: 1,
                 next_launch: 2,
+                ignored: 0,
                 refused: 0
             },
             "game closed: live edits wait for launch too"
@@ -2252,6 +2272,12 @@ mod tests {
             ..ApplyPlan::default()
         };
         assert_eq!(PlanSummary::of(&refused, false).refused, 1);
+        let ignored = ApplyPlan {
+            ignored: vec!["r_shadows".into()],
+            ..ApplyPlan::default()
+        };
+        let ignored = PlanSummary::of(&ignored, false);
+        assert_eq!((ignored.ignored, ignored.next_launch), (1, 0));
     }
 
     #[test]

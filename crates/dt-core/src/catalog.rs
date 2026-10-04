@@ -58,6 +58,9 @@ pub struct CatalogEntry {
     pub impact: Impact,
     #[serde(default)]
     pub denylist: bool,
+    /// The engine flags it `gameinfo_cannot_override`: a `gameinfo.gi` line for it is ignored.
+    #[serde(default)]
+    pub gameinfo_ignored: bool,
     #[serde(default)]
     pub notes: String,
     /// Raw value per preset; a leading `//` means present but commented out.
@@ -133,6 +136,10 @@ impl Catalog {
     pub fn is_denied(&self, name: &str) -> bool {
         self.get(name).is_some_and(|e| e.denylist)
     }
+
+    pub fn is_gameinfo_ignored(&self, name: &str) -> bool {
+        self.get(name).is_some_and(|e| e.gameinfo_ignored)
+    }
 }
 
 /// Builds catalog.toml text from the research CSV and the hand-curated overlay.
@@ -163,6 +170,7 @@ fn entries_from_csv(csv: &str) -> Result<BTreeMap<String, CatalogEntry>, Catalog
     };
     let name_col = col("name")?;
     let apply_col = col("apply_class")?;
+    let flags_col = col("flags")?;
     let default_col = col("engine_default")?;
     let desc_col = col("engine_description")?;
     let comment_col = col("preset_comment(first seen)")?;
@@ -206,6 +214,9 @@ fn entries_from_csv(csv: &str) -> Result<BTreeMap<String, CatalogEntry>, Catalog
                 apply: apply_class_from_csv(cell(apply_col)),
                 impact: Impact::Unknown,
                 denylist: false,
+                gameinfo_ignored: cell(flags_col)
+                    .split(',')
+                    .any(|f| f.trim() == "gameinfo_cannot_override"),
                 notes: description.split_whitespace().collect::<Vec<_>>().join(" "),
                 presets,
             },
@@ -518,6 +529,19 @@ mod tests {
             c.apply_class("ai_disable"),
             ApplyClass::Restart,
             "unknown flags are treated as restart"
+        );
+    }
+
+    #[test]
+    fn gameinfo_ignored_follows_the_csv_flag() {
+        let c = generated("");
+        assert!(c.is_gameinfo_ignored("r_shadows"));
+        assert!(c.is_gameinfo_ignored("r_citadel_npr_outlines"));
+        assert!(!c.is_gameinfo_ignored("r_citadel_shadow_quality"));
+        assert!(!c.is_gameinfo_ignored("not_a_convar"));
+        assert_eq!(
+            c.entries.values().filter(|e| e.gameinfo_ignored).count(),
+            34
         );
     }
 

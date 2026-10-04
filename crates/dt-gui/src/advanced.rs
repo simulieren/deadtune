@@ -20,7 +20,7 @@ use crate::settings::{Settings, TargetSource, View};
 use crate::state::{
     AppState, PlanSummary, Scope, Setting, Status, Tab, bool_text, fmt_num, parse_bool,
 };
-use crate::theme::{ACCENT, BAD, BG, BORDER, CARD_HOVER, GOOD, RAIL, TEXT, WARN, WEAK};
+use crate::theme::{ACCENT, BAD, BG, BORDER, CARD_HOVER, GOOD, RAIL, TEXT, WARN, WEAK, semibold};
 use crate::views::{self, Edit};
 use crate::widgets::{self, caption};
 
@@ -364,7 +364,7 @@ fn footer(ui: &mut Ui, state: &AppState) {
             authors.dedup();
             ui.label(
                 RichText::new(format!(
-                    "DeadTune {} · GPL-3.0 · Presets by {}",
+                    "DeadTune {} · GPL-3.0 · Presets by {} · Inter font (OFL-1.1)",
                     env!("CARGO_PKG_VERSION"),
                     authors.join(", ")
                 ))
@@ -464,7 +464,8 @@ fn convar_table(ui: &mut Ui, state: &mut AppState) {
         ui.label(
             RichText::new(scope_title(&state.ui.scope))
                 .size(15.0)
-                .strong(),
+                .strong()
+                .family(semibold()),
         );
         let mut text = format!("{} convars", rows.len());
         if changed > 0 {
@@ -822,7 +823,12 @@ fn summary_row(ui: &mut Ui, color: Color32, count: usize, label: &str, names: &[
 
 fn pending(ui: &mut Ui, state: &mut AppState) {
     let mut action = None;
-    ui.label(RichText::new("Pending changes").size(15.0).strong());
+    ui.label(
+        RichText::new("Pending changes")
+            .size(15.0)
+            .strong()
+            .family(semibold()),
+    );
     let plan = match &state.preview {
         Err(e) => {
             ui.label(RichText::new(format!("Cannot build the plan: {e}")).color(BAD));

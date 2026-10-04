@@ -5,7 +5,7 @@ use eframe::egui::{
     StrokeKind, Ui, vec2,
 };
 
-use crate::theme::{ACCENT, BORDER, CARD, CARD_HOVER, ON_ACCENT, RAIL, TEXT, WEAK};
+use crate::theme::{ACCENT, BORDER, CARD, CARD_HOVER, ON_ACCENT, RAIL, TEXT, WEAK, semibold};
 
 /// Small uppercase caption above a group of rows.
 pub fn caption(ui: &mut Ui, text: &str) -> Response {
@@ -19,7 +19,13 @@ pub fn caption(ui: &mut Ui, text: &str) -> Response {
 
 /// Page title and a weak one-line subtitle, the same on every tab.
 pub fn page_title(ui: &mut Ui, title: &str, subtitle: &str) {
-    ui.label(RichText::new(title).size(18.0).strong().color(TEXT));
+    ui.label(
+        RichText::new(title)
+            .size(18.0)
+            .strong()
+            .family(semibold())
+            .color(TEXT),
+    );
     if !subtitle.is_empty() {
         ui.label(RichText::new(subtitle).small().color(WEAK));
     }
@@ -86,7 +92,11 @@ pub fn nav_item(
         rect.left_center() + vec2(12.0, 0.0),
         Align2::LEFT_CENTER,
         label,
-        FontId::proportional(12.5),
+        if selected {
+            FontId::new(12.5, semibold())
+        } else {
+            FontId::proportional(12.5)
+        },
         color,
     );
     let right = rect.right_center() - vec2(8.0, 0.0);

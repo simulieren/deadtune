@@ -25,3 +25,5 @@ tiny_http = { version = "0.12", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true
+# Already in the tree through epaint; the glyph test reads the Inter charmaps with it.
+skrifa = "0.44"

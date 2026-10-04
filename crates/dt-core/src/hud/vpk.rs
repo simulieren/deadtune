@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use super::crc32::crc32;
@@ -204,12 +204,7 @@ impl VpkDir {
     }
 
     fn archive_path(&self, index: u16) -> Result<PathBuf, VpkError> {
-        let name = self
-            .dir_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .and_then(|n| n.strip_suffix("_dir.vpk"))
-            .ok_or_else(|| VpkError::BadHeader("dir file name must end in _dir.vpk".into()))?;
+        let name = stem(&self.dir_path)?;
         Ok(self
             .dir_path
             .with_file_name(format!("{name}_{index:03}.vpk")))
@@ -232,52 +227,49 @@ fn parse_header(b: &[u8]) -> Result<(usize, usize), VpkError> {
     }
 }
 
-/// Where an entry's bytes come from when writing.
-#[derive(Clone, Debug)]
-pub enum Data<'a> {
-    Bytes(&'a [u8]),
-    /// An entry of another archive, streamed through without being held with the rest.
-    Copy {
-        from: &'a VpkDir,
-        path: &'a str,
-    },
-}
-
-impl Data<'_> {
-    fn crc_len(&self) -> Result<(u32, u32), VpkError> {
-        match self {
-            Data::Bytes(b) => Ok((crc32(b), b.len() as u32)),
-            Data::Copy { from, path } => {
-                let e = from
-                    .entries
-                    .get(*path)
-                    .ok_or_else(|| VpkError::Missing(path.to_string()))?;
-                Ok((e.crc, e.length + e.preload.len() as u32))
-            }
-        }
-    }
-}
-
 /// Builds a single-file VPK v2. Deterministic: same input, same bytes. The MD5
 /// section is zero-filled (QoL Lite ships this way and loads).
 pub fn write(files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
-    let data: BTreeMap<String, Data> = files
-        .iter()
-        .map(|(p, b)| (p.clone(), Data::Bytes(b)))
-        .collect();
-    let mut out = Vec::new();
-    write_with(&data, &mut out).expect("in-memory entries always resolve");
+    let mut data: Vec<u8> = Vec::new();
+    let mut entries = BTreeMap::new();
+    for (path, bytes) in files {
+        entries.insert(
+            path.clone(),
+            VpkEntry {
+                crc: crc32(bytes),
+                preload: Vec::new(),
+                archive_index: EMBEDDED,
+                offset: data.len() as u32,
+                length: bytes.len() as u32,
+            },
+        );
+        data.extend_from_slice(bytes);
+    }
+    let t = tree_bytes(&entries);
+    let mut out = Vec::with_capacity(HEADER_V2 + t.len() + data.len() + 48);
+    out.extend_from_slice(&header(&t, data.len()));
+    out.extend_from_slice(&t);
+    out.extend_from_slice(&data);
+    out.extend_from_slice(&[0u8; 48]);
     out
 }
 
-/// [`write`] for entries that may be copied from another archive. The tree lists
-/// every entry before any data, so copies are read twice: once for the tree (their
-/// crc and length come from the source tree) and once while streaming.
-pub fn write_with(files: &BTreeMap<String, Data>, out: &mut impl Write) -> Result<(), VpkError> {
-    // ext -> dir -> [(name, data)], BTreeMap keeps tree order sorted.
-    type Dirs<'a, 'b> = BTreeMap<&'a str, BTreeMap<&'a str, &'a Data<'b>>>;
+fn header(tree: &[u8], data_len: usize) -> [u8; HEADER_V2] {
+    let mut out = [0u8; HEADER_V2];
+    for (i, v) in [SIGNATURE, 2, tree.len() as u32, data_len as u32, 0, 48, 0]
+        .iter()
+        .enumerate()
+    {
+        out[4 * i..4 * i + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
+/// The directory tree: ext -> dir -> name, sorted, each name followed by its record.
+fn tree_bytes(entries: &BTreeMap<String, VpkEntry>) -> Vec<u8> {
+    type Dirs<'a> = BTreeMap<&'a str, BTreeMap<&'a str, &'a VpkEntry>>;
     let mut tree: BTreeMap<&str, Dirs> = BTreeMap::new();
-    for (path, data) in files {
+    for (path, e) in entries {
         let (dir, file) = path.rsplit_once('/').unwrap_or((BLANK, path));
         let dir = if dir.is_empty() { BLANK } else { dir };
         let (name, ext) = match file.rsplit_once('.') {
@@ -288,12 +280,9 @@ pub fn write_with(files: &BTreeMap<String, Data>, out: &mut impl Write) -> Resul
             .or_default()
             .entry(dir)
             .or_default()
-            .insert(name, data);
+            .insert(name, e);
     }
-
     let mut t: Vec<u8> = Vec::new();
-    let mut order: Vec<&Data> = Vec::new();
-    let mut total: u64 = 0;
     let cstr = |t: &mut Vec<u8>, s: &str| {
         t.extend_from_slice(s.as_bytes());
         t.push(0);
@@ -302,40 +291,167 @@ pub fn write_with(files: &BTreeMap<String, Data>, out: &mut impl Write) -> Resul
         cstr(&mut t, ext);
         for (dir, names) in dirs {
             cstr(&mut t, dir);
-            for (name, data) in names {
-                let (crc, len) = data.crc_len()?;
-                let offset = u32::try_from(total)
-                    .map_err(|_| VpkError::BadTree("data section exceeds 4 GiB".into()))?;
+            for (name, e) in names {
                 cstr(&mut t, name);
-                t.extend_from_slice(&crc.to_le_bytes());
-                t.extend_from_slice(&0u16.to_le_bytes());
-                t.extend_from_slice(&EMBEDDED.to_le_bytes());
-                t.extend_from_slice(&offset.to_le_bytes());
-                t.extend_from_slice(&len.to_le_bytes());
+                t.extend_from_slice(&e.crc.to_le_bytes());
+                t.extend_from_slice(&(e.preload.len() as u16).to_le_bytes());
+                t.extend_from_slice(&e.archive_index.to_le_bytes());
+                t.extend_from_slice(&e.offset.to_le_bytes());
+                t.extend_from_slice(&e.length.to_le_bytes());
                 t.extend_from_slice(&TERMINATOR.to_le_bytes());
-                total += u64::from(len);
-                order.push(data);
+                t.extend_from_slice(&e.preload);
             }
             t.push(0);
         }
         t.push(0);
     }
     t.push(0);
-    let data_len =
-        u32::try_from(total).map_err(|_| VpkError::BadTree("data section exceeds 4 GiB".into()))?;
+    t
+}
 
-    for v in [SIGNATURE, 2, t.len() as u32, data_len, 0, 48, 0] {
-        out.write_all(&v.to_le_bytes())?;
+/// Streams entries to disk as they arrive, so a multi-gigabyte archive never sits in
+/// memory. Data goes to `<stem>_000.vpk`, `<stem>_001.vpk`, ... (a new chunk once the
+/// current one passes `chunk_limit`), and `finish` writes `<stem>_dir.vpk`. When
+/// everything fit in one chunk, `finish` folds it into the dir file instead, which is
+/// the single-file shape every known addon uses. Dropping the writer before `finish`
+/// deletes what it wrote.
+pub struct VpkWriter {
+    dir_path: PathBuf,
+    chunk_limit: u64,
+    chunk: Option<File>,
+    chunk_index: u16,
+    chunk_len: u64,
+    entries: BTreeMap<String, VpkEntry>,
+    finished: bool,
+}
+
+impl VpkWriter {
+    /// Removes any `<stem>_dir.vpk` and `<stem>_NNN.vpk` already at `dir_path` first,
+    /// so a rerun never leaves stale chunks behind.
+    pub fn create(dir_path: &Path, chunk_limit: u64) -> Result<VpkWriter, VpkError> {
+        let stem = stem(dir_path)?;
+        if let Some(parent) = dir_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)?;
+            for entry in std::fs::read_dir(parent)? {
+                let entry = entry?;
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else { continue };
+                let Some(rest) = name.strip_prefix(&stem) else {
+                    continue;
+                };
+                let is_chunk = rest.len() == 8
+                    && rest.starts_with('_')
+                    && rest.ends_with(".vpk")
+                    && rest[1..4].bytes().all(|b| b.is_ascii_digit());
+                if is_chunk || rest == "_dir.vpk" {
+                    std::fs::remove_file(entry.path())?;
+                }
+            }
+        }
+        Ok(VpkWriter {
+            dir_path: dir_path.to_path_buf(),
+            chunk_limit,
+            chunk: None,
+            chunk_index: 0,
+            chunk_len: 0,
+            entries: BTreeMap::new(),
+            finished: false,
+        })
     }
-    out.write_all(&t)?;
-    for data in order {
-        match data {
-            Data::Bytes(b) => out.write_all(b)?,
-            Data::Copy { from, path } => out.write_all(&from.read(path)?)?,
+
+    pub fn add(&mut self, path: &str, data: &[u8]) -> Result<(), VpkError> {
+        use std::io::Write;
+        if self.chunk.is_some() && self.chunk_len + data.len() as u64 > self.chunk_limit {
+            self.chunk = None;
+            self.chunk_index += 1;
+            self.chunk_len = 0;
+        }
+        let file = match &mut self.chunk {
+            Some(f) => f,
+            None => self
+                .chunk
+                .insert(File::create(self.chunk_path(self.chunk_index))?),
+        };
+        file.write_all(data)?;
+        self.entries.insert(
+            path.to_string(),
+            VpkEntry {
+                crc: crc32(data),
+                preload: Vec::new(),
+                archive_index: self.chunk_index,
+                offset: self.chunk_len as u32,
+                length: data.len() as u32,
+            },
+        );
+        self.chunk_len += data.len() as u64;
+        Ok(())
+    }
+
+    pub fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Writes the dir file and returns every file that makes up the archive.
+    pub fn finish(mut self) -> Result<Vec<PathBuf>, VpkError> {
+        use std::io::Write;
+        let fold = self.chunk_index == 0;
+        if fold {
+            for e in self.entries.values_mut() {
+                e.archive_index = EMBEDDED;
+            }
+        }
+        let tree = tree_bytes(&self.entries);
+        let mut dir = std::io::BufWriter::new(File::create(&self.dir_path)?);
+        dir.write_all(&header(
+            &tree,
+            if fold { self.chunk_len as usize } else { 0 },
+        ))?;
+        dir.write_all(&tree)?;
+        let mut files = vec![self.dir_path.clone()];
+        if fold {
+            let chunk = self.chunk_path(0);
+            self.chunk = None;
+            if self.chunk_len > 0 {
+                std::io::copy(&mut File::open(&chunk)?, &mut dir)?;
+            }
+            std::fs::remove_file(chunk)?;
+        } else {
+            files.extend((0..=self.chunk_index).map(|i| self.chunk_path(i)));
+        }
+        dir.write_all(&[0u8; 48])?;
+        dir.flush()?;
+        self.finished = true;
+        Ok(files)
+    }
+
+    fn chunk_path(&self, index: u16) -> PathBuf {
+        let stem = stem(&self.dir_path).expect("validated in create");
+        self.dir_path
+            .with_file_name(format!("{stem}_{index:03}.vpk"))
+    }
+}
+
+impl Drop for VpkWriter {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        self.chunk = None;
+        let _ = std::fs::remove_file(&self.dir_path);
+        for i in 0..=self.chunk_index {
+            let _ = std::fs::remove_file(self.chunk_path(i));
         }
     }
-    out.write_all(&[0u8; 48])?;
-    Ok(())
+}
+
+fn stem(dir_path: &Path) -> Result<String, VpkError> {
+    dir_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_suffix("_dir.vpk"))
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| VpkError::BadHeader("dir file name must end in _dir.vpk".into()))
 }
 
 #[cfg(test)]
@@ -377,51 +493,6 @@ mod tests {
     }
 
     #[test]
-    fn copies_entries_from_another_archive_byte_for_byte() {
-        let dir = tempfile::tempdir().unwrap();
-        let src_path = dir.path().join("src_dir.vpk");
-        std::fs::write(&src_path, write(&sample())).unwrap();
-        let src = VpkDir::open(&src_path).unwrap();
-        let own = b"fresh".to_vec();
-        let files = BTreeMap::from([
-            (
-                "a/b/c/deep.vcss_c".to_string(),
-                Data::Copy {
-                    from: &src,
-                    path: "a/b/c/deep.vcss_c",
-                },
-            ),
-            ("new/own.txt".to_string(), Data::Bytes(&own)),
-            (
-                "empty.bin".to_string(),
-                Data::Copy {
-                    from: &src,
-                    path: "empty.bin",
-                },
-            ),
-        ]);
-        let mut out = Vec::new();
-        write_with(&files, &mut out).unwrap();
-        let expected = write(&BTreeMap::from([
-            ("a/b/c/deep.vcss_c".to_string(), vec![7u8; 1000]),
-            ("new/own.txt".to_string(), own),
-            ("empty.bin".to_string(), Vec::new()),
-        ]));
-        assert_eq!(out, expected);
-        let missing = BTreeMap::from([(
-            "x".to_string(),
-            Data::Copy {
-                from: &src,
-                path: "nope",
-            },
-        )]);
-        assert!(matches!(
-            write_with(&missing, &mut Vec::new()),
-            Err(VpkError::Missing(_))
-        ));
-    }
-
-    #[test]
     fn real_fixture() {
         let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hud/blur_pak97_dir.vpk");
         let vpk = VpkDir::open(&p).unwrap();
@@ -458,6 +529,72 @@ mod tests {
         std::fs::write(&p, &bytes).unwrap();
         let vpk = VpkDir::open(&p).unwrap();
         assert_eq!(vpk.read("dir/name.txt").unwrap(), b"PRE hello world");
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn writer_folds_single_chunk_into_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("pak78_dir.vpk");
+        std::fs::write(dir.path().join("pak78_003.vpk"), b"stale").unwrap();
+        std::fs::write(dir.path().join("pak78_dir.vpk"), b"stale").unwrap();
+        std::fs::write(dir.path().join("pak79_000.vpk"), b"other").unwrap();
+        let files = sample();
+        let mut w = VpkWriter::create(&p, 1 << 20).unwrap();
+        assert_eq!(names(dir.path()), ["pak79_000.vpk"]);
+        for (path, data) in &files {
+            w.add(path, data).unwrap();
+        }
+        assert_eq!(w.entry_count(), files.len());
+        let written = w.finish().unwrap();
+        assert_eq!(written, std::slice::from_ref(&p));
+        assert_eq!(names(dir.path()), ["pak78_dir.vpk", "pak79_000.vpk"]);
+        assert_eq!(std::fs::read(&p).unwrap(), write(&files));
+    }
+
+    #[test]
+    fn writer_splits_into_chunks() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("pak78_dir.vpk");
+        let files = sample();
+        let mut w = VpkWriter::create(&p, 1000).unwrap();
+        for (path, data) in &files {
+            w.add(path, data).unwrap();
+        }
+        let written = w.finish().unwrap();
+        assert_eq!(written.len(), 3, "{written:?}");
+        assert_eq!(
+            names(dir.path()),
+            ["pak78_000.vpk", "pak78_001.vpk", "pak78_dir.vpk"]
+        );
+        let vpk = VpkDir::open(&p).unwrap();
+        assert_eq!(vpk.entries.len(), files.len());
+        for (path, data) in &files {
+            assert_eq!(&vpk.read(path).unwrap(), data, "{path}");
+        }
+        assert!(vpk.entries["a/b/c/deep.vcss_c"].archive_index != EMBEDDED);
+        assert_eq!(u32_at(&std::fs::read(&p).unwrap(), 12), 0);
+    }
+
+    #[test]
+    fn writer_drop_removes_partial_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("pak78_dir.vpk");
+        let mut w = VpkWriter::create(&p, 10).unwrap();
+        w.add("a.txt", b"hello world").unwrap();
+        w.add("b.txt", b"second chunk").unwrap();
+        assert_eq!(names(dir.path()), ["pak78_000.vpk", "pak78_001.vpk"]);
+        drop(w);
+        assert!(names(dir.path()).is_empty());
+        assert!(VpkWriter::create(&dir.path().join("nope.vpk"), 10).is_err());
     }
 
     #[test]

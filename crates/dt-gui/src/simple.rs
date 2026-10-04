@@ -96,7 +96,12 @@ fn card(ui: &mut Ui, selected: bool, title: &str, author: &str, blurb: &str) -> 
         ui.vertical(|ui| {
             ui.set_width(CARD_WIDTH);
             ui.set_height(CARD_HEIGHT);
-            ui.label(RichText::new(title).size(16.0).strong());
+            ui.label(
+                RichText::new(title)
+                    .size(16.0)
+                    .strong()
+                    .family(theme::semibold()),
+            );
             if !author.is_empty() {
                 ui.weak(format!("by {author}"));
             }
@@ -148,7 +153,12 @@ fn pick_start(ui: &mut Ui, state: &mut AppState, choice: Option<StartChoice>) {
     ui.colored_label(GOOD, RichText::new("Found Deadlock").size(18.0))
         .on_hover_text(state.paths.game_root.display().to_string());
     ui.add_space(12.0);
-    ui.label(RichText::new("Pick a starting preset").size(18.0).strong());
+    ui.label(
+        RichText::new("Pick a starting preset")
+            .size(18.0)
+            .strong()
+            .family(theme::semibold()),
+    );
     ui.weak("You can fine-tune everything afterwards.");
     let mut picked = None;
     let columns = ((ui.available_width() / (CARD_WIDTH + 44.0)) as usize).max(1);
@@ -545,7 +555,11 @@ fn nav_item(ui: &mut Ui, section: Section, selected: bool, changes: usize) -> bo
         rect.left_center() + vec2(14.0, 0.0),
         Align2::LEFT_CENTER,
         section.label(),
-        FontId::proportional(14.0),
+        if selected {
+            FontId::new(14.0, theme::semibold())
+        } else {
+            FontId::proportional(14.0)
+        },
         color,
     );
     if changes > 0 {
@@ -1324,7 +1338,12 @@ fn help(ui: &mut Ui, state: &AppState, page: Page) {
     let section = friendly::section_of(row.name).map_or("", Section::label);
     let group = friendly::group_of(row.name).map_or("", |g| g.title);
     caption(ui, &format!("{section} · {group}"));
-    ui.label(RichText::new(row.label).size(20.0).strong());
+    ui.label(
+        RichText::new(row.label)
+            .size(20.0)
+            .strong()
+            .family(theme::semibold()),
+    );
     ui.add_space(8.0);
     let (bars, word, tip) = match state
         .catalog
@@ -1488,7 +1507,7 @@ fn safety(ui: &mut Ui, state: &mut AppState) {
     });
     ui.add_space(10.0);
     ui.label(
-        RichText::new("DeadTune is free software (GPL-3.0). Presets by their authors, credited in Advanced view > Settings.")
+        RichText::new("DeadTune is free software (GPL-3.0). Presets by their authors, credited in Advanced view > Settings. Inter font under the SIL OFL 1.1.")
             .small()
             .color(WEAK),
     );

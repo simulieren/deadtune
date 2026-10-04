@@ -737,7 +737,12 @@ fn inspector(ui: &mut Ui, state: &AppState, min_height: f32, actions: &mut Vec<A
             let edit = state.hud_edit(id);
             let mut next = edit.clone();
             caption(ui, "Element");
-            ui.label(RichText::new(spec.label).size(16.0).strong());
+            ui.label(
+                RichText::new(spec.label)
+                    .size(16.0)
+                    .strong()
+                    .family(theme::semibold()),
+            );
             ui.label(RichText::new(blurb(id)).small().color(WEAK))
                 .on_hover_text(spec.notes);
             ui.add_space(8.0);

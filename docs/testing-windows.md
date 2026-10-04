@@ -118,6 +118,31 @@ Work through this on the gaming PC, top to bottom. Each item is something we cou
 - [ ] Laptop: power source shows AC vs battery correctly, and the auto power profile switches before launch.
 - [ ] Phone remote (built with `--features remote`): reachable from a phone through Windows Firewall, on the right network adapter.
 
+### 10. Texture downscale (developer example, no GUI yet)
+
+DeadTune builds its own low-VRAM textures from the game's files: it drops the largest mip levels of each `.vtex_c` in `pak01` and writes the smaller copies into `game\citadel\addons\pak78_dir.vpk` (plus `pak78_000.vpk`, `pak78_001.vpk`, ... when the output passes 256 MB). The game files are never written, so there is no backup to make. Deleting those `pak78` files restores full quality.
+
+Build and run from a checkout (needs Rust):
+
+```powershell
+cargo run --release -p dt-core --example texture_downscale -- "C:\Program Files (x86)\Steam\steamapps\common\Deadlock" --list
+cargo run --release -p dt-core --example texture_downscale -- "C:\Program Files (x86)\Steam\steamapps\common\Deadlock" --install
+```
+
+`--quarter` drops two levels instead of one. `--all` includes UI and unclassified textures, `--lighting` includes lightmaps and other baked lighting (the suspected cause of the bright white map). The run prints how many textures it reduced, what it skipped and why, and reminds you if `gameinfo.gi` lacks `Game citadel/addons`.
+
+- [ ] `--list` runs and the category split looks right: hero textures under "heroes", particles under "particles", HUD images under "ui". Paste the output (or the surprising lines) into the notes.
+- [ ] `--install` finishes. Note the time, the "replaced X of originals with Y of copies" line, and the file sizes in `game\citadel\addons`.
+- [ ] If any texture from pak01 is reported as "malformed", send one such file: that is the compressed-mip layout we could not test on the Mac.
+- [ ] Deadlock launches with the addon mounted (console shows no texture errors at map load).
+- [ ] Textures look half-resolution up close (props, hero skins) and the map is NOT washed out white. If it is, rerun with `--list` and report which lighting-looking paths were reduced.
+- [ ] VRAM drops: compare the GPU memory counter (Task Manager or `mat_texture_list` in the console) with and without the addon in the same spot.
+- [ ] No pop-in or textures that never sharpen (texture streaming still works with fewer mips).
+- [ ] `--quarter --install` repeats the above with a stronger effect.
+- [ ] Delete the `pak78*` files, relaunch: full quality is back.
+- [ ] A multi-file output (`pak78_dir.vpk` plus `pak78_000.vpk`) mounts. Half size on a full game should produce one.
+- [ ] Matchmaking still queues with the addon mounted (same question as **H0-4**).
+
 ### 10. Developer checks (repo checkout on Windows)
 - [ ] `cargo test --workspace --all-features` passes, including the Windows-only `push_uses_crlf_on_windows`.
 - [ ] With `core.autocrlf=true`, a fresh clone still passes the catalog drift test.

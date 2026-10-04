@@ -1,0 +1,8 @@
+[elements.minimap]
+scale_pct = 130
+[elements.top_bar]
+offset_y = 20
+[elements.chat]
+opacity_pct = 60
+[elements.passive_items]
+visibility = "shown"

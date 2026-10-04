@@ -7,6 +7,7 @@ pub mod bench;
 pub mod bridge;
 pub mod catalog;
 pub mod gi;
+pub mod hud;
 pub mod launch;
 pub mod locate;
 pub mod power;

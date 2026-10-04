@@ -140,7 +140,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         supply(
             root.path(),
-            "ucsi-source-psy-USBC000:001",
+            "ucsi-source-psy-USBC000-001",
             &[("type", "USB"), ("online", "1")],
         );
         supply(

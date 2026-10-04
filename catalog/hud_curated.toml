@@ -1,0 +1,1005 @@
+# Curated input for gen_hud_catalog. Section keys are convar names.
+# category: label after "HUD: ". element: ElementId in snake_case, omitted for HUD-wide entries.
+# Optional: type, range, step, impact, denylist, notes (appended to the dump description).
+# Regenerate: cargo run -p dt-core --example gen_hud_catalog
+
+# Ability slots
+[citadel_show_active_slot_popup]
+category = "Ability slots"
+element = "ability_slots"
+impact = "low"
+
+[cl_citadel_ability_alt_cast_hold_time]
+category = "Ability slots"
+element = "ability_slots"
+impact = "low"
+
+[cl_citadel_ability_alt_cast_instant_cast_double_tap_timeout]
+category = "Ability slots"
+element = "ability_slots"
+impact = "low"
+
+[cl_citadel_ability_alt_cast_mode]
+category = "Ability slots"
+element = "ability_slots"
+impact = "low"
+
+[cl_citadel_cancel_with_ability_key_enabled]
+category = "Ability slots"
+element = "ability_slots"
+impact = "low"
+
+[cl_citadel_quickcast_ability1]
+category = "Ability slots"
+element = "ability_slots"
+impact = "low"
+
+[cl_citadel_quickcast_ability2]
+category = "Ability slots"
+element = "ability_slots"
+impact = "low"
+
+[cl_citadel_quickcast_ability3]
+category = "Ability slots"
+element = "ability_slots"
+impact = "low"
+
+[cl_citadel_quickcast_ability4]
+category = "Ability slots"
+element = "ability_slots"
+impact = "low"
+
+# Chat
+[chat_max_messages]
+category = "Chat"
+element = "chat"
+impact = "low"
+
+[chat_sequence_max_messages]
+category = "Chat"
+element = "chat"
+impact = "low"
+
+[chat_sequence_within_seconds]
+category = "Chat"
+element = "chat"
+impact = "low"
+
+[chat_top_bar_max_messages]
+category = "Chat"
+element = "chat"
+impact = "low"
+
+[chat_top_bar_max_messages_per_player]
+category = "Chat"
+element = "chat"
+impact = "low"
+
+[citadel_chat_fade_time]
+category = "Chat"
+element = "chat"
+impact = "low"
+
+[citadel_chat_fade_time_extension]
+category = "Chat"
+element = "chat"
+impact = "low"
+
+[citadel_text_chat_enabled]
+category = "Chat"
+element = "chat"
+impact = "low"
+
+[deadlock_chat_mode]
+category = "Chat"
+element = "chat"
+impact = "low"
+
+# Crosshair
+[citadel_crosshair_color_b]
+category = "Crosshair"
+range = [0, 255]
+step = 1
+impact = "low"
+
+[citadel_crosshair_color_g]
+category = "Crosshair"
+range = [0, 255]
+step = 1
+impact = "low"
+
+[citadel_crosshair_color_r]
+category = "Crosshair"
+range = [0, 255]
+step = 1
+impact = "low"
+
+[citadel_crosshair_disable_hero_specific_crosshairs]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_dot_opacity]
+category = "Crosshair"
+range = [0, 1]
+step = 0.05
+type = "float"
+impact = "low"
+
+[citadel_crosshair_dot_outline_border]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_dot_outline_gap]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_dot_outline_opacity]
+category = "Crosshair"
+range = [0, 1]
+step = 0.05
+type = "float"
+impact = "low"
+
+[citadel_crosshair_dot_size]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_hit_marker_duration]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_outline_color_b]
+category = "Crosshair"
+range = [0, 255]
+step = 1
+impact = "low"
+
+[citadel_crosshair_outline_color_g]
+category = "Crosshair"
+range = [0, 255]
+step = 1
+impact = "low"
+
+[citadel_crosshair_outline_color_r]
+category = "Crosshair"
+range = [0, 255]
+step = 1
+impact = "low"
+
+[citadel_crosshair_pip_gap]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_pip_gap_static]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_pip_height]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_pip_opacity]
+category = "Crosshair"
+range = [0, 1]
+step = 0.05
+type = "float"
+impact = "low"
+
+[citadel_crosshair_pip_outline_border]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_pip_outline_gap]
+category = "Crosshair"
+impact = "low"
+
+[citadel_crosshair_pip_outline_opacity]
+category = "Crosshair"
+range = [0, 1]
+step = 0.05
+type = "float"
+impact = "low"
+
+[citadel_crosshair_pip_width]
+category = "Crosshair"
+impact = "low"
+
+# Damage numbers
+[citadel_damage_indicator_enemy_display_time]
+category = "Damage numbers"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_damage_indicator_height]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_indicator_radius]
+category = "Damage numbers"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_damage_indicator_width]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_offscreen_indicator_disabled]
+category = "Damage numbers"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_damage_radar_enemy_display_time]
+category = "Damage numbers"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_damage_report_enable]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_report_show_adjusted_percent_min]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_report_show_always]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_summary_max_entries]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_summary_show_time]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_batching_window_ability]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_batching_window_bullet]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_batching_window_cumulative]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_batching_window_pure]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_distance_far]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_distance_near]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_height_offset_far]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_height_offset_near]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_lifetime]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_lifetime_new]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_new_ability_offset_x]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_new_ability_offset_y]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_new_bullet_offset_x]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_new_bullet_offset_y]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_new_melee_offset_x]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_new_melee_offset_y]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_new_pure_offset_x]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_new_pure_offset_y]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_new_x_offset]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_show_effectiveness]
+category = "Damage numbers"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_damage_text_spacing]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_x_offset_far]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_damage_text_x_offset_near]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_gold_text_height_offset]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_hud_damage_counter_duration]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_hud_heal_counter_duration]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_item_used_text_height_offset]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_modifier_history_show_time]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_show_falloff_in_world]
+category = "Damage numbers"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_show_modifier_history]
+category = "Damage numbers"
+impact = "low"
+denylist = true
+notes = "Shows the modifier history of other units; reveals enemy buffs and debuffs."
+
+[citadel_ui_damage_impact_duration]
+category = "Damage numbers"
+type = "float"
+impact = "low"
+
+[citadel_ui_damage_impact_duration_fadeindelay]
+category = "Damage numbers"
+type = "float"
+impact = "low"
+
+[citadel_ui_damage_impact_duration_fadeoutdelay]
+category = "Damage numbers"
+type = "float"
+impact = "low"
+
+[citadel_ui_damage_impact_kill_duration]
+category = "Damage numbers"
+type = "float"
+impact = "low"
+
+[citadel_ui_damage_impact_min_max_shield_width]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_ui_damage_impact_show_for_everything]
+category = "Damage numbers"
+impact = "low"
+
+[citadel_ui_damage_impact_status_minimum_duration]
+category = "Damage numbers"
+impact = "low"
+
+[cl_ent_show_damage]
+category = "Damage numbers"
+type = "bool"
+impact = "low"
+denylist = true
+notes = "Debug damage readout for entities; exposes damage events not shown in normal play."
+
+[damage_indicator_safe_area]
+category = "Damage numbers"
+impact = "low"
+
+[hud_damagemeter]
+category = "Damage numbers"
+impact = "low"
+notes = "Competitive info, review."
+
+[hud_damagemeter_ooctimer]
+category = "Damage numbers"
+impact = "low"
+
+# Global
+[citadel_hud_exclusive_visible_id]
+category = "Global"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_hud_visible]
+category = "Global"
+impact = "low"
+
+[citadel_zipline_arrow_scale]
+category = "Global"
+type = "float"
+impact = "low"
+
+[citadel_zipline_show_enemy_boosting]
+category = "Global"
+impact = "low"
+denylist = true
+notes = "Shows enemy zipline boosting; reveals enemy movement state."
+
+[cl_auto_cursor_scale]
+category = "Global"
+impact = "low"
+
+[cl_cursor_scale]
+category = "Global"
+type = "float"
+impact = "low"
+
+[cl_drawhud]
+category = "Global"
+impact = "low"
+
+[cl_hud_telemetry_frametime_poor]
+category = "Global"
+impact = "low"
+
+[cl_hud_telemetry_frametime_show]
+category = "Global"
+impact = "low"
+
+[cl_hud_telemetry_net_detailed]
+category = "Global"
+impact = "low"
+
+[cl_hud_telemetry_net_misdelivery_poor]
+category = "Global"
+impact = "low"
+
+[cl_hud_telemetry_net_misdelivery_show]
+category = "Global"
+impact = "low"
+
+[cl_hud_telemetry_net_quality_graph_show]
+category = "Global"
+impact = "low"
+
+[cl_hud_telemetry_ping_poor]
+category = "Global"
+impact = "low"
+
+[cl_hud_telemetry_ping_show]
+category = "Global"
+impact = "low"
+
+[cl_hud_telemetry_serverrecvmargin_graph_show]
+category = "Global"
+impact = "low"
+
+[cl_showfps]
+category = "Global"
+impact = "low"
+
+[closecaption]
+category = "Global"
+impact = "low"
+
+# Item slots
+[cl_citadel_items_quickcast_mode]
+category = "Item slots"
+element = "item_slots"
+impact = "low"
+
+# Kill feed
+[citadel_commend_toast_enemy_seconds]
+category = "Kill feed"
+element = "kill_feed"
+impact = "low"
+
+[citadel_commend_toast_seconds]
+category = "Kill feed"
+element = "kill_feed"
+impact = "low"
+
+[citadel_show_all_purchase_toasts]
+category = "Kill feed"
+element = "kill_feed"
+impact = "low"
+
+[citadel_show_seasonal_kill_toast]
+category = "Kill feed"
+element = "kill_feed"
+type = "bool"
+impact = "low"
+
+[toast_manager_override_duration]
+category = "Kill feed"
+element = "kill_feed"
+impact = "low"
+
+# Minimap
+[citadel_default_minimap_icon_radius]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_generator_minimap_icon_radius]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_arrow_show_distance_down]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_arrow_show_distance_up]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_draw_fow]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+denylist = true
+notes = "Draws fog of war on the minimap; reveals enemy vision information."
+
+[citadel_minimap_koth_trooper_size]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_local_player_width]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_max_icon_shrink]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_npc_reveal_duration]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+denylist = true
+notes = "Controls how long NPCs stay revealed on the minimap; changes visible enemy information."
+
+[citadel_minimap_objective_damaged_reveal_duration]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+denylist = true
+notes = "Controls how long a damaged objective stays revealed on the minimap; changes visible enemy information."
+
+[citadel_minimap_overlap_scan_distance]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+denylist = true
+notes = "Alters minimap scan distance for overlapping units; kept off for ranked safety."
+
+[citadel_minimap_player_width]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_teleporter_active_dist]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_teleporter_height_dist]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_teleporter_nearby_dist]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_trooper_size]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_unit_click_radius]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_minimap_use_effects]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_minimap_zip_line_thickness]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_render_minimap]
+category = "Minimap"
+element = "minimap"
+type = "bool"
+impact = "low"
+
+[citadel_show_minimap_reveal_indicators]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+denylist = true
+notes = "Shows reveal indicators on the minimap; exposes what the enemy team sees."
+
+[citadel_tier1_minimap_icon_radius]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[citadel_use_new_minimap]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+
+[minimap_add_glow_modifier]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+denylist = true
+notes = "Adds minimap glow for modifiers; can expose enemy buff state."
+
+[minimap_update_rate_hz]
+category = "Minimap"
+element = "minimap"
+impact = "low"
+denylist = true
+notes = "Server-side minimap update rate; changing it alters how fresh enemy positions are."
+
+# Overhead bars
+[citadel_healthbars_enabled]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_hud_healthbars_use_new]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_hud_healthbars_use_v2]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_hud_objective_health_enabled]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_hud_objective_health_idle_timeout]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_hud_objective_health_lane_max_range]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_hud_objective_health_t1_max_range]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_hud_objective_health_t2_max_range]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_allies_see_thru_walls]
+category = "Overhead bars"
+impact = "low"
+denylist = true
+notes = "Overhead bars through walls; reveals positions."
+
+[citadel_unit_status_allies_see_thru_walls_max_distance]
+category = "Overhead bars"
+impact = "low"
+denylist = true
+notes = "Range of through-wall overhead bars; reveals positions."
+
+[citadel_unit_status_delta_decay_delay]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_delta_decay_rate]
+category = "Overhead bars"
+type = "float"
+impact = "low"
+
+[citadel_unit_status_dpi]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_draw_local]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_enabled]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_fadeout_dist]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_health_per_minor_pip]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_health_per_pip]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_health_pips_per_row]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_healthbar_highlight_speed]
+category = "Overhead bars"
+type = "float"
+impact = "low"
+
+[citadel_unit_status_height]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_hide_names]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_max_distance_distance]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_max_distance_scale]
+category = "Overhead bars"
+type = "float"
+impact = "low"
+
+[citadel_unit_status_max_health_per_bar]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_max_health_segment_increment]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_max_health_segments]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_max_total_bars]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_min_distance_scale]
+category = "Overhead bars"
+type = "float"
+impact = "low"
+
+[citadel_unit_status_minor_pip_per_major_pip]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_old_dpi]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_old_draw_local]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_old_fadeout_dist]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_old_health_pips_per_row]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_old_height]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_old_hide_names]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_old_opaque_dist_sq]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_old_show_stats]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_old_transparent_dist_sq]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_old_update_rate]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_old_width]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_opaque_dist_sq]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_recent_damage_time]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_show_stats]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_single_bar_mode]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_stamina_consume_linger]
+category = "Overhead bars"
+impact = "low"
+denylist = true
+notes = "Shows enemy stamina use over their head; reveals enemy movement resources."
+
+[citadel_unit_status_transparent_dist_sq]
+category = "Overhead bars"
+impact = "low"
+notes = "Competitive info, review."
+
+[citadel_unit_status_use_new]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_use_v2]
+category = "Overhead bars"
+impact = "low"
+denylist = true
+notes = "Switches to the v2 overhead bars, which carry extra enemy status (stamina, intents)."
+
+[citadel_unit_status_use_v2_for_nonplayers]
+category = "Overhead bars"
+impact = "low"
+denylist = true
+notes = "v2 overhead bars on non-player units; carries extra status information."
+
+[citadel_unit_status_v2_height]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_v2_width]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_unit_status_width]
+category = "Overhead bars"
+impact = "low"
+
+[citadel_use_vertical_healthbars]
+category = "Overhead bars"
+impact = "low"
+
+[r_citadel_glow_health_bars]
+category = "Overhead bars"
+impact = "low"
+denylist = true
+notes = "Glowing health bars visible through geometry; reveals enemy positions."
+
+# Player stats
+[citadel_always_show_active_hud_stats]
+category = "Player stats"
+element = "player_stats"
+impact = "low"
+
+[citadel_hide_modifier_bars_on_left_hud]
+category = "Player stats"
+element = "player_stats"
+impact = "low"
+
+[citadel_show_movement_speed_in_units]
+category = "Player stats"
+element = "player_stats"
+impact = "low"
+
+[citadel_show_movespeed_on_hud]
+category = "Player stats"
+element = "player_stats"
+impact = "low"
+
+# Top bar
+[citadel_announcement_banned_heroes_display_time]
+category = "Top bar"
+element = "top_bar"
+impact = "low"
+
+[citadel_announcement_display_time]
+category = "Top bar"
+element = "top_bar"
+impact = "low"
+
+[citadel_announcement_game_over_msg_display_time]
+category = "Top bar"
+element = "top_bar"
+impact = "low"
+
+[citadel_hud_announcement_display_time_all_queued]
+category = "Top bar"
+element = "top_bar"
+impact = "low"
+
+[citadel_hud_announcement_display_time_max]
+category = "Top bar"
+element = "top_bar"
+impact = "low"
+
+[citadel_hud_announcement_force_single_levelup]
+category = "Top bar"
+element = "top_bar"
+impact = "low"
+
+[citadel_hud_top_bar_enable_dynamic_player_position]
+category = "Top bar"
+element = "top_bar"
+impact = "low"
+
+[citadel_show_new_topbar]
+category = "Top bar"
+element = "top_bar"
+impact = "low"
+
+[citadel_show_stats_tooltips_on_scoreboard]
+category = "Top bar"
+element = "top_bar"
+impact = "low"

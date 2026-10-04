@@ -204,7 +204,7 @@ fn header(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
             }
             ui.add_space(8.0);
             ui.spacing_mut().item_spacing.x = 6.0;
-            live_status::launch_control(ui, state, false);
+            live_status::launch_control(ui, state, live_status::Fit::Dot);
         });
     });
 }

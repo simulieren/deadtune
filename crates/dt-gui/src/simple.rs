@@ -461,7 +461,9 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
         if state.settings.source == TargetSource::RankedSafe {
             dot_label(ui, WARN, "Ranked-safe mode on");
         }
-        live_status::launch_control(ui, state, true);
+        ui.horizontal(|ui| {
+            live_status::launch_control(ui, state, live_status::Fit::Wide);
+        });
     });
 }
 
@@ -1567,7 +1569,7 @@ fn instant_changes(ui: &mut Ui, state: &mut AppState) {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Start Deadlock from DeadTune").strong());
                 if !state.ctx.game_running {
-                    live_status::launch_control(ui, state, false);
+                    live_status::launch_control(ui, state, live_status::Fit::Chip);
                 }
             });
             ui.label(

@@ -167,7 +167,7 @@ fn header(ui: &mut Ui, state: &mut AppState) {
             ui.add_space(10.0);
             status_chips(ui, state);
             ui.add_space(6.0);
-            live_status::launch_control(ui, state, false);
+            live_status::launch_control(ui, state, live_status::Fit::Chip);
         });
     });
 }

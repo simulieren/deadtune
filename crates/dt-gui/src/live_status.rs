@@ -16,71 +16,96 @@ pub fn clock(at: SystemTime) -> String {
         .to_string()
 }
 
-fn dot(ui: &mut Ui, color: egui::Color32) {
-    let (rect, _) = ui.allocate_exact_size(vec2(10.0, 16.0), Sense::hover());
+fn dot(ui: &mut Ui, color: egui::Color32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(10.0, 16.0), Sense::hover());
     ui.painter().circle_filled(rect.center(), 4.0, color);
+    response
+}
+
+/// How much room the launch control has.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Fit {
+    /// The sidebar: a full-width button, a labelled dot while running.
+    Wide,
+    /// A header: a small button, a labelled dot while running.
+    Chip,
+    /// The mini window header: a small button, a bare dot while running.
+    Dot,
 }
 
 /// Launch Deadlock when it is closed; while it runs, the status plus Restart once file changes
-/// wait for one. `wide` fills the available width (the sidebar); otherwise it is a header chip.
-pub fn launch_control(ui: &mut Ui, state: &mut AppState, wide: bool) {
-    let height = if wide { 34.0 } else { 24.0 };
-    let width = if wide { ui.available_width() } else { 0.0 };
+/// wait for one. In a right-to-left header the parts are added in reverse so they read the
+/// same way everywhere.
+pub fn launch_control(ui: &mut Ui, state: &mut AppState, fit: Fit) {
+    let rtl = ui.layout().prefer_right_to_left();
     if let Some(elapsed) = state.relaunch.elapsed(Instant::now()) {
-        ui.horizontal(|ui| {
-            dot(ui, WARN);
+        let text = format!("Restarting Deadlock ({}s)", elapsed.as_secs());
+        let label = |ui: &mut Ui| {
             ui.spinner();
-            ui.label(
-                RichText::new(format!("Restarting Deadlock ({}s)", elapsed.as_secs()))
-                    .small()
-                    .color(WEAK),
-            );
-        });
+            if fit != Fit::Dot {
+                ui.label(RichText::new(&text).small().color(WEAK));
+            }
+        };
+        if rtl {
+            label(ui);
+            dot(ui, WARN).on_hover_text(&text);
+        } else {
+            dot(ui, WARN).on_hover_text(&text);
+            label(ui);
+        }
         ui.ctx().request_repaint_after(Duration::from_millis(500));
         return;
     }
     if state.ctx.game_running {
-        ui.horizontal(|ui| {
-            dot(ui, GOOD);
-            ui.label(RichText::new("Deadlock is running").small().color(WEAK));
-            if let Some(pending) = &state.pending_restart {
-                let tip = format!(
-                    "Close Deadlock and start it again through Steam to load: {}",
-                    pending.names.join(", ")
-                );
-                let restart = egui::Button::new(RichText::new("Restart").size(12.0).color(TEXT))
-                    .min_size(vec2(0.0, height - 8.0));
-                if ui.add(restart).on_hover_text(tip).clicked() {
-                    views::run_apply_relaunch(ui.ctx(), state);
-                }
+        let restart = |ui: &mut Ui, state: &mut AppState| {
+            let Some(pending) = &state.pending_restart else {
+                return;
+            };
+            let tip = format!(
+                "Close Deadlock and start it again through Steam to load: {}",
+                pending.names.join(", ")
+            );
+            let button = egui::Button::new(RichText::new("Restart").size(12.0).color(TEXT))
+                .min_size(vec2(0.0, 22.0));
+            if ui.add(button).on_hover_text(tip).clicked() {
+                views::run_apply_relaunch(ui.ctx(), state);
             }
-        });
+        };
+        let label = |ui: &mut Ui| {
+            if fit != Fit::Dot {
+                ui.label(RichText::new("Deadlock is running").small().color(WEAK));
+            }
+        };
+        if rtl {
+            restart(ui, state);
+            label(ui);
+            dot(ui, GOOD).on_hover_text("Deadlock is running");
+        } else {
+            dot(ui, GOOD).on_hover_text("Deadlock is running");
+            label(ui);
+            restart(ui, state);
+        }
         return;
     }
-    ui.horizontal(|ui| {
-        if !wide {
-            dot(ui, WEAK);
-        }
-        let launch = egui::Button::new(
-            RichText::new("Launch Deadlock")
-                .size(if wide { 14.0 } else { 12.0 })
-                .strong()
-                .color(ON_ACCENT),
-        )
+    let (text, size, min) = match fit {
+        Fit::Wide => ("Launch Deadlock", 14.0, vec2(ui.available_width(), 34.0)),
+        Fit::Chip => ("Launch Deadlock", 12.0, vec2(0.0, 24.0)),
+        Fit::Dot => ("Launch", 12.0, vec2(0.0, 22.0)),
+    };
+    let launch = egui::Button::new(RichText::new(text).size(size).strong().color(ON_ACCENT))
         .fill(ACCENT)
-        .min_size(vec2(width, height));
-        if ui
-            .add(launch)
-            .on_hover_text(format!(
-                "Starts Deadlock through Steam with DeadTune's boot cfg: {}",
-                state.launch_args().args.join(" ")
-            ))
-            .clicked()
-            && let Err(e) = state.launch_game()
-        {
-            state.status = Some(Status::Error(format!("launch: {e}")));
-        }
-    });
+        .min_size(min);
+    if ui
+        .add(launch)
+        .on_hover_text(format!(
+            "Starts Deadlock through Steam with DeadTune's boot cfg: {}",
+            state.launch_args().args.join(" ")
+        ))
+        .clicked()
+        && let Err(e) = state.launch_game()
+    {
+        state.status = Some(Status::Error(format!("launch: {e}")));
+    }
 }
 
 fn results_tip(results: &[(String, Outcome)], transcript: &[String]) -> String {

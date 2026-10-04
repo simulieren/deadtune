@@ -790,21 +790,43 @@ pub fn launch(ui: &mut egui::Ui, state: &mut AppState) {
                 state.settings.launch.args = args.split_whitespace().map(str::to_string).collect();
             }
             ui.end_row();
+            form_label(ui, "Console window");
+            ui.checkbox(&mut state.settings.console_window, "add -console");
+            ui.end_row();
             form_label(ui, "Steam URL");
             ui.label(
-                RichText::new(launch::steam_url(&state.settings.launch))
+                RichText::new(launch::steam_url(&state.launch_args()))
                     .monospace()
                     .size(11.5)
                     .color(WEAK),
+            )
+            .on_hover_text(
+                "DeadTune adds +exec deadtune_boot (its boot cfg: key bind, live convars, a marker \
+                 for the console log) and -condebug (writes the console log it reads back).",
             );
+            ui.end_row();
+            form_label(ui, "From Steam");
+            ui.horizontal(|ui| {
+                let text = dt_core::bridge::boot::steam_launch_options(state.settings.console_window);
+                ui.label(RichText::new(&text).monospace().size(11.5));
+                if ui
+                    .small_button("Copy")
+                    .on_hover_text(
+                        "Paste into Steam: right-click Deadlock > Properties > General > Launch Options",
+                    )
+                    .clicked()
+                {
+                    ui.ctx().copy_text(text);
+                }
+            });
             ui.end_row();
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             if ui.button("Launch game").clicked()
-                && let Err(e) = launch::launch(&state.settings.launch)
+                && let Err(e) = state.launch_game()
             {
-                state.status = Some(Status::Error(e.to_string()));
+                state.status = Some(Status::Error(e));
             }
             if ui
                 .add_enabled(
@@ -850,7 +872,7 @@ pub fn launch(ui: &mut egui::Ui, state: &mut AppState) {
                 });
                 widgets::hint(
                     ui,
-                    "Bind once in the console (F7). DeadTune writes cfg/deadtune_live.cfg; press the key in game to load it.",
+                    "The boot cfg binds this key when Deadlock starts from DeadTune (or with +exec deadtune_boot). DeadTune writes cfg/deadtune_live.cfg; press the key in game to load it and the console log confirms each convar.",
                 );
             }
             BridgeKind::Netcon => {

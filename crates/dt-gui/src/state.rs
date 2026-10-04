@@ -15,11 +15,15 @@ use dt_core::apply::{
 };
 use dt_core::backup::{BackupEntry, BackupStore, FileKind, sha256_hex};
 use dt_core::bridge::ConsoleCmd;
+use dt_core::bridge::ack::{PushStatus, Tracker};
+use dt_core::bridge::boot::BootCfg;
+use dt_core::bridge::conlog::LogTail;
 use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::gi::{self, Override};
 use dt_core::hud::elements::ElementId;
 use dt_core::hud::install::HudPlan;
 use dt_core::hud::layout::{ElementEdit, HudLayout};
+use dt_core::launch::{self, LaunchOptions};
 use dt_core::locate::GamePaths;
 use dt_core::preset::PresetId;
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
@@ -468,6 +472,10 @@ pub struct AppState {
     /// Hash of the gameinfo.gi we last saw or wrote; a change to anything else is someone else's write.
     pub known_gameinfo_sha: String,
     pub live_push: LivePush,
+    /// Follows the last push through the console log.
+    pub ack: Tracker,
+    conlog: LogTail,
+    conlog_polled: Option<Instant>,
     pub relaunch: Relaunch,
     pub bench: BenchState,
     pub ui: UiState,
@@ -494,6 +502,8 @@ pub struct AppState {
 }
 
 /// Shown when the files changed between preview and Apply; the preview is already refreshed.
+const CONLOG_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
 pub const STALE: &str =
     "The game files changed while you were editing. The changes were refreshed; press Apply again.";
 
@@ -555,6 +565,8 @@ impl AppState {
         let mut state = AppState {
             known_gameinfo_sha: sha256_hex(live.gameinfo.as_bytes()),
             base: Base::resolve(&profile),
+            conlog: LogTail::for_game(&paths),
+            conlog_polled: None,
             paths,
             store,
             data_dir,
@@ -569,6 +581,7 @@ impl AppState {
             banner: None,
             pending_restart: None,
             live_push: LivePush::default(),
+            ack: Tracker::default(),
             relaunch: Relaunch::Idle,
             bench: BenchState::default(),
             ui: UiState::default(),
@@ -1269,6 +1282,9 @@ impl AppState {
         if let Some(e) = &applied.report.bridge_error {
             applied.warning = Some(format!("files saved, but the live push failed: {e}"));
         }
+        if let Some(receipt) = applied.report.receipt.clone() {
+            self.ack.start(receipt, Instant::now());
+        }
         if applied.report.needs_restart {
             let mut names: Vec<String> = plan
                 .restart
@@ -1294,13 +1310,96 @@ impl AppState {
         self.hud_cache = None;
         self.addons_cache = None;
         self.refresh_preview();
+        if let Err(e) = self.write_boot_cfg() {
+            applied.warning = Some(format!("boot cfg not updated: {e}"));
+        }
         Ok(applied)
     }
 
     /// Sends what is due from slider drags.
     pub fn tick_live(&mut self, now: Instant) -> Option<Result<PushOutcome, String>> {
         let cmds = self.live_push.take_due(now)?;
-        Some(self.bridge_target().push(&cmds).map_err(|e| e.to_string()))
+        Some(self.send(&cmds))
+    }
+
+    /// Pushes through the bridge and starts following the reply in the console log.
+    fn send(&mut self, cmds: &[ConsoleCmd]) -> Result<PushOutcome, String> {
+        let outcome = self.bridge_target().push(cmds).map_err(|e| e.to_string())?;
+        if let PushOutcome::Sent { receipt, .. } = &outcome {
+            self.ack.start(receipt.clone(), Instant::now());
+        }
+        Ok(outcome)
+    }
+
+    /// A harmless batch (it only asks the game for `fps_max`) to prove the live path works.
+    pub fn send_test(&mut self) -> Result<(), String> {
+        let receipt = self
+            .bridge_target()
+            .probe("fps_max")
+            .map_err(|e| e.to_string())?
+            .ok_or("The clipboard bridge has no reply to read; pick Exec file or Netcon.")?;
+        self.ack.start(receipt, Instant::now());
+        Ok(())
+    }
+
+    /// Reads new console log lines into the ack tracker, at most four times a second.
+    pub fn poll_conlog(&mut self, now: Instant) {
+        if self
+            .conlog_polled
+            .is_some_and(|last| now.duration_since(last) < CONLOG_POLL)
+        {
+            return;
+        }
+        self.conlog_polled = Some(now);
+        for line in self.conlog.poll() {
+            self.ack.observe_line(&line);
+        }
+        self.ack.tick(now);
+        if matches!(self.ack.status(), PushStatus::Confirmed { .. }) {
+            self.settings.live_verified = true;
+        }
+    }
+
+    /// Live-class convars the profile sets, for the boot cfg; none in ranked-safe mode.
+    fn boot_cfg(&self) -> BootCfg {
+        let live = match self.settings.source {
+            TargetSource::RankedSafe => Vec::new(),
+            TargetSource::Profile => self
+                .profile
+                .convars
+                .set
+                .iter()
+                .filter(|(name, _)| {
+                    self.catalog.apply_class(name) == ApplyClass::Live
+                        && !self.catalog.is_denied(name)
+                })
+                .map(|(name, value)| ConsoleCmd {
+                    name: name.clone(),
+                    value: value.clone(),
+                })
+                .collect(),
+        };
+        BootCfg {
+            bind_key: self.settings.bind_key.clone(),
+            live,
+            version: env!("CARGO_PKG_VERSION").into(),
+        }
+    }
+
+    pub fn write_boot_cfg(&self) -> Result<(), String> {
+        self.boot_cfg()
+            .write(&self.paths.cfg_dir)
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn launch_args(&self) -> LaunchOptions {
+        launch::with_boot(&self.settings.launch, self.settings.console_window)
+    }
+
+    /// Writes the boot cfg and starts the game through Steam with `+exec deadtune_boot`.
+    pub fn launch_game(&mut self) -> Result<(), String> {
+        self.write_boot_cfg()?;
+        launch::launch(&self.launch_args()).map_err(|e| e.to_string())
     }
 
     /// The Push button: every live-class difference between the files and the target.
@@ -1328,7 +1427,7 @@ impl AppState {
             .into_iter()
             .map(|(name, value)| ConsoleCmd { name, value })
             .collect();
-        self.bridge_target().push(&cmds).map_err(|e| e.to_string())
+        self.send(&cmds)
     }
 
     pub fn profiles_dir(&self) -> PathBuf {
@@ -1568,8 +1667,11 @@ pub mod testutil {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::testutil::state;
     use super::*;
+    use dt_core::bridge::ack::Outcome;
 
     const LIVE: &str = "fps_max";
     const CHEAT: &str = "r_farz";
@@ -1800,9 +1902,123 @@ mod tests {
             .tick_live(Instant::now() + crate::live::DEBOUNCE)
             .unwrap()
             .unwrap();
-        assert!(matches!(outcome, PushOutcome::Sent { count: 1, .. }));
+        let PushOutcome::Sent { receipt, .. } = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(receipt.queries, [LIVE]);
         let cfg = std::fs::read_to_string(state.paths.cfg_dir.join("deadtune_live.cfg")).unwrap();
         assert!(cfg.contains(r#"fps_max "120""#));
+        assert!(state.ack.is_waiting(), "the push is followed in the log");
+    }
+
+    /// Plays the game's part: appends console output to the log DeadTune tails.
+    fn game_prints(state: &AppState, text: &str) {
+        use std::io::Write;
+        let mut log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(state.paths.citadel_dir.join("console.log"))
+            .unwrap();
+        log.write_all(text.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn push_is_confirmed_from_the_console_log_end_to_end() {
+        let (_dir, mut state) = state();
+        state.observe_game(true, None);
+        game_prints(&state, "DEADTUNE_BOOT 0.0.1\r\n");
+        state.set_convar(LIVE, "120".into()).unwrap();
+        state.set_convar(CHEAT, "6000".into()).unwrap();
+        let t0 = Instant::now() + crate::live::DEBOUNCE;
+        state.tick_live(t0).unwrap().unwrap();
+        state.poll_conlog(t0);
+        assert!(state.ack.is_waiting());
+        assert_eq!(
+            state.ack.boot.as_ref().map(|b| b.version.as_str()),
+            Some("0.0.1")
+        );
+        assert!(!state.settings.live_verified);
+        let nonce = match state.ack.status() {
+            PushStatus::Waiting { .. } => {
+                let cfg =
+                    std::fs::read_to_string(state.paths.cfg_dir.join("deadtune_live.cfg")).unwrap();
+                cfg.lines()
+                    .find_map(|l| l.strip_prefix("echo DEADTUNE_ACK "))
+                    .map(|rest| rest.split(' ').next().unwrap().to_string())
+                    .unwrap()
+            }
+            other => panic!("{other:?}"),
+        };
+        game_prints(
+            &state,
+            &format!(
+                "DEADTUNE_ACK {nonce} 1\r\n\"fps_max\" = \"120\" ( def. \"400\" )\r\n - Frame rate limiter\r\nDEADTUNE_END {nonce}\r\n"
+            ),
+        );
+        state.poll_conlog(t0 + Duration::from_secs(1));
+        let PushStatus::Confirmed { results, .. } = state.ack.status() else {
+            panic!("{:?}", state.ack.status());
+        };
+        assert_eq!(
+            results,
+            &[(LIVE.to_string(), Outcome::Applied("120".into()))],
+            "cheat convar is queued, so only the live one was sent"
+        );
+        assert!(state.settings.live_verified);
+    }
+
+    #[test]
+    fn push_times_out_when_the_game_never_answers() {
+        let (_dir, mut state) = state();
+        state.observe_game(true, None);
+        state.set_convar(LIVE, "120".into()).unwrap();
+        let t0 = Instant::now() + crate::live::DEBOUNCE;
+        state.tick_live(t0).unwrap().unwrap();
+        state.poll_conlog(t0 + Duration::from_secs(9));
+        assert!(state.ack.is_waiting());
+        state.poll_conlog(t0 + Duration::from_secs(11));
+        assert!(
+            matches!(state.ack.status(), PushStatus::TimedOut { count: 1, .. }),
+            "{:?}",
+            state.ack.status()
+        );
+        assert!(!state.settings.live_verified);
+    }
+
+    #[test]
+    fn send_test_probes_without_changing_anything() {
+        let (_dir, mut state) = state();
+        state.send_test().unwrap();
+        assert!(state.ack.is_waiting());
+        let cfg = std::fs::read_to_string(state.paths.cfg_dir.join("deadtune_live.cfg")).unwrap();
+        assert!(
+            cfg.contains("\nfps_max\n") && !cfg.contains("fps_max \""),
+            "{cfg}"
+        );
+        state.settings.bridge = crate::live::BridgeKind::Clipboard;
+        assert!(state.send_test().unwrap_err().contains("clipboard"));
+    }
+
+    #[test]
+    fn boot_cfg_carries_the_bind_and_the_live_convars_unless_ranked_safe() {
+        let (_dir, mut state) = state();
+        state.settings.bind_key = "F9".into();
+        state.set_convar(LIVE, "144".into()).unwrap();
+        state.set_convar(RESTART, "true".into()).unwrap();
+        state.write_boot_cfg().unwrap();
+        let cfg = std::fs::read_to_string(state.paths.cfg_dir.join("deadtune_boot.cfg")).unwrap();
+        assert!(cfg.contains(r#"bind F9 "exec deadtune_live""#), "{cfg}");
+        assert!(cfg.contains(r#"fps_max "144""#), "{cfg}");
+        assert!(!cfg.contains(RESTART), "restart class stays out: {cfg}");
+        assert!(cfg.contains("echo DEADTUNE_BOOT "), "{cfg}");
+        state.settings.source = TargetSource::RankedSafe;
+        state.write_boot_cfg().unwrap();
+        let cfg = std::fs::read_to_string(state.paths.cfg_dir.join("deadtune_boot.cfg")).unwrap();
+        assert!(!cfg.contains("fps_max"), "{cfg}");
+        assert_eq!(
+            state.launch_args().args,
+            ["-novid", "+exec", "deadtune_boot", "-condebug"]
+        );
     }
 
     #[test]

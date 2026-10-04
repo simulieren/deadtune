@@ -14,6 +14,7 @@ use eframe::egui::{
 
 use crate::friendly;
 use crate::live::BridgeKind;
+use crate::live_status;
 use crate::profiles;
 use crate::relaunch::Relaunch;
 use crate::settings::{Settings, TargetSource, View};
@@ -165,6 +166,8 @@ fn header(ui: &mut Ui, state: &mut AppState) {
             }
             ui.add_space(10.0);
             status_chips(ui, state);
+            ui.add_space(6.0);
+            live_status::launch_control(ui, state, false);
         });
     });
 }
@@ -199,12 +202,6 @@ fn status_chips(ui: &mut Ui, state: &mut AppState) {
             Err(e) => Status::Error(e),
         });
     }
-    if state.ctx.game_running {
-        widgets::chip(ui, "Deadlock running", GOOD, None)
-    } else {
-        widgets::chip(ui, "Deadlock closed", WEAK, None)
-    }
-    .on_hover_text("Polled every 2 seconds");
 }
 
 fn profile_picker(ui: &mut Ui, state: &mut AppState) {
@@ -921,11 +918,13 @@ fn pending(ui: &mut Ui, state: &mut AppState) {
     {
         action = Some(PendingAction::RevertAll);
     }
+    ui.add_space(4.0);
+    live_status::push_status(ui, state, false);
     if state.settings.bridge == BridgeKind::ExecFile {
         ui.add_space(6.0);
         let hint = ExecFileBridge::bind_hint(&state.settings.bind_key);
         ui.label(
-            RichText::new("Live bridge: bind once in the console (F7)")
+            RichText::new("Live key: bound by the boot cfg when Deadlock starts from DeadTune, or by hand (F7)")
                 .size(10.5)
                 .color(WEAK),
         );

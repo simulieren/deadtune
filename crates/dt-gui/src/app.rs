@@ -163,6 +163,17 @@ impl App {
                 if let Ok(id) = std::env::var("DEADTUNE_ADDON_EXPAND") {
                     state.ui.addon_expanded = AddonId::parse(id.trim());
                 }
+                // Screenshot lever: `DEADTUNE_FAKE_PUSH=waiting|confirmed|mixed|timeout` shows
+                // that live-status; `DEADTUNE_FAKE_BOOT=1` pretends the boot cfg ran.
+                if let Ok(kind) = std::env::var("DEADTUNE_FAKE_PUSH") {
+                    fake_push(&mut state, &kind);
+                }
+                if std::env::var_os("DEADTUNE_FAKE_BOOT").is_some_and(|v| v == "1") {
+                    state.ack.boot = Some(dt_core::bridge::ack::Boot {
+                        version: env!("CARGO_PKG_VERSION").into(),
+                        at: SystemTime::now(),
+                    });
+                }
                 // Screenshot lever: `DEADTUNE_SET=fps_max=144,r_shadows=true` edits after loading.
                 if let Ok(list) = std::env::var("DEADTUNE_SET") {
                     for (name, value) in list.split(',').filter_map(|kv| kv.split_once('=')) {
@@ -245,9 +256,9 @@ impl App {
             });
             state.relaunch = next;
             if action == Some(relaunch::Action::Launch)
-                && let Err(e) = launch::launch(&state.settings.launch)
+                && let Err(e) = state.launch_game()
             {
-                state.relaunch = Relaunch::Failed(e.to_string());
+                state.relaunch = Relaunch::Failed(e);
             }
         }
         if let Some(result) = state.tick_live(Instant::now()) {
@@ -255,6 +266,10 @@ impl App {
         }
         if state.live_push.is_pending() {
             ctx.request_repaint_after(crate::live::DEBOUNCE);
+        }
+        state.poll_conlog(Instant::now());
+        if state.ack.is_waiting() {
+            ctx.request_repaint_after(Duration::from_millis(250));
         }
         if state.relaunch.is_active() {
             ctx.request_repaint_after(Duration::from_millis(500));
@@ -307,17 +322,56 @@ impl App {
     }
 }
 
+fn fake_push(state: &mut AppState, kind: &str) {
+    use dt_core::bridge::ack::{Outcome, PushStatus};
+    let results = |items: &[(&str, Outcome)]| {
+        items
+            .iter()
+            .map(|(n, o)| (n.to_string(), o.clone()))
+            .collect()
+    };
+    let status = match kind {
+        "waiting" => PushStatus::Waiting {
+            since: Instant::now() - Duration::from_secs(3),
+            count: 3,
+        },
+        "confirmed" => PushStatus::Confirmed {
+            at: SystemTime::now(),
+            results: results(&[
+                ("fps_max", Outcome::Applied("240".into())),
+                ("r_farz", Outcome::Applied("6000".into())),
+                ("r_shadows", Outcome::Applied("false".into())),
+            ]),
+        },
+        "mixed" => PushStatus::Confirmed {
+            at: SystemTime::now(),
+            results: results(&[
+                ("fps_max", Outcome::Applied("240".into())),
+                ("r_farz", Outcome::Applied("6000".into())),
+                ("r_xyz", Outcome::Rejected("Unknown command 'r_xyz'".into())),
+            ]),
+        },
+        "timeout" => PushStatus::TimedOut {
+            after: Duration::from_secs(10),
+            count: 3,
+        },
+        _ => return,
+    };
+    state.ack.inject(status);
+}
+
+/// A sent batch leaves the status line to the live-status indicator, which follows the reply.
 pub fn report_push(ctx: &egui::Context, state: &mut AppState, result: Result<PushOutcome, String>) {
-    state.status = Some(match result {
-        Ok(PushOutcome::Sent { bridge, count }) => {
-            Status::Info(format!("pushed {count} via {bridge}"))
-        }
+    state.status = match result {
+        Ok(PushOutcome::Sent { .. }) => None,
         Ok(PushOutcome::Copy(text)) => {
             ctx.copy_text(text);
-            Status::Info("console commands copied; paste into the console (F7)".into())
+            Some(Status::Info(
+                "console commands copied; paste into the console (F7)".into(),
+            ))
         }
-        Err(e) => Status::Error(format!("push failed: {e}")),
-    });
+        Err(e) => Some(Status::Error(format!("push failed: {e}"))),
+    };
 }
 
 impl eframe::App for App {

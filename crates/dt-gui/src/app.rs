@@ -192,18 +192,22 @@ impl App {
                 if let Ok(id) = std::env::var("DEADTUNE_ADDON_EXPAND") {
                     state.ui.addon_expanded = AddonId::parse(id.trim());
                 }
-                // `DEADTUNE_FAKE_TRIAL=failed` shows the launch guard's failure banner for the
-                // addons in `DEADTUNE_ADDONS` (every one if unset), with a captured FATAL line.
-                if std::env::var("DEADTUNE_FAKE_TRIAL").is_ok_and(|v| v == "failed") {
-                    let ids: Vec<AddonId> = std::env::var("DEADTUNE_ADDONS")
-                        .ok()
-                        .map(|list| {
-                            list.split(',')
-                                .filter_map(|s| AddonId::parse(s.trim()))
-                                .collect()
-                        })
-                        .filter(|ids: &Vec<AddonId>| !ids.is_empty())
-                        .unwrap_or_else(|| AddonId::ALL.to_vec());
+                // `DEADTUNE_FAKE_TRIAL=failed:vindicta_scope,blur_disabler` shows the launch
+                // guard's failure banner, details open, for those addons (every one if none
+                // are listed) with a captured FATAL line.
+                if let Ok(spec) = std::env::var("DEADTUNE_FAKE_TRIAL")
+                    && let Some(list) = spec.strip_prefix("failed")
+                {
+                    let ids: Vec<AddonId> = list
+                        .trim_start_matches(':')
+                        .split(',')
+                        .filter_map(|s| AddonId::parse(s.trim()))
+                        .collect();
+                    let ids = if ids.is_empty() {
+                        AddonId::ALL.to_vec()
+                    } else {
+                        ids
+                    };
                     state.inject_trial_failure(
                         ids,
                         Some(
@@ -211,6 +215,7 @@ impl App {
                                 .into(),
                         ),
                     );
+                    state.ui.guard_details = true;
                 }
                 // Screenshot lever: `DEADTUNE_FAKE_PUSH=waiting|confirmed|mixed|timeout` shows
                 // that live-status; `DEADTUNE_FAKE_BOOT=1` pretends the boot cfg ran.

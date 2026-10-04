@@ -145,8 +145,8 @@ fn launch_menu(ui: &mut Ui, state: &mut AppState, fit: Fit) {
         Fit::Chip => 24.0,
         Fit::Dot => 22.0,
     };
-    let button = egui::Button::new(RichText::new("\u{25BE}").size(12.0).color(TEXT))
-        .min_size(vec2(26.0, height));
+    let button =
+        egui::Button::new(RichText::new("v").size(11.0).color(TEXT)).min_size(vec2(26.0, height));
     egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
         if safe {
             if ui

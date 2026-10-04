@@ -33,6 +33,8 @@ struct Screenshot {
     path: PathBuf,
     frames: u32,
     requested: bool,
+    /// `DEADTUNE_SCREENSHOT_APPLY=1` clicks Apply (same code as the button) before the capture.
+    apply: bool,
 }
 
 pub struct App {
@@ -93,6 +95,7 @@ impl App {
                 path,
                 frames: 0,
                 requested: false,
+                apply: std::env::var_os("DEADTUNE_SCREENSHOT_APPLY").is_some_and(|v| v == "1"),
             }),
         };
         app.open_game(settings);
@@ -219,6 +222,12 @@ impl App {
         };
         job.frames += 1;
         ctx.request_repaint();
+        if job.apply
+            && job.frames == 5
+            && let Screen::Main(state) = &mut self.screen
+        {
+            views::run_apply(ctx, state);
+        }
         if job.frames == 20 && !job.requested {
             job.requested = true;
             ctx.send_viewport_cmd(ViewportCommand::Screenshot(egui::UserData::default()));

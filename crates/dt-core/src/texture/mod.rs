@@ -4,8 +4,10 @@
 //! overrides them (`addon`). The game files are never written; removing the addon
 //! restores full quality.
 
+pub mod addon;
 pub mod select;
 pub mod vtex;
 
+pub use addon::{AddonError, Progress, Stats, build_texture_addon};
 pub use select::{Category, Factor, TextureDownscale};
 pub use vtex::{SkipReason, Vtex, VtexError, downscale};

@@ -599,17 +599,6 @@ pub fn display(control: Control, value: &str) -> String {
     }
 }
 
-/// Presets from best looking to most FPS, with the short tag a tile shows.
-pub const PRESET_SPECTRUM: &[(PresetId, &str)] = &[
-    (PresetId::Vanilla, "Best looks"),
-    (PresetId::Sqooky, "Balanced"),
-    (PresetId::OptilockRecommended, "Balanced+"),
-    (PresetId::KaizMinspec, "Low-end PC"),
-    (PresetId::BootMaxfps, "Max FPS"),
-    (PresetId::OptilockPotato, "Potato"),
-    (PresetId::KaizExtremelow, "Bare minimum"),
-];
-
 /// The Overview's goal cards, best looking first. Each is one community preset; the rest sit
 /// in the "All presets" dropdown.
 pub const GOALS: &[(PresetId, &str, &str)] = &[

@@ -131,6 +131,9 @@ impl App {
                 {
                     state.ui.section = section;
                 }
+                if let Ok(query) = std::env::var("DEADTUNE_SEARCH") {
+                    state.ui.query = query;
+                }
                 self.startup_profile(&mut state);
                 self.screen = Screen::Main(Box::new(state));
             }

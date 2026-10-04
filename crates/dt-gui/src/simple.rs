@@ -2,7 +2,7 @@
 //! (a left rail of sections, the selected section's settings as cards, an Apply bar).
 
 use dt_core::bridge::execfile::ExecFileBridge;
-use dt_core::catalog::{CatalogEntry, Kind};
+use dt_core::catalog::{CatalogEntry, Impact, Kind};
 use dt_core::doctor::CheckStatus;
 use dt_core::preset::{self, PresetId};
 use dt_core::profile::BaseRef;
@@ -14,7 +14,9 @@ use eframe::egui::{
 use crate::friendly::{self, Control, human_error};
 use crate::live::BridgeKind;
 use crate::settings::{TargetSource, View};
-use crate::state::{AppState, Section, StartChoice, Status, Timing, Welcome, bool_text, fmt_num};
+use crate::state::{
+    AppState, Pending, Section, StartChoice, Status, Timing, Welcome, bool_text, fmt_num,
+};
 use crate::theme::{
     self, ACCENT, BAD, BORDER, CARD_HOVER, GOOD, ON_ACCENT, RAIL, TEXT, WARN, WEAK,
 };
@@ -22,16 +24,16 @@ use crate::theme::{
 fn big_button(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
     ui.add_enabled(
         enabled,
-        egui::Button::new(RichText::new(text).size(16.0).strong()).min_size(vec2(160.0, 40.0)),
+        egui::Button::new(RichText::new(text).size(15.0).strong()).min_size(vec2(150.0, 36.0)),
     )
 }
 
 fn accent_button(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
     ui.add_enabled(
         enabled,
-        egui::Button::new(RichText::new(text).size(16.0).strong().color(ON_ACCENT))
+        egui::Button::new(RichText::new(text).size(15.0).strong().color(ON_ACCENT))
             .fill(ACCENT)
-            .min_size(vec2(150.0, 40.0)),
+            .min_size(vec2(140.0, 36.0)),
     )
 }
 
@@ -234,11 +236,37 @@ enum Edit {
     ResetAll,
     Base(PresetId),
     Go(Section),
+    Focus(&'static str),
     Advanced,
+}
+
+const RAIL_WIDTH: f32 = 224.0;
+const HELP_WIDTH: f32 = 300.0;
+/// Below this content width the help panel gives way to inline help lines under each label.
+const HELP_PANEL_MIN_CONTENT: f32 = 1150.0;
+
+/// What the main area shows: a rail section, or search results while the query is non-empty.
+#[derive(Clone, Copy, PartialEq)]
+enum Page {
+    Section(Section),
+    Results,
 }
 
 pub fn simple(ui: &mut Ui, state: &mut AppState) {
     let mut edits = Vec::new();
+    if !state.ui.query.is_empty() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        state.ui.query.clear();
+    }
+    let page = if state.ui.query.trim().is_empty() {
+        Page::Section(state.ui.section)
+    } else {
+        Page::Results
+    };
+    let content_width = ui.available_width() - RAIL_WIDTH;
+    let help_panel = match page {
+        Page::Section(s) => s.has_rows() && content_width >= HELP_PANEL_MIN_CONTENT,
+        Page::Results => content_width >= HELP_PANEL_MIN_CONTENT,
+    };
     if let Some(banner) = state.banner.clone() {
         egui::Panel::top("simple_banner")
             .frame(
@@ -267,41 +295,55 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
         .frame(
             egui::Frame::new()
                 .fill(RAIL)
-                .inner_margin(Margin::symmetric(24, 12)),
+                .inner_margin(Margin::symmetric(20, 10)),
         )
         .show(ui, |ui| apply_bar(ui, state));
     egui::Panel::left("simple_rail")
-        .exact_size(224.0)
+        .exact_size(RAIL_WIDTH)
         .resizable(false)
         .frame(
             egui::Frame::new()
                 .fill(RAIL)
-                .inner_margin(Margin::symmetric(12, 18)),
+                .inner_margin(Margin::symmetric(12, 14)),
         )
         .show(ui, |ui| rail(ui, state, &mut edits));
+    if help_panel {
+        egui::Panel::right("simple_help")
+            .exact_size(HELP_WIDTH)
+            .resizable(false)
+            .frame(
+                egui::Frame::new()
+                    .fill(RAIL)
+                    .inner_margin(Margin::symmetric(18, 18)),
+            )
+            .show(ui, |ui| help(ui, state, page));
+    }
+    let inline_help = !help_panel;
     egui::CentralPanel::default()
         .frame(egui::Frame::new().fill(theme::BG).inner_margin(Margin {
-            left: 28,
-            right: 28,
-            top: 22,
+            left: 24,
+            right: 24,
+            top: 18,
             bottom: 0,
         }))
         .show(ui, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink(false)
                 .show(ui, |ui| {
-                    let section = state.ui.section;
-                    header(ui, state, section, &mut edits);
-                    match section {
-                        Section::Overview => overview(ui, state, &mut edits),
-                        Section::Hud => {
+                    header(ui, state, page, &mut edits);
+                    match page {
+                        Page::Results => results(ui, state, inline_help, &mut edits),
+                        Page::Section(Section::Overview) => overview(ui, state, &mut edits),
+                        Page::Section(Section::Hud) => {
                             theme::card().show(ui, |ui| {
                                 ui.set_width(ui.available_width());
                                 crate::hud_view::hud(ui, state);
                             });
                         }
-                        Section::Safety => safety(ui, state),
-                        _ => settings_page(ui, state, section, &mut edits),
+                        Page::Section(Section::Safety) => safety(ui, state),
+                        Page::Section(section) => {
+                            settings_page(ui, state, section, inline_help, &mut edits)
+                        }
                     }
                     ui.add_space(24.0);
                 });
@@ -309,6 +351,7 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
     for edit in edits {
         match edit {
             Edit::Set(name, value) => {
+                state.ui.focus = Some(name);
                 if let Err(e) = state.set_convar(name, value) {
                     state.status = Some(Status::Error(e.to_string()));
                 }
@@ -316,7 +359,11 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
             Edit::Reset(names) => state.reset_convars(names),
             Edit::ResetAll => state.reset_to_preset(),
             Edit::Base(id) => state.set_base(BaseRef::Preset(id)),
-            Edit::Go(section) => state.ui.section = section,
+            Edit::Go(section) => {
+                state.ui.section = section;
+                state.ui.query.clear();
+            }
+            Edit::Focus(name) => state.ui.focus = Some(name),
             Edit::Advanced => state.settings.view = View::Advanced,
         }
     }
@@ -324,53 +371,59 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
 
 fn section_changes(state: &AppState, section: Section) -> usize {
     match section {
-        Section::Overview => state.changed_count(friendly::ROWS.iter().map(|r| r.name)),
+        Section::Overview => state.tweak_count(),
         Section::Hud => state.profile.hud.elements.len(),
         Section::Safety => 0,
         s => state.changed_count(friendly::section_names(s)),
     }
 }
 
-fn preset_name(state: &AppState) -> String {
-    match &state.profile.base {
-        BaseRef::Preset(id) => preset::info(*id).label.to_string(),
-        BaseRef::File(_) => "My original settings".into(),
-    }
+/// Small uppercase caption above a group of rows or a fact.
+fn caption(ui: &mut Ui, text: &str) {
+    ui.label(
+        RichText::new(text.to_uppercase())
+            .size(11.5)
+            .strong()
+            .color(WEAK),
+    );
 }
 
-fn rail(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     ui.horizontal(|ui| {
         ui.add_space(8.0);
         ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label(RichText::new("Dead").size(24.0).strong().color(TEXT));
-        ui.label(RichText::new("Tune").size(24.0).strong().color(ACCENT));
+        ui.label(RichText::new("Dead").size(22.0).strong().color(TEXT));
+        ui.label(RichText::new("Tune").size(22.0).strong().color(ACCENT));
     });
     ui.horizontal(|ui| {
         ui.add_space(8.0);
         ui.label(
-            RichText::new(format!("Preset: {}", preset_name(state)))
+            RichText::new(format!("Preset: {}", state.preset_label()))
                 .small()
                 .color(WEAK),
         );
     });
-    ui.add_space(14.0);
+    ui.add_space(10.0);
+    search_box(ui, &mut state.ui.query);
+    ui.add_space(6.0);
+    let searching = !state.ui.query.trim().is_empty();
     for (i, section) in Section::ALL.into_iter().enumerate() {
         let heading = match i {
-            1 => Some("SETTINGS"),
-            6 => Some("MORE"),
+            1 => Some("Settings"),
+            6 => Some("More"),
             _ => None,
         };
         if let Some(heading) = heading {
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
-                ui.label(RichText::new(heading).size(11.0).strong().color(WEAK));
+                caption(ui, heading);
             });
         }
         if nav_item(
             ui,
             section,
-            state.ui.section == section,
+            !searching && state.ui.section == section,
             section_changes(state, section),
         ) {
             edits.push(Edit::Go(section));
@@ -396,6 +449,63 @@ fn rail(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     });
 }
 
+/// Full-width text box styled like the other inputs, with a clear button once it has text.
+fn search_box(ui: &mut Ui, query: &mut String) {
+    let height = 28.0;
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(4),
+        theme::CARD,
+        Stroke::new(1.0, BORDER),
+        StrokeKind::Inside,
+    );
+    let clear = rect.right_center() - vec2(14.0, 0.0);
+    let text_rect = Rect::from_min_max(
+        rect.left_top() + vec2(10.0, 0.0),
+        egui::pos2(clear.x - 12.0, rect.bottom()),
+    );
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(text_rect)
+            .layout(Layout::left_to_right(Align::Center)),
+        |ui| {
+            ui.add(
+                egui::TextEdit::singleline(query)
+                    .hint_text("Search settings")
+                    .desired_width(f32::INFINITY)
+                    .frame(egui::Frame::NONE),
+            )
+            .on_hover_text("Finds a setting by name or by what its help says. Esc clears.");
+        },
+    );
+    if query.is_empty() {
+        return;
+    }
+    let response = ui
+        .interact(
+            Rect::from_center_size(clear, vec2(18.0, 18.0)),
+            ui.id().with("clear_search"),
+            Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Clear");
+    let color = if response.hovered() { TEXT } else { WEAK };
+    let r = 3.5;
+    let painter = ui.painter();
+    painter.line_segment(
+        [clear + vec2(-r, -r), clear + vec2(r, r)],
+        Stroke::new(1.5, color),
+    );
+    painter.line_segment(
+        [clear + vec2(-r, r), clear + vec2(r, -r)],
+        Stroke::new(1.5, color),
+    );
+    if response.clicked() {
+        query.clear();
+    }
+}
+
 fn dot_label(ui: &mut Ui, color: Color32, text: &str) {
     ui.horizontal(|ui| {
         ui.add_space(6.0);
@@ -406,7 +516,7 @@ fn dot_label(ui: &mut Ui, color: Color32, text: &str) {
 }
 
 fn nav_item(ui: &mut Ui, section: Section, selected: bool, changes: usize) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
     let painter = ui.painter();
     if selected {
         painter.rect_filled(rect, CornerRadius::same(6), CARD_HOVER);
@@ -427,7 +537,7 @@ fn nav_item(ui: &mut Ui, section: Section, selected: bool, changes: usize) -> bo
         rect.left_center() + vec2(14.0, 0.0),
         Align2::LEFT_CENTER,
         section.label(),
-        FontId::proportional(15.0),
+        FontId::proportional(14.0),
         color,
     );
     if changes > 0 {
@@ -448,7 +558,22 @@ fn nav_item(ui: &mut Ui, section: Section, selected: bool, changes: usize) -> bo
         .clicked()
 }
 
-fn header(ui: &mut Ui, state: &AppState, section: Section, edits: &mut Vec<Edit>) {
+fn header(ui: &mut Ui, state: &AppState, page: Page, edits: &mut Vec<Edit>) {
+    let section = match page {
+        Page::Section(s) => s,
+        Page::Results => {
+            let found = friendly::search(&state.ui.query).len();
+            let subtitle = match found {
+                0 => format!("Nothing matches \"{}\".", state.ui.query.trim()),
+                1 => "1 setting matches. Esc or clear the box to go back.".to_string(),
+                n => format!("{n} settings match. Esc or clear the box to go back."),
+            };
+            ui.label(RichText::new("Results").text_style(theme::title()).strong());
+            ui.label(RichText::new(subtitle).color(WEAK));
+            ui.add_space(12.0);
+            return;
+        }
+    };
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.label(
@@ -486,7 +611,7 @@ fn header(ui: &mut Ui, state: &AppState, section: Section, edits: &mut Vec<Edit>
                 );
             });
     }
-    ui.add_space(14.0);
+    ui.add_space(12.0);
 }
 
 fn card_title(ui: &mut Ui, title: &str) {
@@ -495,14 +620,14 @@ fn card_title(ui: &mut Ui, title: &str) {
             .text_style(egui::TextStyle::Heading)
             .strong(),
     );
-    ui.add_space(4.0);
+    ui.add_space(2.0);
 }
 
 fn overview(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
-    preset_picker(ui, state, edits);
-    ui.add_space(14.0);
+    hero(ui, state, edits);
+    ui.add_space(12.0);
     let wide = ui.available_width() >= 760.0;
-    let status_width = 320.0;
+    let status_width = 300.0;
     let gap = 14.0;
     if wide {
         ui.horizontal_top(|ui| {
@@ -524,78 +649,88 @@ fn overview(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     }
 }
 
-fn preset_picker(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+/// "What do you want?": four goal cards, the tweak readout, and a dropdown for every preset.
+fn hero(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     theme::card().show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
-            card_title(ui, "Your preset");
+            card_title(ui, "What do you want?");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new("More FPS").small().color(WEAK));
-                let (rect, _) = ui.allocate_exact_size(vec2(120.0, 10.0), Sense::hover());
-                let y = rect.center().y;
-                let painter = ui.painter();
-                painter.line_segment(
-                    [rect.left_center(), rect.right_center()],
-                    Stroke::new(1.0, WEAK.gamma_multiply(0.6)),
-                );
-                painter.line_segment(
-                    [rect.right_center(), egui::pos2(rect.right() - 5.0, y - 4.0)],
-                    Stroke::new(1.0, WEAK.gamma_multiply(0.6)),
-                );
-                painter.line_segment(
-                    [rect.right_center(), egui::pos2(rect.right() - 5.0, y + 4.0)],
-                    Stroke::new(1.0, WEAK.gamma_multiply(0.6)),
-                );
-                ui.label(RichText::new("Better looking").small().color(WEAK));
+                let tweaks = state.tweak_count();
+                if tweaks > 0 {
+                    if ui
+                        .button("Reset all to preset")
+                        .on_hover_text("Drops every tweak and goes back to the preset as is")
+                        .clicked()
+                    {
+                        edits.push(Edit::ResetAll);
+                    }
+                    ui.label(RichText::new(format!("{tweaks} tweaked")).color(ACCENT));
+                } else {
+                    ui.label(RichText::new("No tweaks").color(WEAK));
+                }
             });
         });
-        let tiles = friendly::PRESET_SPECTRUM;
-        let gap = 8.0;
-        let n = tiles.len() as f32;
-        let width = ((ui.available_width() - gap * (n - 1.0)) / n - 0.5)
-            .floor()
-            .max(118.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(gap, gap);
-            for (id, tag) in tiles {
+        ui.add_space(4.0);
+        let gap = 10.0;
+        let n = friendly::GOALS.len() as f32;
+        let width = ((ui.available_width() - gap * (n - 1.0)) / n - 0.5).floor();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for (id, title, sub) in friendly::GOALS {
                 let selected = state.profile.base == BaseRef::Preset(*id);
-                if preset_tile(ui, width, selected, tag, preset::info(*id).label) {
+                if goal_card(ui, width, selected, title, sub) {
                     edits.push(Edit::Base(*id));
                 }
             }
         });
-        ui.add_space(4.0);
-        let blurb = match &state.profile.base {
-            BaseRef::Preset(id) => {
-                let info = preset::info(*id);
-                format!(
-                    "{} by {}. {}",
-                    info.label,
-                    info.author,
-                    friendly::preset_blurb(*id).unwrap_or("")
-                )
-            }
-            BaseRef::File(_) => {
-                "You're on your original settings. Pick a preset to start from one instead.".into()
-            }
-        };
-        ui.horizontal_wrapped(|ui| {
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            let (name, blurb) = match &state.profile.base {
+                BaseRef::Preset(id) => {
+                    let info = preset::info(*id);
+                    (
+                        format!("{} by {}", info.label, info.author),
+                        friendly::preset_blurb(*id).unwrap_or(""),
+                    )
+                }
+                BaseRef::File(_) => (
+                    "My original settings".to_string(),
+                    "Your files as they were before DeadTune.",
+                ),
+            };
+            ui.label(RichText::new("Preset:").color(WEAK));
+            ui.label(RichText::new(name).strong());
             ui.label(RichText::new(blurb).color(WEAK));
-            let changed = section_changes(state, Section::Overview);
-            if changed > 0 {
-                ui.label(
-                    RichText::new(format!(
-                        "Your {changed} changes stay on top when you switch."
-                    ))
-                    .color(WEAK),
-                );
-            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                egui::ComboBox::from_id_salt("all_presets")
+                    .selected_text("All presets")
+                    .width(150.0)
+                    .show_ui(ui, |ui| {
+                        for info in preset::all() {
+                            let Some(blurb) = friendly::preset_blurb(info.id) else {
+                                continue;
+                            };
+                            let selected = state.profile.base == BaseRef::Preset(info.id);
+                            if ui
+                                .selectable_label(
+                                    selected,
+                                    format!("{} ({})", info.label, info.author),
+                                )
+                                .on_hover_text(blurb)
+                                .clicked()
+                            {
+                                edits.push(Edit::Base(info.id));
+                            }
+                        }
+                    });
+            });
         });
     });
 }
 
-fn preset_tile(ui: &mut Ui, width: f32, selected: bool, tag: &str, name: &str) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 64.0), Sense::click());
+fn goal_card(ui: &mut Ui, width: f32, selected: bool, title: &str, sub: &str) -> bool {
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 56.0), Sense::click());
     let painter = ui.painter();
     let (fill, stroke) = if selected {
         (ACCENT.gamma_multiply(0.14), Stroke::new(2.0, ACCENT))
@@ -611,21 +746,20 @@ fn preset_tile(ui: &mut Ui, width: f32, selected: bool, tag: &str, name: &str) -
         stroke,
         StrokeKind::Inside,
     );
-    let tag_color = if selected { ACCENT } else { TEXT };
     painter.text(
-        rect.left_top() + vec2(12.0, 12.0),
-        Align2::LEFT_TOP,
-        tag,
+        rect.center() - vec2(0.0, 9.0),
+        Align2::CENTER_CENTER,
+        title,
         FontId::proportional(15.5),
-        tag_color,
+        if selected { ACCENT } else { TEXT },
     );
-    let name = painter.layout(
-        name.to_string(),
+    painter.text(
+        rect.center() + vec2(0.0, 10.0),
+        Align2::CENTER_CENTER,
+        sub,
         FontId::proportional(11.5),
         WEAK,
-        width - 24.0,
     );
-    painter.galley(rect.left_top() + vec2(12.0, 35.0), name, WEAK);
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
@@ -635,7 +769,19 @@ fn key_settings(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     theme::card().show(ui, |ui| {
         ui.set_width(ui.available_width());
         card_title(ui, "Biggest FPS wins");
-        rows(ui, state, friendly::KEY_SETTINGS, edits);
+        rows(ui, state, friendly::KEY_SETTINGS, true, edits);
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Everything else:").small().color(WEAK));
+            for section in Section::ALL.into_iter().filter(|s| s.has_rows()) {
+                if ui
+                    .add(egui::Button::new(RichText::new(section.label()).small()).frame(false))
+                    .clicked()
+                {
+                    edits.push(Edit::Go(section));
+                }
+            }
+        });
     });
 }
 
@@ -643,16 +789,13 @@ fn status_card(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     theme::card().show(ui, |ui| {
         ui.set_width(ui.available_width());
         card_title(ui, "Status");
-        let changed = section_changes(state, Section::Overview);
+        let changed = state.tweak_count();
         status_item(ui, if changed > 0 { ACCENT } else { GOOD }, |ui| {
-            if changed > 0 {
-                ui.label(format!("{changed} settings changed from your preset"));
-                if ui.small_button("Reset all to preset").clicked() {
-                    edits.push(Edit::ResetAll);
-                }
-            } else {
-                ui.label("Using your preset as is");
-            }
+            ui.label(match changed {
+                0 => "Using your preset as is".to_string(),
+                1 => "1 setting changed from your preset".to_string(),
+                n => format!("{n} settings changed from your preset"),
+            });
         });
         if let Some(pending) = &state.pending_restart {
             status_item(ui, WARN, |ui| {
@@ -704,7 +847,44 @@ fn status_item(ui: &mut Ui, color: Color32, add: impl FnOnce(&mut Ui)) {
     ui.add_space(4.0);
 }
 
-fn settings_page(ui: &mut Ui, state: &AppState, section: Section, edits: &mut Vec<Edit>) {
+fn results(ui: &mut Ui, state: &AppState, inline_help: bool, edits: &mut Vec<Edit>) {
+    let found = friendly::search(&state.ui.query);
+    for section in Section::ALL.into_iter().filter(|s| s.has_rows()) {
+        let names: Vec<&'static str> = found
+            .iter()
+            .map(|r| r.name)
+            .filter(|n| friendly::section_of(n) == Some(section))
+            .collect();
+        if names.is_empty() {
+            continue;
+        }
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                caption(ui, section.label());
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui
+                        .add(egui::Button::new(RichText::new("Open section").small()).frame(false))
+                        .clicked()
+                    {
+                        edits.push(Edit::Go(section));
+                    }
+                });
+            });
+            ui.add_space(4.0);
+            rows(ui, state, &names, inline_help, edits);
+        });
+        ui.add_space(12.0);
+    }
+}
+
+fn settings_page(
+    ui: &mut Ui,
+    state: &AppState,
+    section: Section,
+    inline_help: bool,
+    edits: &mut Vec<Edit>,
+) {
     let groups = friendly::groups(section);
     let columns = if ui.available_width() >= 1100.0 && groups.len() > 1 {
         2
@@ -713,8 +893,8 @@ fn settings_page(ui: &mut Ui, state: &AppState, section: Section, edits: &mut Ve
     };
     if columns == 1 {
         for group in groups {
-            group_card(ui, state, group, edits);
-            ui.add_space(14.0);
+            group_card(ui, state, group, inline_help, edits);
+            ui.add_space(12.0);
         }
         return;
     }
@@ -730,37 +910,58 @@ fn settings_page(ui: &mut Ui, state: &AppState, section: Section, edits: &mut Ve
         for (ui, groups) in cols.iter_mut().zip(&split) {
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
                 for group in groups {
-                    group_card(ui, state, group, edits);
-                    ui.add_space(14.0);
+                    group_card(ui, state, group, inline_help, edits);
+                    ui.add_space(12.0);
                 }
             });
         }
     });
 }
 
-fn group_card(ui: &mut Ui, state: &AppState, group: &friendly::Group, edits: &mut Vec<Edit>) {
+fn group_card(
+    ui: &mut Ui,
+    state: &AppState,
+    group: &friendly::Group,
+    inline_help: bool,
+    edits: &mut Vec<Edit>,
+) {
     theme::card().show(ui, |ui| {
         ui.set_width(ui.available_width());
-        card_title(ui, group.title);
-        rows(ui, state, group.names, edits);
+        caption(ui, group.title);
+        ui.add_space(4.0);
+        rows(ui, state, group.names, inline_help, edits);
     });
 }
 
-fn rows(ui: &mut Ui, state: &AppState, names: &[&'static str], edits: &mut Vec<Edit>) {
+/// `inline_help` puts the help line under each label; without it the help panel explains
+/// the hovered row and rows stay one line tall.
+fn rows(
+    ui: &mut Ui,
+    state: &AppState,
+    names: &[&'static str],
+    inline_help: bool,
+    edits: &mut Vec<Edit>,
+) {
     for (i, name) in names.iter().enumerate() {
         if i > 0 {
             let y = ui.cursor().top() + 1.0;
             let x = ui.max_rect().x_range();
             ui.painter()
                 .hline(x, y, Stroke::new(1.0, BORDER.gamma_multiply(0.8)));
-            ui.add_space(10.0);
+            ui.add_space(if inline_help { 8.0 } else { 4.0 });
         }
-        setting_row(ui, state, name, edits);
-        ui.add_space(6.0);
+        setting_row(ui, state, name, inline_help, edits);
+        ui.add_space(if inline_help { 4.0 } else { 2.0 });
     }
 }
 
-fn setting_row(ui: &mut Ui, state: &AppState, name: &'static str, edits: &mut Vec<Edit>) {
+fn setting_row(
+    ui: &mut Ui,
+    state: &AppState,
+    name: &'static str,
+    inline_help: bool,
+    edits: &mut Vec<Edit>,
+) {
     let (Some(row), Some(entry)) = (friendly::row(name), state.catalog.get(name)) else {
         return;
     };
@@ -771,12 +972,13 @@ fn setting_row(ui: &mut Ui, state: &AppState, name: &'static str, edits: &mut Ve
     let control_width = (total * 0.5).clamp(220.0, 400.0);
     let left_width = total - control_width - 16.0;
     let top = ui.cursor().top();
+    let focus_fill = ui.painter().add(egui::Shape::Noop);
     ui.horizontal_top(|ui| {
         ui.allocate_ui_with_layout(vec2(left_width, 0.0), Layout::top_down(Align::Min), |ui| {
             ui.set_width(left_width);
-            ui.spacing_mut().item_spacing.y = 3.0;
+            ui.spacing_mut().item_spacing.y = 2.0;
             ui.horizontal(|ui| {
-                let label = RichText::new(row.label).size(15.0).strong();
+                let label = RichText::new(row.label).size(14.0).strong();
                 ui.label(if changed {
                     label.color(ACCENT)
                 } else {
@@ -789,7 +991,7 @@ fn setting_row(ui: &mut Ui, state: &AppState, name: &'static str, edits: &mut Ve
                             egui::Button::new(RichText::new("Reset").small().color(ACCENT))
                                 .fill(ACCENT.gamma_multiply(0.14))
                                 .corner_radius(CornerRadius::same(255))
-                                .min_size(vec2(0.0, 20.0)),
+                                .min_size(vec2(0.0, 18.0)),
                         )
                         .on_hover_text(format!("Back to your preset: {was}"))
                         .clicked()
@@ -798,7 +1000,9 @@ fn setting_row(ui: &mut Ui, state: &AppState, name: &'static str, edits: &mut Ve
                     }
                 }
             });
-            ui.label(RichText::new(row.help).small().color(WEAK));
+            if inline_help {
+                ui.label(RichText::new(row.help).small().color(WEAK));
+            }
             if changed {
                 let was = friendly::display(row.control, &preset);
                 ui.label(RichText::new(format!("Preset: {was}")).small().color(WEAK));
@@ -806,7 +1010,7 @@ fn setting_row(ui: &mut Ui, state: &AppState, name: &'static str, edits: &mut Ve
         });
         ui.add_space(16.0 - ui.spacing().item_spacing.x);
         ui.allocate_ui_with_layout(
-            vec2(control_width, 30.0),
+            vec2(control_width, 26.0),
             Layout::left_to_right(Align::Center),
             |ui| {
                 ui.set_width(control_width);
@@ -816,9 +1020,20 @@ fn setting_row(ui: &mut Ui, state: &AppState, name: &'static str, edits: &mut Ve
             },
         );
     });
+    let bottom = ui.cursor().top();
+    let x = ui.max_rect().left() - 10.0;
+    let row_rect =
+        Rect::from_x_y_ranges(x..=ui.max_rect().right() + 10.0, top - 4.0..=bottom - 2.0);
+    if ui.rect_contains_pointer(row_rect) {
+        edits.push(Edit::Focus(name));
+    }
+    if !inline_help && state.ui.focus == Some(name) {
+        ui.painter().set(
+            focus_fill,
+            egui::Shape::rect_filled(row_rect, CornerRadius::same(4), CARD_HOVER),
+        );
+    }
     if changed {
-        let bottom = ui.cursor().top();
-        let x = ui.max_rect().left() - 10.0;
         ui.painter().rect_filled(
             Rect::from_x_y_ranges(x..=x + 3.0, top..=bottom - 2.0),
             CornerRadius::same(2),
@@ -853,8 +1068,9 @@ fn control(
         }
         Control::Slider { .. } => {
             let [lo, hi] = entry.range.unwrap_or([0.0, 1.0]);
+            let step = entry.step.unwrap_or(0.0);
             let mut v: f64 = value.trim().parse().unwrap_or(lo);
-            let readout = 118.0;
+            let readout = 104.0;
             ui.spacing_mut().slider_width = ui.available_width() - readout - 8.0;
             let before = v;
             let mut slider = egui::Slider::new(&mut v, lo..=hi).show_value(false);
@@ -862,12 +1078,8 @@ fn control(
                 slider = slider.integer();
             }
             let response = ui.add(slider);
-            let edited = (response.changed() && v != before).then(|| {
-                fmt_num(
-                    friendly::snap(v, [lo, hi], entry.step.unwrap_or(0.0)),
-                    integer,
-                )
-            });
+            let mut edited = (response.changed() && v != before)
+                .then(|| fmt_num(friendly::snap(v, [lo, hi], step), integer));
             if let Ok(p) = preset.trim().parse::<f64>()
                 && (lo..=hi).contains(&p)
             {
@@ -885,12 +1097,39 @@ fn control(
                     Stroke::new(2.0, WEAK),
                 );
             }
-            let shown = edited.clone().unwrap_or_else(|| value.to_string());
+            // The readout is its own box so typed text ("144", "Unlimited", "2 km") lands
+            // exactly, while rail drags still snap to the step grid.
+            let mut typed = before;
             ui.allocate_ui_with_layout(
                 vec2(readout, 24.0),
                 Layout::right_to_left(Align::Center),
                 |ui| {
-                    ui.label(RichText::new(friendly::display(control, &shown)).strong());
+                    let speed = if step > 0.0 {
+                        step
+                    } else if integer {
+                        1.0
+                    } else {
+                        0.01
+                    };
+                    let box_response = ui
+                        .add(
+                            egui::DragValue::new(&mut typed)
+                                .range(lo..=hi)
+                                .speed(speed)
+                                .custom_formatter(move |x, _| {
+                                    friendly::display(control, &fmt_num(x, integer))
+                                })
+                                .custom_parser(move |text| friendly::parse(control, text)),
+                        )
+                        .on_hover_text("Click to type a value");
+                    if box_response.changed() && typed != before {
+                        let snapped = if box_response.dragged() {
+                            friendly::snap(typed, [lo, hi], step)
+                        } else {
+                            typed.clamp(lo, hi)
+                        };
+                        edited = Some(fmt_num(snapped, integer));
+                    }
                 },
             );
             edited
@@ -899,7 +1138,7 @@ fn control(
 }
 
 fn switch(ui: &mut Ui, on: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(44.0, 24.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(40.0, 22.0), Sense::click());
     let t = ui.ctx().animate_bool_responsive(response.id, on);
     let fill = if on {
         ACCENT
@@ -908,10 +1147,10 @@ fn switch(ui: &mut Ui, on: bool) -> egui::Response {
     };
     let painter = ui.painter();
     painter.rect_filled(rect, CornerRadius::same(255), fill);
-    let x = egui::lerp(rect.left() + 12.0..=rect.right() - 12.0, t);
+    let x = egui::lerp(rect.left() + 11.0..=rect.right() - 11.0, t);
     painter.circle_filled(
         egui::pos2(x, rect.center().y),
-        8.5,
+        7.5,
         if on { ON_ACCENT } else { TEXT },
     );
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -930,7 +1169,7 @@ fn segmented(
     let mut picked = None;
     ui.spacing_mut().item_spacing.x = gap;
     for (i, (_, label)) in levels.iter().enumerate() {
-        let (rect, response) = ui.allocate_exact_size(vec2(width, 30.0), Sense::click());
+        let (rect, response) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click());
         let selected = current == Some(i);
         let r = 6;
         let corner = CornerRadius {
@@ -954,7 +1193,7 @@ fn segmented(
         } else {
             TEXT.gamma_multiply(0.85)
         };
-        let font = FontId::proportional(13.5);
+        let font = FontId::proportional(13.0);
         painter.text(rect.center(), Align2::CENTER_CENTER, *label, font, color);
         if marked == Some(i) && !selected {
             painter.circle_filled(rect.center_top() + vec2(0.0, 5.0), 2.0, WEAK);
@@ -971,30 +1210,39 @@ fn segmented(
 }
 
 fn apply_bar(ui: &mut Ui, state: &mut AppState) {
-    let changes = state
+    let file_changes = state
         .preview
         .as_ref()
         .map(|p| p.live.len() + p.queued_cheat.len() + p.restart.len() + p.video_changes.len())
         .map_err(Clone::clone);
-    let hud_only = state.preview.as_ref().is_ok_and(|p| !p.is_empty());
-    let ready = matches!(changes, Ok(n) if n > 0) || hud_only;
+    let pending = state.pending();
+    let ready = pending != Pending::Nothing;
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
-            match &changes {
-                Ok(0) if !hud_only => ui.label(RichText::new("Everything is applied").size(16.0).strong()),
-                Ok(0) => ui.label(RichText::new("HUD changes ready").size(16.0).strong()),
-                Ok(1) => ui.label(RichText::new("1 change ready").size(16.0).strong().color(ACCENT)),
-                Ok(n) => ui.label(
-                    RichText::new(format!("{n} changes ready"))
-                        .size(16.0)
-                        .strong()
-                        .color(ACCENT),
-                ),
-                Err(raw) => ui
-                    .colored_label(BAD, human_error(raw))
-                    .on_hover_text(raw.as_str()),
+            let tweaks = |n: usize| match n {
+                1 => "1 tweak".to_string(),
+                n => format!("{n} tweaks"),
             };
+            let headline = match &pending {
+                Pending::Nothing => "Everything is applied".to_string(),
+                Pending::Preset { label, tweaks: 0 } => format!("Switching to {label} preset"),
+                Pending::Preset { label, tweaks: n } => {
+                    format!("Ready to apply: {label} preset + {}", tweaks(*n))
+                }
+                Pending::Tweaks(n) => format!("Ready to apply: {}", tweaks(*n)),
+                Pending::Other => "Ready to apply: HUD changes".to_string(),
+            };
+            match &file_changes {
+                Err(raw) => {
+                    ui.colored_label(BAD, human_error(raw))
+                        .on_hover_text(raw.as_str());
+                }
+                Ok(_) => {
+                    let text = RichText::new(headline).size(15.0).strong();
+                    ui.label(if ready { text.color(ACCENT) } else { text });
+                }
+            }
             let key = &state.settings.bind_key;
             let when = match state.timing() {
                 Timing::Nothing => match &state.pending_restart {
@@ -1007,7 +1255,11 @@ fn apply_bar(ui: &mut Ui, state: &mut AppState) {
                     "{now} take effect right away (press {key} in game), {later} next time you start Deadlock."
                 ),
             };
-            ui.label(RichText::new(when).color(WEAK));
+            let detail = match file_changes {
+                Ok(n) if n > 1 && ready => format!("{n} settings in the game files change. {when}"),
+                _ => when,
+            };
+            ui.label(RichText::new(detail).small().color(WEAK));
         });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if accent_button(ui, ready, "Apply").clicked() {
@@ -1015,7 +1267,7 @@ fn apply_bar(ui: &mut Ui, state: &mut AppState) {
             }
             if state.is_dirty()
                 && ui
-                    .add(egui::Button::new("Discard").min_size(vec2(96.0, 40.0)))
+                    .add(egui::Button::new("Discard").min_size(vec2(90.0, 36.0)))
                     .on_hover_text("Throw away changes you haven't applied")
                     .clicked()
             {
@@ -1028,6 +1280,91 @@ fn apply_bar(ui: &mut Ui, state: &mut AppState) {
             });
         });
     });
+}
+
+/// The right-hand panel on settings pages: what the hovered (or last edited) row does.
+fn help(ui: &mut Ui, state: &AppState, page: Page) {
+    let in_page = |name: &str| match page {
+        Page::Section(s) => friendly::section_of(name) == Some(s),
+        Page::Results => friendly::search(&state.ui.query)
+            .iter()
+            .any(|r| r.name == name),
+    };
+    let row = state
+        .ui
+        .focus
+        .filter(|n| in_page(n))
+        .and_then(friendly::row)
+        .or_else(|| match page {
+            Page::Section(s) => friendly::section_names(s)
+                .first()
+                .and_then(|n| friendly::row(n)),
+            Page::Results => friendly::search(&state.ui.query).first().copied(),
+        });
+    let Some(row) = row else {
+        ui.label(RichText::new("Hover a setting to read what it does.").color(WEAK));
+        return;
+    };
+    let section = friendly::section_of(row.name).map_or("", Section::label);
+    let group = friendly::group_of(row.name).map_or("", |g| g.title);
+    caption(ui, &format!("{section} · {group}"));
+    ui.label(RichText::new(row.label).size(20.0).strong());
+    ui.add_space(8.0);
+    let (bars, word, tip) = match state
+        .catalog
+        .get(row.name)
+        .map_or(Impact::Unknown, |e| e.impact)
+    {
+        Impact::High => (3, "High", "One of the biggest FPS levers."),
+        Impact::Medium => (2, "Medium", "A noticeable FPS difference."),
+        Impact::Low => (1, "Low", "A small FPS difference."),
+        Impact::Unknown => (0, "Unknown", "Nobody has measured this one."),
+    };
+    ui.horizontal(|ui| {
+        caption(ui, "FPS impact");
+        fps_meter(ui, bars);
+        ui.label(RichText::new(word).strong().color(ACCENT));
+    });
+    ui.label(RichText::new(tip).small().color(WEAK));
+    ui.add_space(12.0);
+    ui.label(RichText::new(row.help).size(14.0));
+    ui.add_space(12.0);
+    ui.separator();
+    ui.add_space(8.0);
+    let preset = state
+        .preset_value(row.name)
+        .map(|v| friendly::display(row.control, &v))
+        .unwrap_or_else(|| "Game default".into());
+    let yours = state
+        .current_value(row.name)
+        .map(|v| friendly::display(row.control, &v))
+        .unwrap_or_default();
+    fact(ui, "In this preset", &preset);
+    fact(ui, "Your setting", &yours);
+    let when = if state.is_live_now(row.name) {
+        format!("Right away: press {} in game", state.settings.bind_key)
+    } else {
+        "Next time you start Deadlock".to_string()
+    };
+    fact(ui, "Takes effect", &when);
+}
+
+fn fact(ui: &mut Ui, label: &str, value: &str) {
+    caption(ui, label);
+    ui.label(RichText::new(value).size(14.5).strong());
+    ui.add_space(8.0);
+}
+
+fn fps_meter(ui: &mut Ui, filled: usize) {
+    let (rect, _) = ui.allocate_exact_size(vec2(40.0, 14.0), Sense::hover());
+    for i in 0..3 {
+        let bar = Rect::from_min_size(
+            rect.left_top() + vec2(i as f32 * 14.0, 0.0),
+            vec2(10.0, 14.0),
+        );
+        let color = if i < filled { ACCENT } else { BORDER };
+        ui.painter().rect_filled(bar, CornerRadius::same(2), color);
+    }
 }
 
 fn safety(ui: &mut Ui, state: &mut AppState) {
@@ -1044,7 +1381,7 @@ fn safety(ui: &mut Ui, state: &mut AppState) {
             );
             ui.add_space(6.0);
             if ui
-                .add(egui::Button::new("Undo last change").min_size(vec2(200.0, 34.0)))
+                .add(egui::Button::new("Undo last change").min_size(vec2(190.0, 30.0)))
                 .clicked()
             {
                 state.status = Some(match state.undo_last() {
@@ -1061,7 +1398,7 @@ fn safety(ui: &mut Ui, state: &mut AppState) {
             );
             ui.add_space(6.0);
             if ui
-                .add(egui::Button::new("Restore original game files").min_size(vec2(200.0, 34.0)))
+                .add(egui::Button::new("Restore original game files").min_size(vec2(190.0, 30.0)))
                 .clicked()
             {
                 state.status = Some(match state.restore_original_files() {
@@ -1118,16 +1455,16 @@ fn safety(ui: &mut Ui, state: &mut AppState) {
         });
     } else {
         undo(ui, state);
-        ui.add_space(14.0);
+        ui.add_space(12.0);
         ranked(ui, state);
     }
-    ui.add_space(14.0);
+    ui.add_space(12.0);
     if state.settings.bridge == BridgeKind::ExecFile {
         theme::card().show(ui, |ui| {
             ui.set_width(ui.available_width());
             bind_helper(ui, state);
         });
-        ui.add_space(14.0);
+        ui.add_space(12.0);
     }
     theme::card().show(ui, |ui| {
         ui.set_width(ui.available_width());

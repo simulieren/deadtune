@@ -237,7 +237,10 @@ fn parse_header(b: &[u8]) -> Result<(usize, usize), VpkError> {
 pub enum Data<'a> {
     Bytes(&'a [u8]),
     /// An entry of another archive, streamed through without being held with the rest.
-    Copy { from: &'a VpkDir, path: &'a str },
+    Copy {
+        from: &'a VpkDir,
+        path: &'a str,
+    },
 }
 
 impl Data<'_> {
@@ -318,8 +321,8 @@ pub fn write_with(files: &BTreeMap<String, Data>, out: &mut impl Write) -> Resul
         t.push(0);
     }
     t.push(0);
-    let data_len = u32::try_from(total)
-        .map_err(|_| VpkError::BadTree("data section exceeds 4 GiB".into()))?;
+    let data_len =
+        u32::try_from(total).map_err(|_| VpkError::BadTree("data section exceeds 4 GiB".into()))?;
 
     for v in [SIGNATURE, 2, t.len() as u32, data_len, 0, 48, 0] {
         out.write_all(&v.to_le_bytes())?;

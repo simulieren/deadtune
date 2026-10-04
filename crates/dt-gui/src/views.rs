@@ -703,6 +703,7 @@ pub fn profiles(ui: &mut egui::Ui, state: &mut AppState) {
                 base_rev: None,
                 convars: ConVarEdits::default(),
                 video: Default::default(),
+                hud: Default::default(),
             };
             state.switch_profile(profile, false);
             state.ui.new_profile_name.clear();

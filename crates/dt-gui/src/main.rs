@@ -3,7 +3,6 @@
 mod app;
 mod bench;
 mod chart;
-mod doctor;
 mod friendly;
 mod live;
 mod png;

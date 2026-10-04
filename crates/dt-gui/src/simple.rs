@@ -4,12 +4,12 @@ use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::preset;
 use eframe::egui::{self, Color32, RichText};
 
-use crate::doctor::CheckStatus;
 use crate::friendly::{self, human_error};
 use crate::live::BridgeKind;
 use crate::settings::{TargetSource, View};
 use crate::state::{AppState, Setting, StartChoice, Status, Welcome};
 use crate::views;
+use dt_core::doctor::CheckStatus;
 
 const GREEN: Color32 = Color32::from_rgb(90, 190, 110);
 const YELLOW: Color32 = Color32::from_rgb(230, 180, 60);
@@ -468,7 +468,7 @@ pub fn check_setup(ui: &mut egui::Ui, state: &mut AppState, plain: bool) {
         };
         ui.horizontal(|ui| {
             ui.colored_label(color, RichText::new(mark).strong());
-            let name = ui.label(RichText::new(&check.name).strong());
+            let name = ui.label(RichText::new(check.name).strong());
             if plain {
                 name.on_hover_text(&check.detail);
             } else {

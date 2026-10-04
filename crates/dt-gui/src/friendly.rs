@@ -91,6 +91,9 @@ pub fn preset_blurb(id: PresetId) -> Option<&'static str> {
 
 /// One human sentence plus what to do, from a raw error string.
 pub fn human_error(raw: &str) -> String {
+    if raw == crate::state::STALE {
+        return raw.into();
+    }
     let lower = raw.to_lowercase();
     if lower.contains("braces") || lower.contains("no convars block") {
         "The game's config file looks damaged. Use \"Restore original game files\", then try again."

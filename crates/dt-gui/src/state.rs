@@ -6,22 +6,25 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Instant, SystemTime};
 
-use dt_core::apply::{self, ApplyContext, ApplyPlan, ApplyReport, BaseTexts, FileWrite};
+use dt_core::apply::{
+    self, ApplyContext, ApplyError, ApplyPlan, ApplyReport, BaseTexts, FileWrite,
+};
 use dt_core::backup::{BackupEntry, BackupStore, FileKind, sha256_hex};
 use dt_core::bridge::ConsoleCmd;
 use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::gi::{self, Override};
+use dt_core::hud::layout::HudLayout;
 use dt_core::locate::GamePaths;
 use dt_core::preset::PresetId;
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 use dt_core::watch::{self, Change, Watcher};
 
 use crate::bench::{self, BenchState};
-use crate::doctor::Check;
 use crate::live::{BridgeTarget, LivePush, PushOutcome};
 use crate::profiles;
 use crate::relaunch::Relaunch;
 use crate::settings::{Settings, TargetSource};
+use dt_core::doctor::Check;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LiveFiles {
@@ -209,12 +212,18 @@ pub struct AppState {
     pub ui: UiState,
     pub status: Option<Status>,
     pub welcome: Option<Welcome>,
+    /// Creation time of the backup the last Undo restored; cleared by Apply.
+    pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
     pub checks: Option<Vec<Check>>,
     #[cfg(feature = "remote")]
     pub remote: Option<crate::remote::Remote>,
     watch: Option<(Watcher, Receiver<Vec<Change>>)>,
 }
+
+/// Shown when the files changed between preview and Apply; the preview is already refreshed.
+pub const STALE: &str =
+    "The game files changed while you were editing. The changes were refreshed; press Apply again.";
 
 pub fn default_profile() -> Profile {
     Profile {
@@ -223,6 +232,7 @@ pub fn default_profile() -> Profile {
         base_rev: None,
         convars: ConVarEdits::default(),
         video: BTreeMap::new(),
+        hud: HudLayout::default(),
     }
 }
 
@@ -291,6 +301,7 @@ impl AppState {
             ui: UiState::default(),
             status: None,
             welcome: None,
+            undo_cursor: None,
             checks: None,
             #[cfg(feature = "remote")]
             remote: None,
@@ -346,16 +357,19 @@ impl AppState {
     }
 
     pub fn run_checks(&mut self) {
-        self.checks = Some(crate::doctor::run(&self.paths));
+        self.checks = Some(dt_core::doctor::run(Some(&self.paths), &self.data_dir));
     }
 
-    /// Restores the newest gameinfo.gi backup that differs from the live file, so repeated
-    /// clicks walk further back. A video.txt backup from the same apply is restored with it.
+    /// Restores the newest gameinfo.gi backup older than the last one undone (and different
+    /// from the live file), so repeated clicks walk further back until the next Apply.
+    /// A video.txt backup from the same apply is restored with it.
     pub fn undo_last(&mut self) -> Result<(), String> {
         let live_sha = sha256_hex(self.live.gameinfo.as_bytes());
+        let cursor = self.undo_cursor;
         let gameinfo = self
             .backups(FileKind::GameInfo)
             .into_iter()
+            .filter(|b| cursor.is_none_or(|c| b.created < c))
             .find(|b| b.sha256 != live_sha)
             .ok_or("There is nothing to undo yet.")?;
         let video_sha = self.live.video.as_deref().map(|v| sha256_hex(v.as_bytes()));
@@ -367,6 +381,7 @@ impl AppState {
         if let Some(video) = video {
             self.restore(&video).map_err(|e| e.to_string())?;
         }
+        self.undo_cursor = Some(gameinfo.created);
         Ok(())
     }
 
@@ -390,22 +405,33 @@ impl AppState {
     }
 
     pub fn refresh_preview(&mut self) {
+        // Ranked-safe also takes our HUD addon out: stock means stock.
+        let layout = match self.settings.source {
+            TargetSource::Profile => &self.profile.hud,
+            TargetSource::RankedSafe => &HudLayout::default(),
+        };
+        let hud = apply::hud_plan(&self.paths, layout, &self.store);
         let target = match self.settings.source {
             TargetSource::Profile => match &self.base {
-                Ok(base) => apply::target(
-                    &self.live.gameinfo,
-                    self.live.video.as_deref(),
-                    &base.texts,
-                    &self.profile,
-                    self.catalog,
-                ),
+                Ok(base) => hud.and_then(|hud| {
+                    apply::target(
+                        &self.live.gameinfo,
+                        self.live.video.as_deref(),
+                        &base.texts,
+                        &self.profile,
+                        self.catalog,
+                        hud,
+                    )
+                }),
                 Err(e) => {
                     self.preview = Err(e.clone());
                     self.preview_diff.clear();
                     return;
                 }
             },
-            TargetSource::RankedSafe => apply::ranked_safe_target(&self.live.gameinfo, &self.store),
+            TargetSource::RankedSafe => {
+                hud.and_then(|hud| apply::ranked_safe_target(&self.live.gameinfo, &self.store, hud))
+            }
         };
         self.preview = target
             .and_then(|t| {
@@ -632,8 +658,19 @@ impl AppState {
             Some(b) => Some(b.as_mut()),
             None => None,
         };
-        applied.report =
-            apply::execute(&plan, &self.store, bridge_ref).map_err(|e| e.to_string())?;
+        applied.report = match apply::execute(&self.paths, &plan, &self.store, bridge_ref) {
+            Ok(report) => report,
+            Err(ApplyError::Stale(_)) => {
+                self.live = LiveFiles::read(&self.paths).map_err(|e| e.to_string())?;
+                self.known_gameinfo_sha = sha256_hex(self.live.gameinfo.as_bytes());
+                self.refresh_preview();
+                return Err(STALE.into());
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+        if let Some(e) = &applied.report.bridge_error {
+            applied.warning = Some(format!("files saved, but the live push failed: {e}"));
+        }
         if applied.report.needs_restart {
             let mut names: Vec<String> = plan
                 .restart
@@ -655,6 +692,7 @@ impl AppState {
         self.live = LiveFiles::read(&self.paths).map_err(|e| e.to_string())?;
         self.known_gameinfo_sha = sha256_hex(self.live.gameinfo.as_bytes());
         self.banner = None;
+        self.undo_cursor = None;
         self.refresh_preview();
         Ok(applied)
     }

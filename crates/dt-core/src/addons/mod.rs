@@ -14,10 +14,12 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 pub mod blur;
+pub mod guard;
 pub mod install;
 pub mod particles;
 pub mod sources;
 pub mod textures;
+pub mod verify;
 
 pub use crate::texture::{
     Category as TextureCategory, Factor, Stats as TextureStats, TextureDownscale,
@@ -310,6 +312,8 @@ pub enum AddonError {
     BadStub,
     #[error("no free pakNN slot in {0}")]
     NoFreeSlot(PathBuf),
+    #[error("the built pak failed DeadTune's check and was not installed: {0}")]
+    Invalid(String),
     #[error("download: {0}")]
     Http(String),
 }

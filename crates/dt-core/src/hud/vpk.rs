@@ -30,6 +30,8 @@ pub struct VpkDir {
     pub entries: BTreeMap<String, VpkEntry>,
     /// Absolute offset of the embedded data section in the dir file (28 + tree size).
     data_start: u64,
+    /// The whole dir file, for a pak that only exists in memory yet.
+    memory: Option<std::sync::Arc<[u8]>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -171,7 +173,16 @@ impl VpkDir {
             dir_path: dir_path.to_path_buf(),
             entries,
             data_start: tree_end as u64,
+            memory: None,
         })
+    }
+
+    /// A single-file pak that has not been written yet; `read` serves embedded entries
+    /// from `bytes`.
+    pub fn in_memory(bytes: Vec<u8>) -> Result<VpkDir, VpkError> {
+        let mut dir = VpkDir::parse(Path::new("memory_dir.vpk"), &bytes)?;
+        dir.memory = Some(bytes.into());
+        Ok(dir)
     }
 
     /// Full file bytes (preload + archive data), CRC-checked.
@@ -187,11 +198,24 @@ impl VpkDir {
         };
         let mut out = e.preload.clone();
         if e.length > 0 {
-            let mut f = File::open(file_path)?;
-            f.seek(SeekFrom::Start(start))?;
             let at = out.len();
             out.resize(at + e.length as usize, 0);
-            f.read_exact(&mut out[at..])?;
+            match &self.memory {
+                Some(bytes) if e.archive_index == EMBEDDED => {
+                    let end = (start as usize).checked_add(e.length as usize);
+                    let slice = end
+                        .and_then(|end| bytes.get(start as usize..end))
+                        .ok_or_else(|| {
+                            VpkError::BadTree(format!("{path} data past end of file"))
+                        })?;
+                    out[at..].copy_from_slice(slice);
+                }
+                _ => {
+                    let mut f = File::open(file_path)?;
+                    f.seek(SeekFrom::Start(start))?;
+                    f.read_exact(&mut out[at..])?;
+                }
+            }
         }
         if crc32(&out) != e.crc {
             return Err(VpkError::Crc(path.to_string()));
@@ -490,6 +514,20 @@ mod tests {
                 assert_eq!(&vpk.read(path).unwrap(), data, "{path}");
             }
         }
+    }
+
+    #[test]
+    fn in_memory_reads_embedded_entries_without_a_file() {
+        let files = sample();
+        let vpk = VpkDir::in_memory(write(&files)).unwrap();
+        for (path, data) in &files {
+            assert_eq!(&vpk.read(path).unwrap(), data, "{path}");
+        }
+        let mut cut = write(&files);
+        cut.truncate(cut.len() - 60);
+        let short = VpkDir::in_memory(cut).unwrap();
+        assert!(short.read("root.txt").is_err(), "data stored last is gone");
+        assert!(short.read("a/b/c/deep.vcss_c").is_ok());
     }
 
     #[test]

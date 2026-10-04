@@ -15,6 +15,7 @@ use std::time::UNIX_EPOCH;
 use sha2::{Digest, Sha256};
 
 use super::textures::{self, Progress};
+use super::verify::{self, Expect};
 use super::{AddonError, AddonId, AddonsConfig, Kind, Source, blur, info, particles, sources};
 use crate::backup::{atomic_write, sha256_hex};
 use crate::hud::install::{ADDON_FILE as HUD_ADDON_FILE, GAME_PAK, addons_dir};
@@ -56,6 +57,8 @@ pub enum Blocker {
     NotDownloaded,
     /// The game archive could not be read.
     GameFiles(String),
+    /// The pak was built but failed [`verify`] when read back; it stays out of the game.
+    Invalid(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -260,6 +263,16 @@ fn allocate(id: AddonId, dir: &Path, taken: &mut BTreeSet<String>) -> Result<Str
     Err(AddonError::NoFreeSlot(dir.to_path_buf()))
 }
 
+/// A pak read back in full before it may go into the game folder.
+fn checked(pak: &VpkDir, expect: &Expect) -> Result<(), AddonError> {
+    let got = verify::verify(pak, expect);
+    if got.is_ok() {
+        Ok(())
+    } else {
+        Err(AddonError::Invalid(got.to_string()))
+    }
+}
+
 /// What an enabled addon would be built from, before deciding whether to build it.
 struct Inputs {
     input: String,
@@ -285,12 +298,16 @@ fn inputs(
     let out = match info(id).kind {
         Kind::Toggle => {
             let src = source.expect("toggle addons have an upstream source");
-            let ships = VpkDir::open(&src.path)?.entries.into_keys().collect();
+            let upstream = VpkDir::open(&src.path)?;
+            let ships = upstream.entries.keys().cloned().collect();
             let path = src.path.clone();
             Inputs {
                 input: fingerprint(&["toggle", &src.sha256]),
                 ships,
-                make: Box::new(move || Ok(Some(Build::Copy(path)))),
+                make: Box::new(move || {
+                    checked(&upstream, &Expect::default())?;
+                    Ok(Some(Build::Copy(path)))
+                }),
             }
         }
         Kind::ParticleGroups => {
@@ -308,7 +325,15 @@ fn inputs(
                 ships,
                 make: Box::new(move || {
                     let stub = particles::stub_from_upstream(&VpkDir::open(&path)?)?;
-                    Ok(particles::build(&stub, &hidden).map(Build::Bytes))
+                    let Some(bytes) = particles::build(&stub, &hidden) else {
+                        return Ok(None);
+                    };
+                    let expect = Expect {
+                        particle_stub: Some(stub.particle),
+                        originals: BTreeMap::new(),
+                    };
+                    checked(&VpkDir::in_memory(bytes.clone())?, &expect)?;
+                    Ok(Some(Build::Bytes(bytes)))
                 }),
             }
         }
@@ -339,9 +364,16 @@ fn inputs(
                 ]),
                 ships: vec![blur::STYLE.to_string()],
                 make: Box::new(move || {
+                    let original = pak.read(blur::STYLE)?;
                     let files =
                         BTreeMap::from([(blur::STYLE.to_string(), blur::build(&pak, &opts)?)]);
-                    Ok(Some(Build::Bytes(vpk::write(&files))))
+                    let bytes = vpk::write(&files);
+                    let expect = Expect {
+                        particle_stub: None,
+                        originals: BTreeMap::from([(blur::STYLE.to_string(), original)]),
+                    };
+                    checked(&VpkDir::in_memory(bytes.clone())?, &expect)?;
+                    Ok(Some(Build::Bytes(bytes)))
                 }),
             }
         }
@@ -429,13 +461,17 @@ pub fn plan(
                 // One addon failing to build must not block the others; an installed
                 // copy stays in place.
                 Err(e) => {
+                    let blocker = match e {
+                        AddonError::Invalid(reason) => Blocker::Invalid(reason),
+                        other => Blocker::GameFiles(other.to_string()),
+                    };
                     addons.push(AddonPlan {
                         id,
                         path: rec.map_or_else(
                             || dir.join(format!("pak{:02}_dir.vpk", info(id).slot)),
                             |r| dir.join(&r.file),
                         ),
-                        action: Action::Unavailable(Blocker::GameFiles(e.to_string())),
+                        action: Action::Unavailable(blocker),
                         input: None,
                         ships: Vec::new(),
                     });
@@ -683,6 +719,13 @@ pub fn build_textures(
         texture_build::build_texture_addon(&game_vpks(paths), &config.textures, &path, &mut |p| {
             progress(p.into())
         })?;
+    let got = verify::verify_built_file(&path)?;
+    if !got.is_ok() {
+        for file in std::iter::once(file.clone()).chain(chunks_of(&dir, &file)) {
+            let _ = std::fs::remove_file(dir.join(file));
+        }
+        return Err(AddonError::Invalid(got.to_string()));
+    }
     let sha256 = sha256_file(&path)?;
     let input = fingerprint(&[
         "textures",
@@ -794,6 +837,22 @@ pub(crate) mod tests {
             .unwrap_or_default();
         names.sort();
         names
+    }
+
+    #[test]
+    fn a_pak_that_fails_its_read_back_is_refused_as_invalid() {
+        let files = BTreeMap::from([("a.txt".to_string(), b"data".to_vec())]);
+        let mut bytes = vpk::write(&files);
+        let tree_size = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+        bytes[28 + tree_size] ^= 1;
+        let err = checked(&VpkDir::in_memory(bytes).unwrap(), &Expect::default()).unwrap_err();
+        assert!(
+            matches!(&err, AddonError::Invalid(r) if r.contains("crc mismatch")),
+            "{err}"
+        );
+        assert!(err.to_string().contains("not installed"));
+        let good = VpkDir::in_memory(vpk::write(&files)).unwrap();
+        checked(&good, &Expect::default()).unwrap();
     }
 
     #[test]

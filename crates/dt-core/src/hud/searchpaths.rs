@@ -189,6 +189,20 @@ mod tests {
     const PRESET: &str =
         include_str!("../../../../research/configs/OptimizationLock/test_cfg/gameinfo.gi");
 
+    // gi::validate_braces is still a todo!() stub on this branch.
+    fn assert_balanced(text: &str) {
+        let mut depth = 0i32;
+        for c in text.chars() {
+            match c {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+            assert!(depth >= 0);
+        }
+        assert_eq!(depth, 0);
+    }
+
     fn crlf(s: &str) -> String {
         s.replace("\r\n", "\n").replace('\n', "\r\n")
     }
@@ -233,7 +247,7 @@ mod tests {
         assert_eq!(out.lines().count(), VANILLA.lines().count() + 1);
         let added = out.lines().find(|l| l.contains(ADDONS_LINE_VALUE)).unwrap();
         assert!(added.starts_with("            Game "), "{added:?}");
-        crate::gi::validate_braces(&out).unwrap();
+        assert_balanced(&out);
     }
 
     #[test]
@@ -243,8 +257,7 @@ mod tests {
         assert_eq!(has_addons(&out), Ok(true));
         assert_only_block_changed(&src, &out);
         assert_eq!(out.matches('\n').count(), out.matches("\r\n").count());
-        assert_eq!(out.len(), src.len() + (out.len() - src.len()));
-        crate::gi::validate_braces(&out).unwrap();
+        assert_balanced(&out);
     }
 
     #[test]

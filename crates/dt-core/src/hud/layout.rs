@@ -573,7 +573,7 @@ mod tests {
             .iter()
             .find(|r| r.id == ElementId::Minimap)
             .expect("row");
-        assert_eq!(minimap.rect, [1480.0, 545.0, 440.0, 520.0]);
+        assert_eq!(minimap.rect, [1511.0, 654.0, 380.0, 380.0]);
     }
 
     #[test]
@@ -641,18 +641,18 @@ mod tests {
         let get = |id| rects.iter().find(|r| r.id == id).copied().expect("row");
         assert_eq!(
             get(ElementId::Minimap).rect,
-            [1700.0, 805.0, 220.0, 260.0],
+            [1701.0, 844.0, 190.0, 190.0],
             "bottom-right corner fixed"
         );
         assert_eq!(get(ElementId::Minimap).opacity, 0.4);
         assert_eq!(
             get(ElementId::Chat).rect,
-            [640.0, 340.0, 700.0, 480.0],
+            [640.0, 420.0, 700.0, 400.0],
             "bottom-centre anchor fixed"
         );
         assert!(!get(ElementId::TopBar).visible);
         assert!(get(ElementId::PassiveItems).visible);
-        assert!(!get(ElementId::AbilitySlots).visible);
+        assert!(get(ElementId::AbilitySlots).visible);
     }
 
     #[test]

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use serde::de::{Error as _, IntoDeserializer};
 
 use crate::gi::{Override, Overrides};
+use crate::hud::HudLayout;
 use crate::preset::PresetId;
 
 /// Serialized as `"kaiz_minspec"` or `"file:<path>"`.
@@ -34,6 +35,8 @@ pub struct Profile {
     pub convars: ConVarEdits,
     #[serde(default)]
     pub video: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "HudLayout::is_vanilla")]
+    pub hud: HudLayout,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -215,6 +218,7 @@ pub fn builtin_suggestions() -> Vec<Profile> {
             base_rev: None,
             convars: ConVarEdits::default(),
             video: BTreeMap::new(),
+            hud: HudLayout::default(),
         },
         Profile {
             name: "Battery".into(),
@@ -234,6 +238,7 @@ pub fn builtin_suggestions() -> Vec<Profile> {
                 ("setting.fps_max", "60"),
                 ("setting.r_particle_max_detail_level", "0"),
             ]),
+            hud: HudLayout::default(),
         },
     ]
 }
@@ -281,6 +286,7 @@ names = ["citadel_camera_hero_fov"]
                 (s("setting.fps_max"), s("60")),
             ]
             .into(),
+            hud: HudLayout::default(),
         }
     }
 
@@ -299,11 +305,32 @@ names = ["citadel_camera_hero_fov"]
             base_rev: None,
             convars: ConVarEdits::default(),
             video: BTreeMap::new(),
+            hud: HudLayout::default(),
         });
         for p in profiles {
             let text = p.to_toml().unwrap();
             assert_eq!(Profile::from_toml(&text).unwrap(), p, "{text}");
         }
+    }
+
+    #[test]
+    fn hud_layout_round_trips_and_vanilla_hud_is_omitted() {
+        use crate::hud::{ElementEdit, ElementId};
+        let mut p = plan_profile();
+        assert!(
+            !p.to_toml().unwrap().contains("[hud"),
+            "vanilla hud adds no table"
+        );
+        p.hud.elements.insert(
+            ElementId::Minimap,
+            ElementEdit {
+                scale_pct: 120,
+                ..ElementEdit::default()
+            },
+        );
+        let text = p.to_toml().unwrap();
+        assert!(text.contains("[hud.elements.minimap]"), "{text}");
+        assert_eq!(Profile::from_toml(&text).unwrap(), p, "{text}");
     }
 
     #[test]

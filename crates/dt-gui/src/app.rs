@@ -78,6 +78,7 @@ impl App {
         args: Args,
         screenshot: Option<PathBuf>,
     ) -> App {
+        let saved_settings = Settings::load(&data_dir);
         let mut app = App {
             screen: Screen::Setup {
                 input: String::new(),
@@ -86,7 +87,7 @@ impl App {
             },
             data_dir,
             args,
-            saved_settings: settings.clone(),
+            saved_settings,
             game_poll: None,
             screenshot: screenshot.map(|path| Screenshot {
                 path,
@@ -361,8 +362,7 @@ fn top_bar(ui: &mut egui::Ui, state: &mut AppState) {
             .on_hover_text("One click restores the stock ConVars block (video.txt kept); one click goes back to your profile.")
             .clicked()
         {
-            state.toggle_ranked_safe();
-            match state.apply() {
+            match state.toggle_ranked_safe() {
                 Ok(_) => {
                     let msg = if ranked { "profile restored" } else { "stock ConVars restored (ranked-safe)" };
                     state.status = Some(Status::Info(msg.into()));

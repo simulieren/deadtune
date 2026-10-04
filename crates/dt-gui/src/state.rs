@@ -428,12 +428,21 @@ impl AppState {
         self.refresh_preview();
     }
 
-    pub fn toggle_ranked_safe(&mut self) {
-        self.settings.source = match self.settings.source {
+    /// One click to the stock ConVars block and one click back, written immediately.
+    /// On failure the previous source is kept so the toggle never disagrees with the files.
+    pub fn toggle_ranked_safe(&mut self) -> Result<Applied, String> {
+        let previous = self.settings.source;
+        self.settings.source = match previous {
             TargetSource::Profile => TargetSource::RankedSafe,
             TargetSource::RankedSafe => TargetSource::Profile,
         };
         self.refresh_preview();
+        let result = self.apply();
+        if result.is_err() {
+            self.settings.source = previous;
+            self.refresh_preview();
+        }
+        result
     }
 
     pub fn set_in_sandbox(&mut self, in_sandbox: bool) {
@@ -895,21 +904,27 @@ mod tests {
         state.set_base(BaseRef::Preset(PresetId::KaizMinspec));
         state.apply().unwrap();
         assert!(plan(&state).is_empty(), "profile applied");
-        state.toggle_ranked_safe();
-        assert_eq!(state.settings.source, TargetSource::RankedSafe);
+        let video_before = state.live.video.clone();
+        let applied = state.toggle_ranked_safe().unwrap();
         assert!(
-            plan(&state).gameinfo.is_some(),
+            applied.report.wrote_gameinfo,
             "stock block differs from kaiz"
         );
-        state.apply().unwrap();
+        assert_eq!(state.settings.source, TargetSource::RankedSafe);
         let stock = std::fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../research/configs/OptimizationLock/clean gameinfo.gi/gameinfo.gi"
         ))
         .unwrap();
         assert_eq!(state.live.gameinfo, stock, "original snapshot restored");
-        state.toggle_ranked_safe();
-        assert!(plan(&state).gameinfo.is_some(), "back to the profile");
+        assert_eq!(
+            state.live.video, video_before,
+            "ranked-safe keeps video.txt"
+        );
+        state.toggle_ranked_safe().unwrap();
+        assert_eq!(state.settings.source, TargetSource::Profile);
+        assert!(plan(&state).is_empty(), "profile written back");
+        assert_ne!(state.live.gameinfo, stock);
     }
 
     #[test]

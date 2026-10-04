@@ -14,9 +14,9 @@ Everything you need is `deadtune.exe`. The `tools` folder is for developers.
 
 ## Get a newer build
 
-Builds are published as the `testing` prerelease on GitHub. The repo is private, so downloads go through the GitHub CLI.
+DeadTune updates itself. It checks once a day and shows a banner when a new version is out; **Update and restart** downloads it, checks its signature and swaps the exe. To get every in-between build, set the update channel to **Testing** in Safety & setup (simple view) or the Settings tab (advanced view).
 
-One-time setup, in PowerShell:
+Builds are also published on the [Releases page](https://github.com/simulieren/deadtune/releases): versioned releases plus a rolling `testing` prerelease. The script below fetches them from PowerShell. It uses the GitHub CLI; one-time setup:
 
 ```powershell
 winget install GitHub.cli
@@ -39,6 +39,10 @@ powershell -ExecutionPolicy Bypass -File scripts\get-testing.ps1 -Tag v0.1.0 -Ru
 
 Each build lands in `%USERPROFILE%\DeadTune-testing\<tag or commit>`, so older builds stay for comparison. The script checks the SHA-256 and unblocks the files.
 
+### Updates
+
+Every release (testing and versioned) also publishes `deadtune-windows-x64.exe`, its `.minisig` signature and `latest.json`. That is what the in-app updater downloads; it checks the signature against the key built into the app before replacing `deadtune.exe`. To test it, run an older build and publish a newer testing build. How releases are signed is in `docs/releasing.md`.
+
 ## What is in the zip
 
 | File | Use |
@@ -54,7 +58,7 @@ Each build lands in `%USERPROFILE%\DeadTune-testing\<tag or commit>`, so older b
 
 ```sh
 scripts/release-local.sh              # build committed HEAD, replace the testing prerelease
-scripts/release-local.sh --no-upload  # build the zip in target/release-local only
+scripts/release-local.sh --no-upload  # build the zip, signed exe and latest.json in target/release-local only
 scripts/release-local.sh minor        # bump 0.Y.0 -> 0.(Y+1).0, tag, publish a versioned release
 ```
 

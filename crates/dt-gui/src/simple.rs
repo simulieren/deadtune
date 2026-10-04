@@ -305,6 +305,11 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
                 });
             });
     }
+    if crate::update_view::wants_banner(state) {
+        egui::Panel::top("simple_update_banner")
+            .frame(crate::update_view::banner_frame(Margin::symmetric(16, 10)))
+            .show(ui, |ui| crate::update_view::banner(ui, state));
+    }
     egui::Panel::bottom("simple_apply")
         .frame(
             egui::Frame::new()
@@ -1554,6 +1559,12 @@ fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 edits.push(Edit::Go(Section::System));
             }
         });
+    });
+    ui.add_space(12.0);
+    theme::card().show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        card_title(ui, "Updates");
+        crate::update_view::settings(ui, state, true);
     });
     ui.add_space(10.0);
     ui.label(

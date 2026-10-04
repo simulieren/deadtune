@@ -8,6 +8,7 @@ use dt_core::launch::LaunchOptions;
 use dt_core::power::PowerSource;
 
 use crate::live::BridgeKind;
+use crate::update::UpdateSettings;
 
 pub const FILE_NAME: &str = "settings.toml";
 
@@ -73,6 +74,7 @@ pub struct Settings {
     pub pinned: BTreeSet<String>,
     pub launch: LaunchOptions,
     pub power: PowerProfiles,
+    pub update: UpdateSettings,
 }
 
 impl Default for Settings {
@@ -94,6 +96,7 @@ impl Default for Settings {
                 args: vec!["-novid".into()],
             },
             power: PowerProfiles::default(),
+            update: UpdateSettings::default(),
         }
     }
 }
@@ -131,10 +134,48 @@ mod tests {
                 ac: None,
                 battery: Some("Battery".into()),
             },
+            update: UpdateSettings {
+                enabled: false,
+                channel: dt_core::update::Channel::Testing,
+                skipped: Some(dt_core::update::Version(0, 3, 0)),
+                last_check: chrono::DateTime::from_timestamp(1_800_000_000, 0),
+            },
             ..Settings::default()
         };
         settings.save(dir.path()).unwrap();
         assert_eq!(Settings::load(dir.path()), settings);
+        let text = std::fs::read_to_string(dir.path().join(FILE_NAME)).unwrap();
+        for line in [
+            "[update]",
+            "channel = \"testing\"",
+            "skipped = \"0.3.0\"",
+            "last_check = \"2027-01-15T08:00:00Z\"",
+        ] {
+            assert!(text.contains(line), "{line} in\n{text}");
+        }
+    }
+
+    #[test]
+    fn a_file_from_before_updates_loads_with_update_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(FILE_NAME),
+            "onboarded = true\nbind_key = \"F9\"\n\n[power]\nenabled = true\n",
+        )
+        .unwrap();
+        let settings = Settings::load(dir.path());
+        assert!(settings.onboarded);
+        assert_eq!(settings.bind_key, "F9");
+        assert_eq!(settings.update, UpdateSettings::default());
+        assert!(settings.update.enabled, "on unless turned off");
+        std::fs::write(
+            dir.path().join(FILE_NAME),
+            "onboarded = true\n\n[update]\nchannel = \"testing\"\n",
+        )
+        .unwrap();
+        let update = Settings::load(dir.path()).update;
+        assert_eq!(update.channel, dt_core::update::Channel::Testing);
+        assert!(update.enabled, "missing keys default too");
     }
 
     #[test]

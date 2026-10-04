@@ -20,6 +20,8 @@ mod settings;
 mod simple;
 mod state;
 mod theme;
+mod update;
+mod update_view;
 mod views;
 mod widgets;
 

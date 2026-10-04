@@ -8,6 +8,7 @@ mod cmd_game;
 mod cmd_hud;
 mod cmd_info;
 mod cmd_profile;
+mod cmd_update;
 mod commands;
 mod env;
 

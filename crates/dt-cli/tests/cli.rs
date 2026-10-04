@@ -315,7 +315,7 @@ fn push_wait_reports_each_convar_from_the_console_log_or_times_out() {
 
     let live = fake.cfg().join("deadtune_live.cfg");
     fs::remove_file(&live).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_deadtune-cli"))
+    let child = Command::new(env!("CARGO_BIN_EXE_deadtune-cli"))
         .arg("--game-dir")
         .arg(&fake.game)
         .arg("--data-dir")

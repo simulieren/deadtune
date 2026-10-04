@@ -29,9 +29,9 @@ jobs:
         shell: pwsh
         run: |
           $rel = "target/x86_64-pc-windows-msvc/release"
-          New-Item -ItemType Directory stage | Out-Null
-          Copy-Item "$rel/deadtune.exe", "$rel/deadtune-cli.exe", "$rel/examples/hud_build.exe" stage/
-          Copy-Item crates/dt-core/examples/hud_layout.sample.toml, docs/testing-windows.md stage/
+          New-Item -ItemType Directory stage/tools -Force | Out-Null
+          Copy-Item "$rel/deadtune.exe", docs/testing-windows.md stage/
+          Copy-Item "$rel/deadtune-cli.exe", "$rel/examples/hud_build.exe", crates/dt-core/examples/*.sample.toml stage/tools/
           "$env:GITHUB_REF_NAME $env:GITHUB_SHA" | Set-Content stage/BUILD.txt
           Compress-Archive -Path stage/* -DestinationPath $env:ZIP
           (Get-FileHash $env:ZIP -Algorithm SHA256).Hash.ToLower() + "  $env:ZIP" | Set-Content "$env:ZIP.sha256"

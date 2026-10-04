@@ -31,9 +31,9 @@ export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 
 rel="$CARGO_TARGET_DIR/$target/release"
 stage="$out/stage"
-rm -rf "$stage" && mkdir -p "$stage"
-cp "$rel/deadtune.exe" "$rel/deadtune-cli.exe" "$rel/examples/hud_build.exe" "$stage/"
-cp "$src"/crates/dt-core/examples/*.sample.toml "$src/docs/testing-windows.md" "$stage/"
+rm -rf "$stage" && mkdir -p "$stage/tools"
+cp "$rel/deadtune.exe" "$src/docs/testing-windows.md" "$stage/"
+cp "$rel/deadtune-cli.exe" "$rel/examples/hud_build.exe" "$src"/crates/dt-core/examples/*.sample.toml "$stage/tools/"
 echo "$branch $sha (local $target build)" > "$stage/BUILD.txt"
 rm -f "$out/$zip" && (cd "$stage" && zip -qr "$out/$zip" .)
 (cd "$out" && shasum -a 256 "$zip" > "$zip.sha256")

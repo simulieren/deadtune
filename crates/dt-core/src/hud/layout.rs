@@ -736,6 +736,25 @@ mod tests {
     }
 
     #[test]
+    fn no_minimap_colors_emit_no_minimap_css() {
+        let mut l = layout(&[(
+            ElementId::Minimap,
+            ElementEdit {
+                scale_pct: 120,
+                ..edit()
+            },
+        )]);
+        let patch = compile(&l).expect("valid");
+        assert!(!patch.files.contains_key(MINIMAP_STYLE), "{patch:?}");
+        l.minimap_colors
+            .insert(IconId::AllyHero, Color([0, 0x8C, 0xFF, 255]));
+        l.minimap_colors.clear();
+        l.elements.clear();
+        assert!(l.is_vanilla());
+        assert!(compile(&l).expect("valid").is_empty());
+    }
+
+    #[test]
     fn minimap_colors_toml() {
         let l: HudLayout = toml::from_str(
             "[minimap_colors]\nally_hero = \"#7cff6b\"\nenemy_hero_arrow = \"#00D5FF80\"\n",

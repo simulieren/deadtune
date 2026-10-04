@@ -501,7 +501,7 @@ mod tests {
 
     #[test]
     fn generate_emits_one_entry_per_csv_row() {
-        assert_eq!(generated("").entries.len(), 761);
+        assert_eq!(generated("").entries.len(), 765);
     }
 
     #[test]
@@ -685,7 +685,7 @@ mod tests {
             include_str!("../../../catalog/catalog.toml") == fresh,
             "catalog/catalog.toml is stale; run `cargo run -p dt-core --example gen_catalog`"
         );
-        assert_eq!(Catalog::embedded().entries.len(), 761);
+        assert_eq!(Catalog::embedded().entries.len(), 765);
     }
 
     #[test]

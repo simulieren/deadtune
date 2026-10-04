@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 
 use super::css::CssError;
-use super::elements::{self, ElementId, ElementSpec, HAlign, ScaleProp, VAlign, ELEMENTS, HUD_STYLE};
+use super::elements::{
+    self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -31,7 +33,13 @@ pub struct ElementEdit {
 
 impl Default for ElementEdit {
     fn default() -> Self {
-        ElementEdit { visibility: Visibility::Vanilla, offset_x: 0, offset_y: 0, scale_pct: 100, opacity_pct: 100 }
+        ElementEdit {
+            visibility: Visibility::Vanilla,
+            offset_x: 0,
+            offset_y: 0,
+            scale_pct: 100,
+            opacity_pct: 100,
+        }
     }
 }
 
@@ -137,7 +145,10 @@ pub fn declarations(edit: &ElementEdit, spec: &ElementSpec) -> Vec<(&'static str
     if edit.offset_x != 0 || edit.offset_y != 0 {
         decls.push((
             "transform",
-            format!("translateX({}px) translateY({}px)", edit.offset_x, edit.offset_y),
+            format!(
+                "translateX({}px) translateY({}px)",
+                edit.offset_x, edit.offset_y
+            ),
         ));
     }
     if edit.scale_pct != 100 {
@@ -147,7 +158,10 @@ pub fn declarations(edit: &ElementEdit, spec: &ElementSpec) -> Vec<(&'static str
                 decls.push(("ui-scale", format!("{}%", number(pct))));
             }
             ScaleProp::PreTransform { origin } => {
-                decls.push(("pre-transform-scale2d", number(f64::from(edit.scale_pct) / 100.0)));
+                decls.push((
+                    "pre-transform-scale2d",
+                    number(f64::from(edit.scale_pct) / 100.0),
+                ));
                 decls.push(("transform-origin", origin.to_string()));
             }
         }
@@ -229,7 +243,9 @@ fn scale_origin(spec: &ElementSpec) -> (f32, f32) {
         ),
         ScaleProp::PreTransform { origin } => {
             let mut parts = origin.split_whitespace().map(|p| {
-                p.strip_suffix('%').and_then(|n| n.parse::<f32>().ok()).map_or(0.5, |n| n / 100.0)
+                p.strip_suffix('%')
+                    .and_then(|n| n.parse::<f32>().ok())
+                    .map_or(0.5, |n| n / 100.0)
             });
             (parts.next().unwrap_or(0.5), parts.next().unwrap_or(0.5))
         }
@@ -241,7 +257,10 @@ mod tests {
     use super::*;
 
     fn layout(edits: &[(ElementId, ElementEdit)]) -> HudLayout {
-        HudLayout { elements: edits.iter().cloned().collect(), extra_css: BTreeMap::new() }
+        HudLayout {
+            elements: edits.iter().cloned().collect(),
+            extra_css: BTreeMap::new(),
+        }
     }
 
     fn edit() -> ElementEdit {
@@ -249,12 +268,22 @@ mod tests {
     }
 
     fn hud_css(layout: &HudLayout) -> String {
-        compile(layout).expect("valid layout").files.get(HUD_STYLE).cloned().unwrap_or_default()
+        compile(layout)
+            .expect("valid layout")
+            .files
+            .get(HUD_STYLE)
+            .cloned()
+            .unwrap_or_default()
     }
 
     #[test]
     fn identity_compiles_to_nothing() {
-        assert!(compile(&HudLayout::default()).expect("valid").files.is_empty());
+        assert!(
+            compile(&HudLayout::default())
+                .expect("valid")
+                .files
+                .is_empty()
+        );
         let all_default = layout(&[(ElementId::Minimap, edit()), (ElementId::Chat, edit())]);
         assert!(all_default.is_vanilla());
         assert!(compile(&all_default).expect("valid").files.is_empty());
@@ -264,13 +293,55 @@ mod tests {
     fn each_property_emits_its_declaration() {
         let chat = elements::spec(ElementId::Chat);
         let cases: [(ElementEdit, &[(&str, &str)]); 7] = [
-            (ElementEdit { visibility: Visibility::Hidden, ..edit() }, &[("visibility", "collapse")]),
-            (ElementEdit { visibility: Visibility::Shown, ..edit() }, &[("visibility", "visible")]),
-            (ElementEdit { offset_x: 12, ..edit() }, &[("transform", "translateX(12px) translateY(0px)")]),
-            (ElementEdit { offset_y: -40, ..edit() }, &[("transform", "translateX(0px) translateY(-40px)")]),
-            (ElementEdit { scale_pct: 150, ..edit() }, &[("ui-scale", "150%")]),
-            (ElementEdit { opacity_pct: 50, ..edit() }, &[("opacity", "0.5")]),
-            (ElementEdit { opacity_pct: 5, ..edit() }, &[("opacity", "0.05")]),
+            (
+                ElementEdit {
+                    visibility: Visibility::Hidden,
+                    ..edit()
+                },
+                &[("visibility", "collapse")],
+            ),
+            (
+                ElementEdit {
+                    visibility: Visibility::Shown,
+                    ..edit()
+                },
+                &[("visibility", "visible")],
+            ),
+            (
+                ElementEdit {
+                    offset_x: 12,
+                    ..edit()
+                },
+                &[("transform", "translateX(12px) translateY(0px)")],
+            ),
+            (
+                ElementEdit {
+                    offset_y: -40,
+                    ..edit()
+                },
+                &[("transform", "translateX(0px) translateY(-40px)")],
+            ),
+            (
+                ElementEdit {
+                    scale_pct: 150,
+                    ..edit()
+                },
+                &[("ui-scale", "150%")],
+            ),
+            (
+                ElementEdit {
+                    opacity_pct: 50,
+                    ..edit()
+                },
+                &[("opacity", "0.5")],
+            ),
+            (
+                ElementEdit {
+                    opacity_pct: 5,
+                    ..edit()
+                },
+                &[("opacity", "0.05")],
+            ),
         ];
         for (e, want) in cases {
             let got = declarations(&e, chat);
@@ -283,18 +354,36 @@ mod tests {
     #[test]
     fn ui_scale_is_relative_to_vanilla() {
         let health = elements::spec(ElementId::HealthAndAmmo);
-        let half = ElementEdit { scale_pct: 50, ..edit() };
-        assert_eq!(declarations(&half, health), vec![("ui-scale", "60%".to_string())]);
+        let half = ElementEdit {
+            scale_pct: 50,
+            ..edit()
+        };
+        assert_eq!(
+            declarations(&half, health),
+            vec![("ui-scale", "60%".to_string())]
+        );
         let sig = elements::spec(ElementId::AbilitySlots);
-        let quarter = ElementEdit { scale_pct: 25, ..edit() };
-        assert_eq!(declarations(&quarter, sig), vec![("ui-scale", "22.5%".to_string())]);
+        let quarter = ElementEdit {
+            scale_pct: 25,
+            ..edit()
+        };
+        assert_eq!(
+            declarations(&quarter, sig),
+            vec![("ui-scale", "22.5%".to_string())]
+        );
     }
 
     #[test]
     fn minimap_rule_text() {
         let l = layout(&[(
             ElementId::Minimap,
-            ElementEdit { offset_x: -20, offset_y: 10, scale_pct: 80, opacity_pct: 75, ..edit() },
+            ElementEdit {
+                offset_x: -20,
+                offset_y: 10,
+                scale_pct: 80,
+                opacity_pct: 75,
+                ..edit()
+            },
         )]);
         assert_eq!(
             hud_css(&l),
@@ -304,16 +393,41 @@ mod tests {
 
     #[test]
     fn top_bar_rule_text() {
-        let l = layout(&[(ElementId::TopBar, ElementEdit { visibility: Visibility::Hidden, scale_pct: 90, ..edit() })]);
+        let l = layout(&[(
+            ElementId::TopBar,
+            ElementEdit {
+                visibility: Visibility::Hidden,
+                scale_pct: 90,
+                ..edit()
+            },
+        )]);
         assert_eq!(hud_css(&l), "#TopBar{visibility:collapse;ui-scale:90%;}");
     }
 
     #[test]
     fn rules_sorted_by_element_and_deterministic() {
         let l = layout(&[
-            (ElementId::Chat, ElementEdit { opacity_pct: 0, ..edit() }),
-            (ElementId::TopBar, ElementEdit { offset_y: 30, ..edit() }),
-            (ElementId::Minimap, ElementEdit { scale_pct: 120, ..edit() }),
+            (
+                ElementId::Chat,
+                ElementEdit {
+                    opacity_pct: 0,
+                    ..edit()
+                },
+            ),
+            (
+                ElementId::TopBar,
+                ElementEdit {
+                    offset_y: 30,
+                    ..edit()
+                },
+            ),
+            (
+                ElementId::Minimap,
+                ElementEdit {
+                    scale_pct: 120,
+                    ..edit()
+                },
+            ),
         ]);
         let css = hud_css(&l);
         assert_eq!(
@@ -328,28 +442,85 @@ mod tests {
     #[test]
     fn validation_errors() {
         let cases = [
-            (ElementEdit { offset_x: OFFSET_LIMIT + 1, ..edit() }, LayoutError::Offset(ElementId::Chat, OFFSET_LIMIT + 1)),
-            (ElementEdit { offset_y: -OFFSET_LIMIT - 1, ..edit() }, LayoutError::Offset(ElementId::Chat, -OFFSET_LIMIT - 1)),
-            (ElementEdit { scale_pct: 24, ..edit() }, LayoutError::Scale(ElementId::Chat, 24)),
-            (ElementEdit { scale_pct: 301, ..edit() }, LayoutError::Scale(ElementId::Chat, 301)),
-            (ElementEdit { opacity_pct: 101, ..edit() }, LayoutError::Opacity(ElementId::Chat, 101)),
+            (
+                ElementEdit {
+                    offset_x: OFFSET_LIMIT + 1,
+                    ..edit()
+                },
+                LayoutError::Offset(ElementId::Chat, OFFSET_LIMIT + 1),
+            ),
+            (
+                ElementEdit {
+                    offset_y: -OFFSET_LIMIT - 1,
+                    ..edit()
+                },
+                LayoutError::Offset(ElementId::Chat, -OFFSET_LIMIT - 1),
+            ),
+            (
+                ElementEdit {
+                    scale_pct: 24,
+                    ..edit()
+                },
+                LayoutError::Scale(ElementId::Chat, 24),
+            ),
+            (
+                ElementEdit {
+                    scale_pct: 301,
+                    ..edit()
+                },
+                LayoutError::Scale(ElementId::Chat, 301),
+            ),
+            (
+                ElementEdit {
+                    opacity_pct: 101,
+                    ..edit()
+                },
+                LayoutError::Opacity(ElementId::Chat, 101),
+            ),
         ];
         for (e, want) in cases {
             assert_eq!(compile(&layout(&[(ElementId::Chat, e)])), Err(want));
         }
-        let edge = ElementEdit { offset_x: OFFSET_LIMIT, offset_y: -OFFSET_LIMIT, scale_pct: 300, opacity_pct: 0, ..edit() };
+        let edge = ElementEdit {
+            offset_x: OFFSET_LIMIT,
+            offset_y: -OFFSET_LIMIT,
+            scale_pct: 300,
+            opacity_pct: 0,
+            ..edit()
+        };
         assert!(compile(&layout(&[(ElementId::Chat, edge)])).is_ok());
     }
 
     #[test]
     fn extra_css_appended_per_file() {
-        let mut l = layout(&[(ElementId::Chat, ElementEdit { opacity_pct: 50, ..edit() })]);
-        l.extra_css.insert(HUD_STYLE.to_string(), "  #hud_signature{wash-color:red;}\n".to_string());
-        l.extra_css.insert("panorama/styles/chat.vcss_c".to_string(), "CitadelChat{width:400px;}".to_string());
-        l.extra_css.insert("panorama/styles/empty.vcss_c".to_string(), "   ".to_string());
+        let mut l = layout(&[(
+            ElementId::Chat,
+            ElementEdit {
+                opacity_pct: 50,
+                ..edit()
+            },
+        )]);
+        l.extra_css.insert(
+            HUD_STYLE.to_string(),
+            "  #hud_signature{wash-color:red;}\n".to_string(),
+        );
+        l.extra_css.insert(
+            "panorama/styles/chat.vcss_c".to_string(),
+            "CitadelChat{width:400px;}".to_string(),
+        );
+        l.extra_css.insert(
+            "panorama/styles/empty.vcss_c".to_string(),
+            "   ".to_string(),
+        );
         let patch = compile(&l).expect("valid");
-        assert_eq!(patch.files[HUD_STYLE], "#Chat{opacity:0.5;}#hud_signature{wash-color:red;}");
-        assert_eq!(patch.files["panorama/styles/chat.vcss_c"], "CitadelChat{width:400px;}");
+        assert_eq!(
+            patch.files[HUD_STYLE],
+            "#Chat{opacity:0.5;}#hud_signature{wash-color:red;}"
+        );
+        assert_eq!(
+            patch.files["panorama/styles/chat.vcss_c"],
+            "CitadelChat{width:400px;}"
+        );
         assert!(!patch.files.contains_key("panorama/styles/empty.vcss_c"));
     }
 
@@ -368,7 +539,11 @@ mod tests {
             if i == 2 {
                 assert!(got.is_ok(), "braces in strings and comments are ignored");
             } else {
-                assert_eq!(got, Err(LayoutError::ExtraCss(HUD_STYLE.to_string(), want)), "{css}");
+                assert_eq!(
+                    got,
+                    Err(LayoutError::ExtraCss(HUD_STYLE.to_string(), want)),
+                    "{css}"
+                );
             }
         }
     }
@@ -394,18 +569,35 @@ mod tests {
             assert_eq!(r.visible, !b.collapsed);
             assert_eq!(r.opacity, 1.0);
         }
-        let minimap = rects.iter().find(|r| r.id == ElementId::Minimap).expect("row");
+        let minimap = rects
+            .iter()
+            .find(|r| r.id == ElementId::Minimap)
+            .expect("row");
         assert_eq!(minimap.rect, [1480.0, 545.0, 440.0, 520.0]);
     }
 
     #[test]
     fn preview_scales_with_screen_height() {
-        let l = layout(&[(ElementId::Chat, ElementEdit { offset_x: 30, offset_y: -60, scale_pct: 150, ..edit() })]);
+        let l = layout(&[(
+            ElementId::Chat,
+            ElementEdit {
+                offset_x: 30,
+                offset_y: -60,
+                scale_pct: 150,
+                ..edit()
+            },
+        )]);
         let base = preview(&l, [1920.0, 1080.0]);
         let big = preview(&l, [2560.0, 1440.0]);
         for (a, b) in base.iter().zip(&big) {
             for (u, v) in a.rect.iter().zip(b.rect) {
-                assert!((u * 4.0 / 3.0 - v).abs() < 1e-3, "{:?}: {:?} vs {:?}", a.id, a.rect, b.rect);
+                assert!(
+                    (u * 4.0 / 3.0 - v).abs() < 1e-3,
+                    "{:?}: {:?} vs {:?}",
+                    a.id,
+                    a.rect,
+                    b.rect
+                );
             }
         }
     }
@@ -413,16 +605,51 @@ mod tests {
     #[test]
     fn preview_applies_edits() {
         let l = layout(&[
-            (ElementId::Minimap, ElementEdit { scale_pct: 50, opacity_pct: 40, ..edit() }),
-            (ElementId::Chat, ElementEdit { offset_x: 30, offset_y: -60, scale_pct: 200, ..edit() }),
-            (ElementId::TopBar, ElementEdit { visibility: Visibility::Hidden, ..edit() }),
-            (ElementId::PassiveItems, ElementEdit { visibility: Visibility::Shown, ..edit() }),
+            (
+                ElementId::Minimap,
+                ElementEdit {
+                    scale_pct: 50,
+                    opacity_pct: 40,
+                    ..edit()
+                },
+            ),
+            (
+                ElementId::Chat,
+                ElementEdit {
+                    offset_x: 30,
+                    offset_y: -60,
+                    scale_pct: 200,
+                    ..edit()
+                },
+            ),
+            (
+                ElementId::TopBar,
+                ElementEdit {
+                    visibility: Visibility::Hidden,
+                    ..edit()
+                },
+            ),
+            (
+                ElementId::PassiveItems,
+                ElementEdit {
+                    visibility: Visibility::Shown,
+                    ..edit()
+                },
+            ),
         ]);
         let rects = preview(&l, [1920.0, 1080.0]);
         let get = |id| rects.iter().find(|r| r.id == id).copied().expect("row");
-        assert_eq!(get(ElementId::Minimap).rect, [1700.0, 805.0, 220.0, 260.0], "bottom-right corner fixed");
+        assert_eq!(
+            get(ElementId::Minimap).rect,
+            [1700.0, 805.0, 220.0, 260.0],
+            "bottom-right corner fixed"
+        );
         assert_eq!(get(ElementId::Minimap).opacity, 0.4);
-        assert_eq!(get(ElementId::Chat).rect, [640.0, 340.0, 700.0, 480.0], "bottom-centre anchor fixed");
+        assert_eq!(
+            get(ElementId::Chat).rect,
+            [640.0, 340.0, 700.0, 480.0],
+            "bottom-centre anchor fixed"
+        );
         assert!(!get(ElementId::TopBar).visible);
         assert!(get(ElementId::PassiveItems).visible);
         assert!(!get(ElementId::AbilitySlots).visible);
@@ -431,10 +658,24 @@ mod tests {
     #[test]
     fn toml_round_trip_uses_snake_case_tables() {
         let mut l = layout(&[
-            (ElementId::Minimap, ElementEdit { scale_pct: 80, ..edit() }),
-            (ElementId::HealthAndAmmo, ElementEdit { visibility: Visibility::Hidden, offset_x: -5, ..edit() }),
+            (
+                ElementId::Minimap,
+                ElementEdit {
+                    scale_pct: 80,
+                    ..edit()
+                },
+            ),
+            (
+                ElementId::HealthAndAmmo,
+                ElementEdit {
+                    visibility: Visibility::Hidden,
+                    offset_x: -5,
+                    ..edit()
+                },
+            ),
         ]);
-        l.extra_css.insert(HUD_STYLE.to_string(), "#Chat{opacity:0.5;}".to_string());
+        l.extra_css
+            .insert(HUD_STYLE.to_string(), "#Chat{opacity:0.5;}".to_string());
         let text = toml::to_string(&l).expect("serialize");
         assert!(text.contains("[elements.minimap]"), "{text}");
         assert!(text.contains("[elements.health_and_ammo]"), "{text}");
@@ -442,7 +683,14 @@ mod tests {
         let back: HudLayout = toml::from_str(&text).expect("parse");
         assert_eq!(back, l);
 
-        let partial: HudLayout = toml::from_str("[elements.chat]\nopacity_pct = 30\n").expect("parse partial");
-        assert_eq!(partial.elements[&ElementId::Chat], ElementEdit { opacity_pct: 30, ..edit() });
+        let partial: HudLayout =
+            toml::from_str("[elements.chat]\nopacity_pct = 30\n").expect("parse partial");
+        assert_eq!(
+            partial.elements[&ElementId::Chat],
+            ElementEdit {
+                opacity_pct: 30,
+                ..edit()
+            }
+        );
     }
 }

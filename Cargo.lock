@@ -560,6 +560,7 @@ dependencies = [
  "anyhow",
  "dt-core",
  "tempfile",
+ "toml",
 ]
 
 [[package]]

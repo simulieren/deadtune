@@ -6,6 +6,7 @@ pub mod backup;
 pub mod bench;
 pub mod bridge;
 pub mod catalog;
+pub mod doctor;
 pub mod gi;
 pub mod hud;
 pub mod launch;

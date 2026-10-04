@@ -41,12 +41,16 @@ fn malformed(msg: &str) -> ResourceError {
 }
 
 fn u16_at(b: &[u8], at: usize) -> Result<u16, ResourceError> {
-    let s = b.get(at..at + 2).ok_or_else(|| malformed("header truncated"))?;
+    let s = b
+        .get(at..at + 2)
+        .ok_or_else(|| malformed("header truncated"))?;
     Ok(u16::from_le_bytes([s[0], s[1]]))
 }
 
 fn u32_at(b: &[u8], at: usize) -> Result<u32, ResourceError> {
-    let s = b.get(at..at + 4).ok_or_else(|| malformed("header truncated"))?;
+    let s = b
+        .get(at..at + 4)
+        .ok_or_else(|| malformed("header truncated"))?;
     Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 
@@ -94,7 +98,11 @@ impl Resource {
                 data: bytes[start..end].to_vec(),
             });
         }
-        Ok(Resource { header_version, type_version, blocks })
+        Ok(Resource {
+            header_version,
+            type_version,
+            blocks,
+        })
     }
 
     /// Re-serializes with 16-byte aligned blocks; `parse(x).to_bytes() == x` for
@@ -132,7 +140,8 @@ impl Resource {
 }
 
 fn data_block(res: &Resource) -> Result<&Block, ResourceError> {
-    res.block(b"DATA").ok_or(ResourceError::MissingBlock("DATA"))
+    res.block(b"DATA")
+        .ok_or(ResourceError::MissingBlock("DATA"))
 }
 
 fn data_text(data: &[u8]) -> Result<&str, ResourceError> {
@@ -218,7 +227,10 @@ mod tests {
         let text = ".a{color:red;}";
         let out = with_style_text(&res, text).unwrap();
         let data = &out.block(b"DATA").unwrap().data;
-        assert_eq!(u32_at(data, 0).unwrap(), source_crc ^ crc32(text.as_bytes()));
+        assert_eq!(
+            u32_at(data, 0).unwrap(),
+            source_crc ^ crc32(text.as_bytes())
+        );
         assert_eq!(&data[4..6], &[0, 0]);
 
         let back = Resource::parse(&out.to_bytes()).unwrap();
@@ -249,16 +261,25 @@ mod tests {
 
     #[test]
     fn errors() {
-        assert!(matches!(Resource::parse(&[0; 4]), Err(ResourceError::Malformed(_))));
+        assert!(matches!(
+            Resource::parse(&[0; 4]),
+            Err(ResourceError::Malformed(_))
+        ));
         let mut res = Resource::parse(SMALL).unwrap();
         res.blocks[1].data.truncate(3);
         assert!(matches!(style_text(&res), Err(ResourceError::Malformed(_))));
         res.blocks[1].data = vec![0, 0, 0, 0, 0, 0, 0xFF];
         assert!(matches!(style_text(&res), Err(ResourceError::NotUtf8)));
         res.blocks.remove(1);
-        assert!(matches!(style_text(&res), Err(ResourceError::MissingBlock("DATA"))));
+        assert!(matches!(
+            style_text(&res),
+            Err(ResourceError::MissingBlock("DATA"))
+        ));
         let mut bad = SMALL.to_vec();
         bad[4] = 11;
-        assert!(matches!(Resource::parse(&bad), Err(ResourceError::Version(11))));
+        assert!(matches!(
+            Resource::parse(&bad),
+            Err(ResourceError::Version(11))
+        ));
     }
 }

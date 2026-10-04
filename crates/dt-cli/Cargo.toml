@@ -12,6 +12,8 @@ path = "src/main.rs"
 [dependencies]
 dt-core.workspace = true
 anyhow.workspace = true
+# Already linked through dt-core; only `hud --layout` files need it here.
+toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

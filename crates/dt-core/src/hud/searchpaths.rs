@@ -50,10 +50,17 @@ pub fn ensure_addons(gameinfo: &str) -> Result<String, SearchPathsError> {
         crate::gi::Eol::Lf => "\n",
     };
 
-    let anchor = block.entries.iter().find(|e| e.key.eq_ignore_ascii_case("Game"));
+    let anchor = block
+        .entries
+        .iter()
+        .find(|e| e.key.eq_ignore_ascii_case("Game"));
     let (at, indent, key_gap) = match (anchor, block.entries.last()) {
         (Some(e), _) => (e.start, e.indent.to_owned(), key_gap_for(e)),
-        (None, Some(last)) => (block.close_line_start, last.indent.to_owned(), key_gap_for(last)),
+        (None, Some(last)) => (
+            block.close_line_start,
+            last.indent.to_owned(),
+            key_gap_for(last),
+        ),
         (None, None) => (
             block.close_line_start,
             format!("{}    ", block.close_indent),
@@ -117,7 +124,13 @@ fn parse_entry(start: usize, code: &str) -> Option<Entry<'_>> {
         Some(q) => q.split('"').next().unwrap_or(""),
         None => after_gap.split_whitespace().next().unwrap_or(""),
     };
-    Some(Entry { start, indent, key, gap, value })
+    Some(Entry {
+        start,
+        indent,
+        key,
+        gap,
+        value,
+    })
 }
 
 fn parse_block(text: &str) -> Result<Block<'_>, SearchPathsError> {
@@ -182,9 +195,8 @@ fn parse_block(text: &str) -> Result<Block<'_>, SearchPathsError> {
 mod tests {
     use super::*;
 
-    const VANILLA: &str = include_str!(
-        "../../../../research/configs/OptimizationLock/clean gameinfo.gi/gameinfo.gi"
-    );
+    const VANILLA: &str =
+        include_str!("../../../../research/configs/OptimizationLock/clean gameinfo.gi/gameinfo.gi");
     const PRESET: &str =
         include_str!("../../../../research/configs/OptimizationLock/test_cfg/gameinfo.gi");
 
@@ -249,7 +261,10 @@ mod tests {
     fn inserted_line_sits_between_low_violence_and_game_citadel() {
         let out = ensure_addons(VANILLA).unwrap();
         let lines: Vec<&str> = out.lines().collect();
-        let i = lines.iter().position(|l| l.contains(ADDONS_LINE_VALUE)).unwrap();
+        let i = lines
+            .iter()
+            .position(|l| l.contains(ADDONS_LINE_VALUE))
+            .unwrap();
         assert!(lines[i - 2].contains("Game_LowViolence"));
         assert!(lines[i - 1].trim().is_empty());
         assert_eq!(lines[i + 1].trim(), "Game \"citadel\"");
@@ -288,7 +303,10 @@ mod tests {
 
     #[test]
     fn missing_and_unbalanced() {
-        assert_eq!(has_addons("FileSystem\n{\n}\n"), Err(SearchPathsError::Missing));
+        assert_eq!(
+            has_addons("FileSystem\n{\n}\n"),
+            Err(SearchPathsError::Missing)
+        );
         assert_eq!(
             ensure_addons("// SearchPaths\n{ }"),
             Err(SearchPathsError::Missing)

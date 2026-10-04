@@ -260,6 +260,7 @@ mod tests {
 
     use super::*;
     use crate::addons::BlurOptions;
+    use crate::addons::install;
     use crate::hud::vpk;
     use crate::texture::vtex::tests::{COLOR, MASK};
 

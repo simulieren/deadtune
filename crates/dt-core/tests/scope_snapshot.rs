@@ -159,6 +159,11 @@ fn the_real_header_is_what_the_builder_expects() {
     assert_eq!(data.len(), 1076);
     let extra: Vec<(u32, usize)> = extras(data).iter().map(|(k, p)| (*k, p.len())).collect();
     assert_eq!(extra, [(FALLBACK_BITS, 1024)]);
+    assert_eq!(
+        extras(data)[0].1.as_ptr_range().end,
+        data.as_ptr_range().end,
+        "payload at entry + 4 + offset runs exactly to the end of DATA"
+    );
 
     let v = Vtex::parse(&header).unwrap();
     assert_eq!((v.width, v.height, v.depth), (2048, 2048, 1));

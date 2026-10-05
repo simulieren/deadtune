@@ -1,6 +1,7 @@
 //! Plain-language copy for the simple view: what each curated setting is called, how it is
 //! shown (named levels, toggles, or sliders with units), where it lives, preset blurbs, errors.
 
+use dt_core::catalog::ApplyClass;
 use dt_core::preset::PresetId;
 
 use crate::state::{Section, parse_bool};
@@ -18,6 +19,77 @@ pub enum Unit {
     Multiplier,
     OutOfTen,
     Scale,
+    Degrees,
+    /// A forced aspect ratio, shown and slid as the rough field of view it gives.
+    WideView,
+}
+
+/// How wide the view looks at a forced aspect ratio, as the OptiLock, Boot and Kaiz preset
+/// notes estimate it. These degrees are a community scale, not the game's own FOV number:
+/// a 16:9 screen on Automatic already sits near 80 here.
+const WIDE_VIEW: &[(f64, f64)] = &[
+    (1.33, 70.0),
+    (1.56, 75.0),
+    (1.75, 80.0),
+    (2.0, 85.0),
+    (2.15, 90.0),
+    (2.49, 100.0),
+    (3.0, 110.0),
+    (3.5, 120.0),
+];
+/// The Wide view rail starts here; everything left of `WIDE_RAIL_MIN` is Automatic.
+const WIDE_RAIL_AUTO: f64 = 85.0;
+const WIDE_RAIL_MIN: f64 = 90.0;
+
+fn interpolate(table: impl Iterator<Item = (f64, f64)> + Clone, x: f64) -> f64 {
+    let (first, last) = (table.clone().next().unwrap(), table.clone().last().unwrap());
+    if x <= first.0 {
+        return first.1;
+    }
+    let mut prev = first;
+    for point in table {
+        if x <= point.0 {
+            return prev.1 + (x - prev.0) / (point.0 - prev.0) * (point.1 - prev.1);
+        }
+        prev = point;
+    }
+    last.1
+}
+
+pub fn ratio_to_degrees(ratio: f64) -> f64 {
+    interpolate(WIDE_VIEW.iter().copied(), ratio)
+}
+
+/// Rounded to two decimals so a ratio survives the trip through degrees unchanged.
+pub fn degrees_to_ratio(degrees: f64) -> f64 {
+    let ratio = interpolate(WIDE_VIEW.iter().map(|(r, d)| (*d, *r)), degrees);
+    (ratio * 100.0).round() / 100.0
+}
+
+/// Where a raw value sits on its slider. Wide view slides in degrees with Automatic (0) as
+/// the leftmost stop; every other unit slides on the raw value.
+pub fn to_rail(unit: Unit, raw: f64) -> f64 {
+    match unit {
+        Unit::WideView if raw <= 0.0 => WIDE_RAIL_AUTO,
+        Unit::WideView => ratio_to_degrees(raw).max(WIDE_RAIL_MIN),
+        _ => raw,
+    }
+}
+
+pub fn from_rail(unit: Unit, rail: f64) -> f64 {
+    match unit {
+        Unit::WideView if rail < WIDE_RAIL_MIN => 0.0,
+        Unit::WideView => degrees_to_ratio(rail),
+        _ => rail,
+    }
+}
+
+/// The slider's snap grid, in rail units.
+pub fn rail_step(unit: Unit, step: f64) -> f64 {
+    match unit {
+        Unit::WideView => 1.0,
+        _ => step,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -372,7 +444,23 @@ pub const ROWS: &[Row] = &[
         "Presets disagree here. Kaiz uses A, Sqooky uses C. Try each and compare.",
         Control::Levels(&[(-1.0, "Auto"), (0.0, "A"), (1.0, "B"), (2.0, "C")]),
     ),
+    entry(
+        "citadel_camera_hero_fov",
+        "Field of view",
+        "The game's own FOV slider: 75° to 90°, and 90° is the widest. Changes instantly with your key bind.",
+        slider(Unit::Degrees, &[]),
+    ),
+    entry(
+        "r_aspectratio",
+        "Wide view",
+        "A wider view than the game's FOV limit allows; things look a little thinner. Degrees are rough community estimates. Takes effect next time you start Deadlock.",
+        slider(Unit::WideView, &[(0.0, "Automatic")]),
+    ),
 ];
+
+/// The Overview's camera card. Comfort settings, not FPS ones, so they sit apart from
+/// `KEY_SETTINGS`.
+pub const CAMERA: &[&str] = &["citadel_camera_hero_fov", "r_aspectratio"];
 
 /// The handful on the Overview, biggest FPS wins first. Five fit under the goal cards at
 /// 1280x800 without scrolling.
@@ -400,6 +488,10 @@ pub fn groups(section: Section) -> &'static [Group] {
             Group {
                 title: "Textures",
                 names: &["r_texture_stream_mip_bias", "r_texture_lod_scale"],
+            },
+            Group {
+                title: "Camera",
+                names: CAMERA,
             },
         ],
         Section::Shadows => &[
@@ -577,6 +669,8 @@ pub fn format_unit(unit: Unit, v: f64) -> String {
         Unit::Multiplier => format!("{}x", trim_float(v, 2)),
         Unit::OutOfTen => format!("{} / 10", v.round() as i64),
         Unit::Scale => format!("{}%", v.round() as i64),
+        Unit::Degrees => format!("{}°", trim_float(v, 1)),
+        Unit::WideView => format!("~{}° ({})", ratio_to_degrees(v).round(), trim_float(v, 2)),
     }
 }
 
@@ -630,7 +724,7 @@ pub fn parse(control: Control, text: &str) -> Option<f64> {
     let Control::Slider { unit, special } = control else {
         return None;
     };
-    let text = text.trim();
+    let text = text.trim().trim_start_matches('~');
     if let Some((v, _)) = special
         .iter()
         .find(|(_, name)| name.eq_ignore_ascii_case(text))
@@ -645,8 +739,19 @@ pub fn parse(control: Control, text: &str) -> Option<f64> {
     Some(match unit {
         Unit::Distance if text.ends_with("km") => number * 1000.0 / METRES_PER_UNIT,
         Unit::Distance => number / METRES_PER_UNIT,
+        // Small numbers are ratios ("2.15"), anything else is degrees ("100").
+        Unit::WideView if number > 10.0 => degrees_to_ratio(number),
         _ => number,
     })
+}
+
+/// When a saved change reaches the game, in the simple view's words.
+pub fn when_it_applies(class: ApplyClass) -> &'static str {
+    match class {
+        ApplyClass::Live => "Instant with your key bind",
+        ApplyClass::LiveCheat => "In sandbox, or next launch",
+        ApplyClass::Restart => "Next time you start Deadlock",
+    }
 }
 
 /// Rows whose label, help or convar name contains every word of `query`, in table order.
@@ -724,16 +829,97 @@ mod tests {
         row(name).map(|r| r.label)
     }
 
-    /// Curated settings for the simple view: labelled, impactful, not denylisted.
+    /// Curated settings for the simple view: labelled, not denylisted, and either impactful
+    /// or a camera comfort setting.
     fn simple_rows(catalog: &Catalog) -> Vec<&'static str> {
         ROWS.iter()
             .map(|r| r.name)
             .filter(|n| {
                 catalog.get(n).is_some_and(|e| {
-                    !e.denylist && matches!(e.impact, Impact::High | Impact::Medium)
+                    !e.denylist
+                        && (matches!(e.impact, Impact::High | Impact::Medium)
+                            || e.category == "Camera & view")
                 })
             })
             .collect()
+    }
+
+    #[test]
+    fn camera_rows_are_curated_and_searchable_as_fov() {
+        let catalog = Catalog::embedded();
+        for name in CAMERA {
+            let e = catalog.get(name).unwrap();
+            assert_eq!(e.category, "Camera & view", "{name}");
+            assert!(e.range.is_some() && e.step.is_some(), "{name}");
+            assert!(!e.denylist && !e.gameinfo_ignored, "{name}");
+        }
+        assert_eq!(
+            catalog.get("citadel_camera_hero_fov").unwrap().range,
+            Some([75.0, 90.0]),
+            "the engine clamps hero FOV to 75..90"
+        );
+        let names = |q: &str| search(q).iter().map(|r| r.name).collect::<Vec<_>>();
+        assert_eq!(names("fov"), CAMERA);
+        assert_eq!(section_of("r_aspectratio"), Some(Section::Display));
+        assert_eq!(
+            group_of("citadel_camera_hero_fov").map(|g| g.title),
+            Some("Camera")
+        );
+    }
+
+    #[test]
+    fn wide_view_maps_ratios_to_degrees_and_back() {
+        for (ratio, degrees) in WIDE_VIEW {
+            assert_eq!(ratio_to_degrees(*ratio), *degrees);
+            assert_eq!(degrees_to_ratio(*degrees), *ratio);
+        }
+        assert_eq!(
+            ratio_to_degrees(2.32),
+            95.0,
+            "halfway between 2.15 and 2.49"
+        );
+        assert_eq!(degrees_to_ratio(95.0), 2.32);
+        assert_eq!(ratio_to_degrees(9.0), 120.0, "clamped at the widest point");
+        assert_eq!(degrees_to_ratio(60.0), 1.33);
+    }
+
+    #[test]
+    fn wide_view_rail_keeps_automatic_and_preset_ratios() {
+        let u = Unit::WideView;
+        assert_eq!(to_rail(u, 0.0), WIDE_RAIL_AUTO);
+        assert_eq!(from_rail(u, WIDE_RAIL_AUTO), 0.0);
+        assert_eq!(from_rail(u, 88.0), 0.0, "left of 90 is Automatic");
+        for preset in [2.15, 2.3, 2.4, 2.9, 3.2] {
+            assert_eq!(from_rail(u, to_rail(u, preset)), preset, "{preset} drifted");
+        }
+        let snapped = snap(
+            to_rail(u, 2.49) + 0.3,
+            [WIDE_RAIL_AUTO, 120.0],
+            rail_step(u, 0.01),
+        );
+        assert_eq!(from_rail(u, snapped), 2.49, "a drag snaps to whole degrees");
+        assert_eq!(to_rail(Unit::Degrees, 82.0), 82.0);
+        assert_eq!(from_rail(Unit::Degrees, 82.0), 82.0);
+    }
+
+    #[test]
+    fn camera_values_read_and_type_in_degrees() {
+        let fov = row("citadel_camera_hero_fov").unwrap().control;
+        assert_eq!(display(fov, "90"), "90°");
+        assert_eq!(
+            parse(fov, "100"),
+            Some(100.0),
+            "the control clamps it to 90"
+        );
+        assert_eq!(parse(fov, "80°"), Some(80.0));
+        let wide = row("r_aspectratio").unwrap().control;
+        assert_eq!(display(wide, "0"), "Automatic");
+        assert_eq!(display(wide, "2.15"), "~90° (2.15)");
+        assert_eq!(display(wide, "2.3"), "~94° (2.3)");
+        assert_eq!(parse(wide, "100"), Some(2.49));
+        assert_eq!(parse(wide, "2.4"), Some(2.4), "a ratio types as itself");
+        assert_eq!(parse(wide, "~100° (2.49)"), Some(2.49));
+        assert_eq!(parse(wide, "automatic"), Some(0.0));
     }
 
     #[test]

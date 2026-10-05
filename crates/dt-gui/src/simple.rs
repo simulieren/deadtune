@@ -971,13 +971,97 @@ fn overview(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
             ui.vertical(|ui| {
                 ui.set_width(status_width);
                 status_card(ui, state, edits);
+                ui.add_space(gap);
+                camera_card(ui, state, edits);
             });
         });
     } else {
         key_settings(ui, state, edits);
         ui.add_space(gap);
         status_card(ui, state, edits);
+        ui.add_space(gap);
+        camera_card(ui, state, edits);
     }
+}
+
+/// Field of view and Wide view, stacked to fit the narrow column under Status.
+fn camera_card(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+    theme::card().show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        card_title(ui, "Camera & field of view");
+        for name in friendly::CAMERA {
+            stacked_row(ui, state, name, edits);
+            ui.add_space(6.0);
+        }
+        ui.label(
+            RichText::new(
+                "If a game update resets your settings, DeadTune notices and offers to put them back.",
+            )
+            .small()
+            .color(WEAK),
+        );
+    });
+}
+
+fn stacked_row(ui: &mut Ui, state: &AppState, name: &'static str, edits: &mut Vec<Edit>) {
+    let (Some(row), Some(entry)) = (friendly::row(name), state.catalog.get(name)) else {
+        return;
+    };
+    let value = state.current_value(name).unwrap_or_default();
+    let preset = state.preset_value(name).unwrap_or_default();
+    let changed = state.is_changed(name);
+    ui.horizontal(|ui| {
+        let label = RichText::new(row.label).size(14.0).strong();
+        ui.label(label.color(if changed { ACCENT } else { TEXT }))
+            .on_hover_text(row.help);
+        if changed && reset_pill(ui, &friendly::display(row.control, &preset)) {
+            edits.push(Edit::Reset(vec![name]));
+        }
+    });
+    ui.horizontal(|ui| {
+        if let Some(v) = control(ui, row.control, entry, &value, &preset) {
+            edits.push(Edit::Set(name, v));
+        }
+    });
+    let mut note = friendly::when_it_applies(state.catalog.apply_class(name)).to_string();
+    if changed {
+        note = format!(
+            "{note}. Preset: {}",
+            friendly::display(row.control, &preset)
+        );
+    }
+    ui.label(RichText::new(note).small().color(WEAK));
+    let engine_capped = matches!(
+        row.control,
+        Control::Slider {
+            unit: friendly::Unit::Degrees,
+            ..
+        }
+    );
+    if let (true, Some([_, hi]), Ok(v)) = (engine_capped, entry.range, value.trim().parse::<f64>())
+        && v > hi
+    {
+        ui.label(
+            RichText::new(format!(
+                "Deadlock caps this at {}; use Wide view for more",
+                friendly::display(row.control, &fmt_num(hi, true))
+            ))
+            .small()
+            .color(WARN),
+        );
+    }
+}
+
+/// The small "Reset" chip beside a changed setting's label.
+fn reset_pill(ui: &mut Ui, was: &str) -> bool {
+    ui.add(
+        egui::Button::new(RichText::new("Reset").small().color(ACCENT))
+            .fill(ACCENT.gamma_multiply(0.14))
+            .corner_radius(CornerRadius::same(255))
+            .min_size(vec2(0.0, 18.0)),
+    )
+    .on_hover_text(format!("Back to your preset: {was}"))
+    .clicked()
 }
 
 /// "What do you want?": four goal cards, the tweak readout, and a dropdown for every preset.
@@ -1338,20 +1422,8 @@ fn setting_row(
                 } else {
                     label.color(TEXT)
                 });
-                if changed {
-                    let was = friendly::display(row.control, &preset);
-                    if ui
-                        .add(
-                            egui::Button::new(RichText::new("Reset").small().color(ACCENT))
-                                .fill(ACCENT.gamma_multiply(0.14))
-                                .corner_radius(CornerRadius::same(255))
-                                .min_size(vec2(0.0, 18.0)),
-                        )
-                        .on_hover_text(format!("Back to your preset: {was}"))
-                        .clicked()
-                    {
-                        edits.push(Edit::Reset(vec![name]));
-                    }
+                if changed && reset_pill(ui, &friendly::display(row.control, &preset)) {
+                    edits.push(Edit::Reset(vec![name]));
                 }
                 let pinned = state.is_pinned(name);
                 let quick = friendly::KEY_SETTINGS.contains(&name);
@@ -1436,28 +1508,33 @@ pub(crate) fn control(
             let marked = friendly::level_index(levels, preset);
             segmented(ui, levels, current, marked).map(|i| fmt_num(levels[i].0, integer))
         }
-        Control::Slider { .. } => {
+        Control::Slider { unit, .. } => {
             let [lo, hi] = entry.range.unwrap_or([0.0, 1.0]);
             let step = entry.step.unwrap_or(0.0);
-            let mut v: f64 = value.trim().parse().unwrap_or(lo);
+            let raw: f64 = value.trim().parse().unwrap_or(lo);
+            let rail = [friendly::to_rail(unit, lo), friendly::to_rail(unit, hi)];
+            let mut v = friendly::to_rail(unit, raw);
             let readout = 104.0;
             ui.spacing_mut().slider_width = ui.available_width() - readout - 8.0;
             let before = v;
-            let mut slider = egui::Slider::new(&mut v, lo..=hi).show_value(false);
+            let mut slider = egui::Slider::new(&mut v, rail[0]..=rail[1]).show_value(false);
             if integer {
                 slider = slider.integer();
             }
             let response = ui.add(slider);
-            let mut edited = (response.changed() && v != before)
-                .then(|| fmt_num(friendly::snap(v, [lo, hi], step), integer));
+            let mut edited = (response.changed() && v != before).then(|| {
+                let snapped = friendly::snap(v, rail, friendly::rail_step(unit, step));
+                fmt_num(friendly::from_rail(unit, snapped), integer)
+            });
             if let Ok(p) = preset.trim().parse::<f64>()
                 && (lo..=hi).contains(&p)
             {
                 let rect = response.rect;
                 let r = rect.height() / 2.5;
+                let p = friendly::to_rail(unit, p);
                 let x = egui::lerp(
                     rect.left() + r..=rect.right() - r,
-                    ((p - lo) / (hi - lo)) as f32,
+                    ((p - rail[0]) / (rail[1] - rail[0])) as f32,
                 );
                 ui.painter().line_segment(
                     [
@@ -1469,7 +1546,7 @@ pub(crate) fn control(
             }
             // The readout is its own box so typed text ("144", "Unlimited", "2 km") lands
             // exactly, while rail drags still snap to the step grid.
-            let mut typed = before;
+            let mut typed = raw;
             ui.allocate_ui_with_layout(
                 vec2(readout, 24.0),
                 Layout::right_to_left(Align::Center),
@@ -1485,6 +1562,7 @@ pub(crate) fn control(
                         .add(
                             egui::DragValue::new(&mut typed)
                                 .range(lo..=hi)
+                                .clamp_existing_to_range(false)
                                 .speed(speed)
                                 .custom_formatter(move |x, _| {
                                     friendly::display(control, &fmt_num(x, integer))
@@ -1492,7 +1570,7 @@ pub(crate) fn control(
                                 .custom_parser(move |text| friendly::parse(control, text)),
                         )
                         .on_hover_text("Click to type a value");
-                    if box_response.changed() && typed != before {
+                    if box_response.changed() && typed != raw {
                         let snapped = if box_response.dragged() {
                             friendly::snap(typed, [lo, hi], step)
                         } else {

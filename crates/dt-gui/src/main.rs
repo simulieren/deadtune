@@ -8,6 +8,7 @@ mod chart;
 mod compact;
 mod friendly;
 mod hud_view;
+mod icons;
 mod live;
 mod live_status;
 mod minimap_view;

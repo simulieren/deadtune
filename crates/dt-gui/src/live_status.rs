@@ -4,10 +4,16 @@
 use std::time::{Duration, Instant, SystemTime};
 
 use dt_core::bridge::ack::{Outcome, PushStatus};
-use eframe::egui::{self, Align2, FontId, RichText, Sense, Ui, vec2};
+use eframe::egui::{
+    self, Align2, Color32, CornerRadius, FontId, Rect, Response, RichText, Sense, Stroke, Ui, Vec2,
+    vec2,
+};
 
+use crate::icons::{self, Icon};
 use crate::state::{AppState, Status};
-use crate::theme::{ACCENT, BAD, GOOD, ON_ACCENT, TEXT, WARN, WEAK};
+use crate::theme::{
+    self, ACCENT, BAD, BORDER, CARD, CARD_HOVER, GOOD, ON_ACCENT, TEXT, WARN, WEAK,
+};
 use crate::views;
 
 pub fn clock(at: SystemTime) -> String {
@@ -89,26 +95,15 @@ pub fn launch_control(ui: &mut Ui, state: &mut AppState, fit: Fit) {
     }
     let safe = state.settings.safe_mode;
     let menu_width = 26.0;
+    let wide = ui.available_width() - menu_width - ui.spacing().item_spacing.x;
     let (text, size, min) = match (fit, safe) {
-        (Fit::Wide, false) => (
-            "Launch Deadlock",
-            14.0,
-            vec2(ui.available_width() - menu_width - 4.0, 34.0),
-        ),
-        (Fit::Wide, true) => (
-            "Launch (safe mode)",
-            14.0,
-            vec2(ui.available_width() - menu_width - 4.0, 34.0),
-        ),
+        (Fit::Wide, false) => ("Launch Deadlock", 14.0, vec2(wide, 34.0)),
+        (Fit::Wide, true) => ("Launch (safe mode)", 14.0, vec2(wide, 34.0)),
         (Fit::Chip, false) => ("Launch Deadlock", 12.0, vec2(0.0, 24.0)),
         (Fit::Chip, true) => ("Launch (safe mode)", 12.0, vec2(0.0, 24.0)),
         (Fit::Dot, _) => ("Launch", 12.0, vec2(0.0, 22.0)),
     };
-    let launch = || {
-        egui::Button::new(RichText::new(text).size(size).strong().color(ON_ACCENT))
-            .fill(if safe { WARN } else { ACCENT })
-            .min_size(min)
-    };
+    let fill = if safe { WARN } else { ACCENT };
     let hover = if safe {
         "Safe mode: every DeadTune pak is out of the game folder. Starts Deadlock through Steam \
          with DeadTune's boot cfg."
@@ -120,7 +115,16 @@ pub fn launch_control(ui: &mut Ui, state: &mut AppState, fit: Fit) {
         )
     };
     let parts = |ui: &mut Ui, state: &mut AppState| {
-        if ui.add(launch()).on_hover_text(&hover).clicked()
+        let response = if fit == Fit::Wide {
+            launch_button(ui, text, fill, min)
+        } else {
+            ui.add(
+                egui::Button::new(RichText::new(text).size(size).strong().color(ON_ACCENT))
+                    .fill(fill)
+                    .min_size(min),
+            )
+        };
+        if response.on_hover_text(&hover).clicked()
             && let Err(e) = state.launch_game()
         {
             state.status = Some(Status::Error(format!("launch: {e}")));
@@ -136,6 +140,36 @@ pub fn launch_control(ui: &mut Ui, state: &mut AppState, fit: Fit) {
     }
 }
 
+/// The sidebar's Launch: a full-width accent button with a play icon.
+fn launch_button(ui: &mut Ui, text: &str, fill: Color32, size: Vec2) -> Response {
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let t = ui
+        .ctx()
+        .animate_bool_responsive(response.id.with("hover"), response.hovered());
+    let fill = fill.lerp_to_gamma(Color32::WHITE, 0.12 * t);
+    let painter = ui.painter();
+    painter.rect_filled(rect, CornerRadius::same(8), fill);
+    let galley = painter.layout_no_wrap(
+        text.to_string(),
+        FontId::new(14.0, theme::semibold()),
+        ON_ACCENT,
+    );
+    let content = 12.0 + 8.0 + galley.size().x;
+    let left = rect.center().x - content / 2.0;
+    icons::paint(
+        painter,
+        Rect::from_center_size(egui::pos2(left + 6.0, rect.center().y), vec2(12.0, 12.0)),
+        Icon::Play,
+        ON_ACCENT,
+    );
+    painter.galley(
+        egui::pos2(left + 20.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        ON_ACCENT,
+    );
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 /// The small menu beside Launch: safe mode on (removes every DeadTune pak now, keeps the
 /// profile) and off (puts them back through the normal Apply).
 fn launch_menu(ui: &mut Ui, state: &mut AppState, fit: Fit) {
@@ -145,9 +179,27 @@ fn launch_menu(ui: &mut Ui, state: &mut AppState, fit: Fit) {
         Fit::Chip => 24.0,
         Fit::Dot => 22.0,
     };
-    let button =
-        egui::Button::new(RichText::new("v").size(11.0).color(TEXT)).min_size(vec2(26.0, height));
-    egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
+    let (rect, response) = ui.allocate_exact_size(vec2(26.0, height), Sense::click());
+    let response = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Safe mode");
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
+    let lit = response.hovered() || open;
+    let painter = ui.painter();
+    painter.rect(
+        rect,
+        CornerRadius::same(if fit == Fit::Wide { 8 } else { 4 }),
+        if lit { CARD_HOVER } else { CARD },
+        Stroke::new(1.0, BORDER),
+        egui::StrokeKind::Inside,
+    );
+    icons::paint(
+        painter,
+        Rect::from_center_size(rect.center(), vec2(14.0, 14.0)),
+        Icon::ChevronDown,
+        if lit { TEXT } else { WEAK },
+    );
+    egui::Popup::menu(&response).show(|ui| {
         if safe {
             if ui
                 .button("Restore addons")

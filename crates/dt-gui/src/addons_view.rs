@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use dt_core::addons::install::{Action, Blocker, InstalledState, game_updated_since};
 use dt_core::addons::textures::{category_label, summary};
-use dt_core::addons::{self, AddonId, AddonInfo, Kind, Source, particles};
+use dt_core::addons::{self, AddonId, AddonInfo, Kind, Source, clutter, particles};
 use dt_core::addons::{Factor, TextureCategory, TextureDownscale};
 use eframe::egui::{self, Align, Color32, Layout, RichText, Ui, vec2};
 
@@ -20,6 +20,8 @@ enum Edit {
     Expand(Option<AddonId>),
     Particle(&'static str, bool),
     AllParticles(bool),
+    Clutter(&'static str, bool),
+    GravesFade,
     Blur(addons::BlurOptions),
     Textures(TextureDownscale),
     Import(PathBuf),
@@ -99,6 +101,14 @@ pub fn addons(ui: &mut Ui, state: &mut AppState) {
             Edit::AllParticles(visible) => {
                 for g in particles::GROUPS {
                     state.set_particle_group(g.id, visible);
+                }
+            }
+            Edit::Clutter(group, hide) => state.set_clutter_group(group, hide),
+            Edit::GravesFade => {
+                if let Err(e) =
+                    state.set_convar(clutter::FADE_CONVAR, clutter::FADE_MAX.to_string())
+                {
+                    state.status = Some(Status::Error(e.to_string()));
                 }
             }
             Edit::Blur(opts) => state.set_blur(opts),
@@ -475,6 +485,7 @@ fn card(
             Kind::ParticleGroups => particle_options(ui, state, edits),
             Kind::Blur => blur_options(ui, state, edits),
             Kind::Textures => texture_options(ui, state, edits),
+            Kind::Clutter => clutter_options(ui, state, edits),
             Kind::Toggle => {}
         }
     });
@@ -536,6 +547,73 @@ fn particle_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
         .small()
         .color(WEAK),
     );
+}
+
+fn clutter_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+    let hide = &state.profile.addons.hide_clutter;
+    caption(ui, "Hide");
+    let everything = hide.contains(clutter::EVERYTHING);
+    for g in &clutter::GROUPS {
+        let mut on = hide.contains(g.id);
+        let covered = everything && g.id != clutter::EVERYTHING;
+        ui.add_space(4.0);
+        ui.add_enabled_ui(!covered, |ui| {
+            if ui
+                .checkbox(&mut on, RichText::new(g.label).strong())
+                .changed()
+            {
+                edits.push(Edit::Clutter(g.id, on));
+            }
+        });
+        ui.indent(g.id, |ui| {
+            ui.label(RichText::new(g.detail).small().color(WEAK));
+            if let Some(warning) = g.warning {
+                let colour = if g.id == clutter::EVERYTHING {
+                    BAD
+                } else {
+                    WARN
+                };
+                ui.label(RichText::new(warning).small().color(colour));
+            }
+            if g.id == "graves" && on && !covered {
+                graves_fade_hint(ui, state, edits);
+            }
+        });
+    }
+    if everything {
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("Everything already includes the groups above.")
+                .small()
+                .color(WEAK),
+        );
+    }
+}
+
+/// The Graves pack needs the fade distance scale at 4 or lower; -1 is the engine default.
+fn graves_fade_hint(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+    let value = state.current_value(clutter::FADE_CONVAR);
+    let scale = value.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+    if scale.is_some_and(|v| v <= clutter::FADE_MAX as f64) {
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            RichText::new(format!(
+                "Your fade distance scale is {}.",
+                value.as_deref().unwrap_or("not set")
+            ))
+            .small()
+            .color(WARN),
+        );
+        if ui
+            .small_button(format!("Set it to {}", clutter::FADE_MAX))
+            .on_hover_text(clutter::FADE_CONVAR)
+            .clicked()
+        {
+            edits.push(Edit::GravesFade);
+        }
+    });
 }
 
 fn blur_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {

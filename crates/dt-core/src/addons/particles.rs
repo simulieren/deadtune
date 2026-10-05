@@ -1,7 +1,8 @@
 //! The screen-space particle disabler, made configurable. Upstream (Laund's
 //! `pak02_dir.vpk`) replaces 108 particle systems with one empty stub. We take the
 //! stub from the upstream file and ship it at only the paths the player hides,
-//! grouped by what the player sees on screen.
+//! grouped by what the player sees on screen. The groups also cover the four effects
+//! Laund added later in the Screenspace pack of Clutter Be Gone (`clutter/screenspace.txt`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -73,6 +74,18 @@ pub static GROUPS: &[ParticleGroup] = &[
         "Obscured by steam",
         "modifiers",
         ["obscured_by_steam_screen"]
+    ),
+    group!(
+        "hideout",
+        "Hideout: finding match",
+        "ui",
+        ["ui_hideout_findingmatch_screen"]
+    ),
+    group!(
+        "snowball",
+        "Snowball hit (Christmas event)",
+        "event/christmas",
+        ["snowball_tgt_screen"]
     ),
     group!(
         "items",
@@ -299,6 +312,15 @@ pub static GROUPS: &[ParticleGroup] = &[
         ]
     ),
     group!(
+        "ratking",
+        "Nibble debuff (ratking)",
+        "abilities/ratking",
+        [
+            "ratking_nibble_debuff_screen",
+            "ratking_nibble_debuff_screen_border",
+        ]
+    ),
+    group!(
         "shiv",
         "Shiv: Bloodletting dash and Killing Blow",
         "abilities/shiv",
@@ -402,7 +424,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn groups_cover_the_upstream_particle_list_exactly_once() {
+    fn groups_cover_both_upstream_particle_lists_exactly_once() {
         let upstream = upstream();
         let mut ours: Vec<&str> = hidden_paths(&BTreeSet::new());
         ours.sort_unstable();
@@ -412,8 +434,10 @@ pub(crate) mod tests {
             .map(String::as_str)
             .filter(|p| *p != DEBUG_TEXTURE)
             .collect();
+        theirs.extend(include_str!("clutter/screenspace.txt").lines());
         theirs.sort_unstable();
-        assert_eq!(ours.len(), 108);
+        theirs.dedup();
+        assert_eq!(ours.len(), 112);
         assert_eq!(upstream.entries.len(), 109);
         assert_eq!(ours, theirs);
         let mut ids: Vec<&str> = GROUPS.iter().map(|g| g.id).collect();
@@ -428,6 +452,9 @@ pub(crate) mod tests {
         let stub = stub_from_upstream(&upstream).unwrap();
         assert_eq!(crc32(&stub.particle), STUB_CRC);
         for path in hidden_paths(&BTreeSet::new()) {
+            if !upstream.contains(path) {
+                continue;
+            }
             assert_eq!(upstream.read(path).unwrap(), stub.particle, "{path}");
         }
         assert_eq!(stub.texture.len(), 7556);

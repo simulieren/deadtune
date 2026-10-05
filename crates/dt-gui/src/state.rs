@@ -1461,6 +1461,15 @@ impl AppState {
         self.refresh_preview();
     }
 
+    pub fn set_clutter_group(&mut self, group: &str, hide: bool) {
+        if hide {
+            self.profile.addons.hide_clutter.insert(group.to_string());
+        } else {
+            self.profile.addons.hide_clutter.remove(group);
+        }
+        self.refresh_preview();
+    }
+
     pub fn set_blur(&mut self, opts: addons::BlurOptions) {
         self.profile.addons.blur = opts;
         self.refresh_preview();

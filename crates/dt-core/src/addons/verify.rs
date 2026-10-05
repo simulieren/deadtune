@@ -342,7 +342,7 @@ fn resampled_from(data: &[u8], original: &[u8]) -> Result<(), String> {
     }
     let side = ours.width.max(ours.height);
     let want = native_scope::target_dims(orig.width, orig.height, side);
-    if side > orig.width.max(orig.height) || (ours.width, ours.height) != want {
+    if side >= orig.width.max(orig.height) || (ours.width, ours.height) != want {
         return Err(format!(
             "{}x{} is not the game's {}x{} texture scaled to {side}",
             ours.width, ours.height, orig.width, orig.height
@@ -671,6 +671,12 @@ mod tests {
         assert!(
             got.problems[0].contains("1080x1080"),
             "larger than this fake game's 512 original: {got}"
+        );
+        let copy = game.read(native_scope::TEXTURE).unwrap();
+        let got = verify(&one(native_scope::TEXTURE, copy), &expect);
+        assert!(
+            got.problems[0].contains("512x512"),
+            "an unchanged copy is not a downscale: {got}"
         );
     }
 

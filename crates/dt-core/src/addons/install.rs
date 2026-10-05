@@ -780,7 +780,7 @@ pub(crate) mod tests {
     }
 
     /// A fake game with a clean gameinfo.gi and a pak01 carrying every file the native
-    /// builders read (the scope texture at 512 px, so the default side leaves it as is).
+    /// builders read (the scope texture at 512 px, small enough to keep tests quick).
     pub fn fake_install(buildid: &str) -> (tempfile::TempDir, GamePaths) {
         let steam = tempfile::tempdir().unwrap();
         let steamapps = steam.path().join("steamapps");
@@ -806,9 +806,11 @@ pub(crate) mod tests {
         .unwrap();
     }
 
+    /// The scope side is below the fake game's 512 px texture, so the scope builds.
     fn enabled(ids: &[AddonId]) -> AddonsConfig {
         AddonsConfig {
             enabled: ids.iter().copied().collect(),
+            scope: ScopeOptions { side: 256 },
             ..AddonsConfig::default()
         }
     }
@@ -1175,11 +1177,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn scope_is_resampled_to_the_chosen_side_and_left_alone_when_already_smaller() {
+    fn scope_is_resampled_to_the_chosen_side_and_removed_when_that_is_not_smaller() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
         let mut config = enabled(&[AddonId::VindictaScope]);
-        config.scope = ScopeOptions { side: 256 };
         let planned = plan(&paths, &config, &state).unwrap();
         let entry = planned.get(AddonId::VindictaScope).unwrap();
         assert_eq!(entry.path, addons_dir(&paths).join("pak74_dir.vpk"));
@@ -1193,20 +1194,15 @@ pub(crate) mod tests {
 
         config.scope = ScopeOptions::default();
         let again = plan(&paths, &config, &state).unwrap();
-        assert!(matches!(
-            action(&again, AddonId::VindictaScope),
-            Action::Write(_)
-        ));
-        execute(&again, &paths, &state).unwrap();
-        let game = VpkDir::open(&paths.citadel_dir.join(GAME_PAK)).unwrap();
         assert_eq!(
-            VpkDir::open(&entry.path)
-                .unwrap()
-                .read(native_scope::TEXTURE)
-                .unwrap(),
-            game.read(native_scope::TEXTURE).unwrap(),
-            "the 512 px fake original is already below 1080"
+            action(&again, AddonId::VindictaScope),
+            &Action::Remove,
+            "the 512 px fake original is already below 1080: a copy would change nothing"
         );
+        execute(&again, &paths, &state).unwrap();
+        assert!(!entry.path.exists());
+        assert!(read_record(&state).unwrap().installed.is_empty());
+        assert!(plan(&paths, &config, &state).unwrap().is_empty());
     }
 
     #[test]

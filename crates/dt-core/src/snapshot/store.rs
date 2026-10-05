@@ -33,6 +33,8 @@ pub fn folder_name(buildid: Option<&str>, taken: DateTime<Utc>) -> String {
 pub enum Stored {
     Full,
     /// A texture over the size cap: everything before the pixel data, at `raw/<path>.header`.
+    /// Only DeadTune 0.9.0 wrote these (the scope texture); later takes store such files in
+    /// full and replace the header when they retake the build.
     Header,
     None,
 }

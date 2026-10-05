@@ -1,15 +1,17 @@
 //! The Vindicta scope downscale, rebuilt from the player's game files. Tamara
 //! Mochaccinae's `pak89_dir.vpk` replaces `panorama/images/hud/crosshair/scope_common_psd.vtex_c`,
-//! the scope overlay the game ships as a 4096x4096 BGRA8888 texture with a single mip
-//! (Panorama images are compiled NO_LOD and never mipmapped), with the same image at
-//! 1080x1080: 4.4 MiB of VRAM instead of 64 MiB, and a full-screen sample from a texture
-//! four times smaller while scoped. We read the player's own file from pak01, check it is
-//! still a plain 8-bit single-mip 2D texture, area-average it so its longer side is
+//! the scope overlay the game ships as a 2048x2048 BGRA8888 texture with a single mip
+//! (Panorama images are compiled NO_LOD and never mipmapped; build 25712201's file is a
+//! 2,100-byte header plus 16,777,216 pixel bytes), with the same image at 1080x1080:
+//! 4.4 MiB of VRAM instead of 16 MiB, and a full-screen sample from a texture 3.6 times
+//! smaller while scoped. We read the player's own file from pak01, check it is still a
+//! plain 8-bit single-mip 2D texture, area-average it so its longer side is
 //! [`ScopeOptions::side`] (aspect kept), and write the pixels back into the original's own
 //! resource container with only width and height changed, so RED2, flags, reflectivity and
-//! the FALLBACK_BITS thumbnail stay the game's. Upstream also ships
-//! `panorama/image_compiler.vdata_c`, the author's compile manifest; the texture does not
-//! reference it and the game has no such file, so we leave it out.
+//! the FALLBACK_BITS thumbnail stay the game's. A side at or above the original's leaves
+//! nothing to install. Upstream also ships `panorama/image_compiler.vdata_c`, the author's
+//! compile manifest; the texture does not reference it and the game has no such file, so
+//! we leave it out.
 
 use std::collections::BTreeMap;
 
@@ -32,7 +34,8 @@ const EXTRA_COMPRESSED_MIP_SIZE: u32 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScopeOptions {
-    /// Longer side of the rebuilt texture, clamped to `MIN_SIDE..=` the original's.
+    /// Longer side of the rebuilt texture, at least `MIN_SIDE`; at or above the
+    /// original's means nothing to install.
     #[serde(default = "default_side")]
     pub side: u16,
 }
@@ -103,8 +106,8 @@ pub fn target_dims(width: u16, height: u16, side: u16) -> (u16, u16) {
 }
 
 /// `original` (a whole `.vtex_c`) with its single mip area-averaged so the longer side is
-/// `side`, clamped to `MIN_SIDE`; the input unchanged when `side` is not smaller.
-pub fn resize(original: &[u8], side: u16) -> Result<Vec<u8>, ScopeError> {
+/// `side`, clamped to `MIN_SIDE`; `None` when `side` is not smaller.
+pub fn resize(original: &[u8], side: u16) -> Result<Option<Vec<u8>>, ScopeError> {
     let v = Vtex::parse(original)?;
     let refuse = |what: String| Err(ScopeError::Unsupported(what));
     let Some(c) = channels(v.format) else {
@@ -153,7 +156,7 @@ pub fn resize(original: &[u8], side: u16) -> Result<Vec<u8>, ScopeError> {
 
     let (width, height) = target_dims(v.width, v.height, side);
     if (width, height) == (v.width, v.height) {
-        return Ok(original.to_vec());
+        return Ok(None);
     }
     let image = Image::new(
         u32::from(v.width),
@@ -183,14 +186,16 @@ pub fn resize(original: &[u8], side: u16) -> Result<Vec<u8>, ScopeError> {
     if !consistent {
         return refuse("the rebuilt header does not describe its pixel data".into());
     }
-    Ok(out)
+    Ok(Some(out))
 }
 
-/// Our pak's one file: the player's scope texture at `opts.side`.
+/// Our pak's one file: the player's scope texture at `opts.side`. Empty when the game's
+/// texture is not larger than that, since a copy of it would change nothing.
 pub fn build(game: &VpkDir, opts: &ScopeOptions) -> Result<BTreeMap<String, Vec<u8>>, AddonError> {
     let original = game.read(TEXTURE)?;
-    let rebuilt = resize(&original, opts.side)?;
-    Ok(BTreeMap::from([(TEXTURE.to_string(), rebuilt)]))
+    Ok(resize(&original, opts.side)?
+        .map(|rebuilt| BTreeMap::from([(TEXTURE.to_string(), rebuilt)]))
+        .unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -340,8 +345,8 @@ pub(crate) mod tests {
         assert_eq!(extra_kinds(data).collect::<Vec<_>>(), [1]);
         assert_eq!(
             resize(&up, DEFAULT_SIDE).unwrap(),
-            up,
-            "already at the target: untouched"
+            None,
+            "already at the target: nothing to do"
         );
     }
 
@@ -368,14 +373,14 @@ pub(crate) mod tests {
 
     #[test]
     fn rebuilds_a_full_size_original_into_upstreams_header() {
-        let db = rebuild_matches_upstream(4096);
-        assert!(db > 45.0, "psnr vs upstream {db}");
+        let db = rebuild_matches_upstream(2048);
+        assert!(db > 40.0, "psnr vs upstream {db}");
     }
 
     #[test]
-    fn rebuilds_a_half_size_original_too() {
-        let db = rebuild_matches_upstream(2048);
-        assert!(db > 40.0, "psnr vs upstream {db}");
+    fn rebuilds_a_larger_original_too() {
+        let db = rebuild_matches_upstream(4096);
+        assert!(db > 45.0, "psnr vs upstream {db}");
     }
 
     #[test]
@@ -383,7 +388,7 @@ pub(crate) mod tests {
         for (format, c) in [(3u8, 1usize), (4, 4), (22, 2), (28, 4)] {
             let (w, h) = (1024u16, 768u16);
             let src = plain_vtex(w, h, format, 1, 0, &[], &gradient(w, h, c));
-            let out = resize(&src, 256).unwrap();
+            let out = resize(&src, 256).unwrap().unwrap();
             let v = Vtex::parse(&out).unwrap();
             assert_eq!(
                 (v.width, v.height, v.mips.len()),
@@ -415,10 +420,16 @@ pub(crate) mod tests {
     #[test]
     fn returns_the_original_when_side_is_not_smaller_and_clamps_small_sides() {
         let src = plain_vtex(256, 192, 28, 1, 0, &[], &gradient(256, 192, 4));
-        assert_eq!(resize(&src, 256).unwrap(), src);
-        assert_eq!(resize(&src, 60000).unwrap(), src);
+        assert_eq!(resize(&src, 256).unwrap(), None);
+        assert_eq!(resize(&src, 60000).unwrap(), None);
+        let files = BTreeMap::from([(TEXTURE.to_string(), src)]);
+        assert!(
+            build(&pak_with(&files), &ScopeOptions { side: 256 })
+                .unwrap()
+                .is_empty()
+        );
         let big = plain_vtex(1024, 512, 28, 1, 8, &[], &vec![0x80; 1024 * 512 * 4]);
-        let out = resize(&big, 1).unwrap();
+        let out = resize(&big, 1).unwrap().unwrap();
         let v = Vtex::parse(&out).unwrap();
         assert_eq!((v.width, v.height), (MIN_SIDE, MIN_SIDE / 2));
         assert_eq!(v.flags, Flags::NO_LOD);

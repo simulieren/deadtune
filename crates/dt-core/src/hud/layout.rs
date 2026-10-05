@@ -8,6 +8,7 @@ use super::elements::{
     self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
 };
 use super::health_style::{HealthError, HealthStyle};
+use super::ingame::{self, IngameError, IngameSettings};
 use super::inject::LayoutEdit;
 use super::minimap_colors::{self, Color, IconId, MINIMAP_STYLE};
 use super::minimap_style::{MinimapStyle, StyleError};
@@ -70,6 +71,10 @@ pub struct HudLayout {
     /// (`hud::apples_tunnels`).
     #[serde(skip_serializing_if = "ApplesTunnels::is_vanilla")]
     pub apples_tunnels: ApplesTunnels,
+    /// Experimental, untested in game: DeadTune rows in the game's own Settings menu
+    /// (`hud::ingame`).
+    #[serde(skip_serializing_if = "IngameSettings::is_vanilla")]
+    pub ingame: IngameSettings,
     /// Advanced: raw CSS appended after the generated rules, keyed by style file path
     /// (`panorama/styles/hud.vcss_c`). Must parse with balanced braces.
     pub extra_css: BTreeMap<String, String>,
@@ -121,6 +126,8 @@ pub enum LayoutError {
     Health(#[from] HealthError),
     #[error("apples and tunnels: {0}")]
     ApplesTunnels(#[from] ApplesTunnelsError),
+    #[error("in-game settings: {0}")]
+    Ingame(#[from] IngameError),
     #[error("extra css for {0}: {1}")]
     ExtraCss(String, CssError),
 }
@@ -133,13 +140,15 @@ impl HudLayout {
             && self.top_bar.is_vanilla()
             && self.health.is_vanilla()
             && self.apples_tunnels.is_vanilla()
+            && self.ingame.is_vanilla()
             && self.extra_css.values().all(|c| c.trim().is_empty())
     }
 }
 
 /// Validates and emits one rule per non-identity element (sorted by `ElementId`),
 /// one rule per minimap colour (sorted by `IconId`), the minimap and health bar rules, the top
-/// bar's rules and files, the apples and tunnels rules and files, then the minified extra CSS.
+/// bar's rules and files, the apples and tunnels rules and files, the in-game settings rows,
+/// then the minified extra CSS.
 /// Deterministic.
 pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
     let mut files: BTreeMap<String, String> = BTreeMap::new();
@@ -197,6 +206,11 @@ pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
         layouts.insert(apples_tunnels::MINIMAP_LAYOUT.to_string(), edit);
     }
     own_files.extend(map.own_files);
+    let rows = layout.ingame.compile()?;
+    if let Some(edit) = rows.layout {
+        layouts.insert(ingame::SETTINGS_LAYOUT.to_string(), edit);
+    }
+    own_files.extend(rows.own_files);
     for (path, css) in &layout.extra_css {
         let css = super::css::parse_rules(css)
             .and_then(|_| super::css::minify(css))
@@ -863,6 +877,35 @@ mod tests {
         assert_eq!(
             compile(&l),
             Err(LayoutError::ApplesTunnels(ApplesTunnelsError::Radius(40)))
+        );
+    }
+
+    #[test]
+    fn ingame_rows_join_the_patch_and_stay_out_of_vanilla_toml() {
+        let mut l = HudLayout::default();
+        l.ingame.wide_fov = true;
+        assert!(!l.is_vanilla());
+        let patch = compile(&l).expect("valid");
+        assert_eq!(
+            patch.layouts.keys().collect::<Vec<_>>(),
+            [super::ingame::SETTINGS_LAYOUT]
+        );
+        assert_eq!(
+            patch.own_files.keys().collect::<Vec<_>>(),
+            [super::ingame::OWN_SCRIPT]
+        );
+        let text = toml::to_string(&l).expect("serialize");
+        assert!(text.contains("[ingame]\nwide_fov = true"), "{text}");
+        assert_eq!(toml::from_str::<HudLayout>(&text).expect("parse"), l);
+        assert!(
+            !toml::to_string(&HudLayout::default())
+                .unwrap()
+                .contains("ingame")
+        );
+        l.ingame.performance.insert("nope".into());
+        assert_eq!(
+            compile(&l),
+            Err(LayoutError::Ingame(IngameError::UnknownRow("nope".into())))
         );
     }
 

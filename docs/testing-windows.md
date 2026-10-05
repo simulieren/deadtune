@@ -206,6 +206,17 @@ DeadTune remembers the set of addon paks (id plus sha256) that Deadlock last sta
 
 Whenever something misbehaves, and once when everything works, press **Copy diagnostic report** on the System check page (or run `tools\deadtune-cli.exe doctor --report > report.txt`) and send the text along with your notes. It holds the DeadTune version, the `SearchPaths` block of `gameinfo.gi`, the files in `game\citadel\addons` with sizes and who owns each, DeadTune's addon and HUD records, the launch guard state, the last launch arguments, the last 80 lines of `console.log` and the read-back of every installed pak. It contains no account data; paths show your Windows user name.
 
+### 14. Launch options and Vulkan
+
+The menu beside **Launch Deadlock** > **Launch options** (or the Launch tab in the advanced view) holds the renderer choice, Skip intro video, the console window, extra options, and a check of every option against the game's own list (`research/configs/OptimizationLock/launch_options.txt`).
+
+- [ ] **L-1 Migration**: an existing install keeps its old launch options. Before updating, note what was in Advanced > Launch; after, the same options show up as toggles plus extras, nothing missing.
+- [ ] **L-2 Check**: paste `-vulkan -novid -nosplash -high -noborder -novsync -dx11 -threads 10 -noaaf -noshadows -nod3d9ex -disableframecap` into Extra options. `-nosplash`, `-noaaf`, `-noshadows` and `-disableframecap` show amber "not in this game build"; `-vulkan` and `-dx11` show red "conflicts with" each other. `tools\deadtune-cli.exe launch-options check "<same text>"` prints the same and exits 1.
+- [ ] **L-3 Copy for Steam**: the button copies the full line, ending in `+exec deadtune_boot -condebug`. Paste it into Steam (right-click Deadlock > Properties > General > Launch Options), start the game from Steam, and confirm Instant changes still tick (section 3). Then clear Steam's box again.
+- [ ] **L-4 Vulkan starts and renders**: renderer Vulkan, nothing else changed, Launch Deadlock. The game reaches the main menu and a bot match renders normally (no black screen, missing shadows or flicker). Check it really is Vulkan: search `console.log` for "Vulkan" and write down the line that names the render API.
+- [ ] **L-5 Shader cache**: the first Vulkan start compiles shaders, so expect long loading and stutter in the first match or two. Note how long the first start took to the main menu and whether the second start is faster. Don't judge Vulkan FPS on the first match.
+- [ ] **L-6 FPS vs default**: on the same map and spot (a bot match, measured the way section 8 does), compare average and 1% low FPS for Default and Vulkan, after Vulkan's shader cache is warm. Note GPU model and driver version with the numbers.
+
 ### 10. Developer checks (repo checkout on Windows)
 - [ ] `cargo test --workspace --all-features` passes, including the Windows-only `push_uses_crlf_on_windows`.
 - [ ] With `core.autocrlf=true`, a fresh clone still passes the catalog drift test.

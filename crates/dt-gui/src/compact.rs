@@ -194,8 +194,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
 fn header(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label(RichText::new("Dead").size(16.0).strong().color(TEXT));
-        ui.label(RichText::new("Tune").size(16.0).strong().color(ACCENT));
+        crate::icons::brand_mark(ui, 24.0, crate::theme::RAIL).on_hover_text("DeadTune");
         ui.add_space(10.0);
         preset_chip(ui, state, edits);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

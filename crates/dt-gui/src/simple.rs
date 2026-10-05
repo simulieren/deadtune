@@ -552,32 +552,8 @@ fn section_icon(section: Section) -> Icon {
 /// Logo mark, wordmark and the current preset, which links to Overview.
 fn brand(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     ui.horizontal(|ui| {
-        ui.add_space(6.0);
-        let (mark, _) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::hover());
-        let painter = ui.painter();
-        painter.rect_filled(mark, CornerRadius::same(7), ACCENT);
-        for (i, h) in [9.0, 15.0, 11.0].into_iter().enumerate() {
-            let x = mark.left() + 8.0 + i as f32 * 6.0;
-            painter.rect_filled(
-                Rect::from_center_size(egui::pos2(x, mark.center().y), vec2(3.0, h)),
-                CornerRadius::same(2),
-                ON_ACCENT,
-            );
-        }
         ui.add_space(4.0);
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label(
-            RichText::new("Dead")
-                .size(19.0)
-                .family(theme::semibold())
-                .color(TEXT),
-        );
-        ui.label(
-            RichText::new("Tune")
-                .size(19.0)
-                .family(theme::semibold())
-                .color(ACCENT),
-        );
+        icons::brand(ui, 19.0, RAIL);
     });
     ui.add_space(2.0);
     ui.horizontal(|ui| {

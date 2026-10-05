@@ -160,8 +160,7 @@ pub fn full_ui(ui: &mut Ui, state: &mut AppState, reopen: &mut Option<Settings>)
 fn header(ui: &mut Ui, state: &mut AppState) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label(RichText::new("Dead").size(17.0).strong().color(TEXT));
-        ui.label(RichText::new("Tune").size(17.0).strong().color(ACCENT));
+        crate::icons::brand(ui, 17.0, crate::theme::RAIL);
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.add_space(18.0);
         profile_picker(ui, state);

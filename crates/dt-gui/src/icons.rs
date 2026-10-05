@@ -227,6 +227,69 @@ pub fn shapes(icon: Icon, rect: Rect, color: Color32) -> Vec<Shape> {
         .collect()
 }
 
+/// DeadTune's mark on a 64-unit grid: a brass diamond with dial notches and a keyhole cut
+/// in `cut`, the colour behind it. Original art; it borrows only the game's era, not its logo.
+pub fn mark_shapes(rect: Rect, fill: Color32, cut: Color32) -> Vec<Shape> {
+    let side = rect.width().min(rect.height());
+    let scale = side / 64.0;
+    let origin = rect.center() - eframe::egui::vec2(side, side) / 2.0;
+    let at = |x: f32, y: f32| origin + eframe::egui::vec2(x, y) * scale;
+    let notch = Stroke::new((1.6 * scale).max(1.2), cut);
+    vec![
+        Shape::convex_polygon(
+            vec![at(32.0, 3.0), at(61.0, 32.0), at(32.0, 61.0), at(3.0, 32.0)],
+            fill,
+            Stroke::NONE,
+        ),
+        Shape::line_segment([at(32.0, 3.0), at(32.0, 13.0)], notch),
+        Shape::line_segment([at(3.0, 32.0), at(13.0, 32.0)], notch),
+        Shape::line_segment([at(61.0, 32.0), at(51.0, 32.0)], notch),
+        Shape::line_segment([at(32.0, 61.0), at(32.0, 51.0)], notch),
+        Shape::circle_filled(at(32.0, 27.0), 6.5 * scale, cut),
+        Shape::convex_polygon(
+            vec![
+                at(28.2, 30.0),
+                at(35.8, 30.0),
+                at(38.0, 44.0),
+                at(26.0, 44.0),
+            ],
+            cut,
+            Stroke::NONE,
+        ),
+    ]
+}
+
+/// The mark followed by the two-tone wordmark, as every view's header shows it.
+pub fn brand(ui: &mut eframe::egui::Ui, size: f32, cut: Color32) {
+    use crate::theme::{ACCENT, TEXT, semibold};
+    use eframe::egui::RichText;
+    let spacing = std::mem::replace(&mut ui.spacing_mut().item_spacing.x, 0.0);
+    brand_mark(ui, size * 1.45, cut);
+    ui.add_space(size * 0.4);
+    ui.label(
+        RichText::new("Dead")
+            .size(size)
+            .family(semibold())
+            .color(TEXT),
+    );
+    ui.label(
+        RichText::new("Tune")
+            .size(size)
+            .family(semibold())
+            .color(ACCENT),
+    );
+    ui.spacing_mut().item_spacing.x = spacing;
+}
+
+/// The mark alone, for headers too narrow for the wordmark.
+pub fn brand_mark(ui: &mut eframe::egui::Ui, side: f32, cut: Color32) -> eframe::egui::Response {
+    let (rect, response) =
+        ui.allocate_exact_size(eframe::egui::vec2(side, side), eframe::egui::Sense::hover());
+    ui.painter()
+        .extend(mark_shapes(rect, crate::theme::ACCENT, cut));
+    response
+}
+
 pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
     painter.extend(shapes(icon, rect, color));
 }
@@ -249,6 +312,15 @@ mod tests {
                     "{icon:?} spills out: {bounds:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_mark_draws_inside_its_box() {
+        let rect = Rect::from_min_size(pos2(10.0, 10.0), vec2(28.0, 28.0));
+        for shape in mark_shapes(rect, Color32::GOLD, Color32::BLACK) {
+            let bounds = shape.visual_bounding_rect();
+            assert!(rect.expand(1.0).contains_rect(bounds), "{bounds:?}");
         }
     }
 

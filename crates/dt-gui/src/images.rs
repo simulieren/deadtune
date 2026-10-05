@@ -356,8 +356,7 @@ impl AppState {
 
     /// Where the player's copy of the image replacing `path` is stored.
     pub fn stored_image(&self, path: &str) -> Option<PathBuf> {
-        self.image_override(path)
-            .map(|o| o.stored_at(&self.store.root))
+        self.image_override(path)?.stored_at(&self.store.root)
     }
 
     /// Why the last plan left `path`'s replacement out, if it did.
@@ -370,10 +369,12 @@ impl AppState {
     }
 
     pub fn select_image(&mut self, path: Option<String>) {
-        if let Some(IconOverride::Png { fit, .. }) =
-            path.as_deref().and_then(|p| self.image_override(p))
+        if let Some(fit) = path
+            .as_deref()
+            .and_then(|p| self.image_override(p))
+            .and_then(IconOverride::fit)
         {
-            self.images.fit = *fit;
+            self.images.fit = fit;
         }
         if self.images.notice.as_ref().map(|n| &n.path) != path.as_ref() {
             self.images.notice = None;
@@ -476,10 +477,7 @@ impl AppState {
         let Some(path) = self.images.selected.clone() else {
             return;
         };
-        if let Some(IconOverride::Png { fit: current, .. }) = self.profile.hud.icons.get_mut(&path)
-            && *current != fit
-        {
-            *current = fit;
+        if icons::set_fit(&mut self.profile.hud.icons, &path, fit) {
             self.refresh_preview();
         }
     }
@@ -574,6 +572,7 @@ pub mod tests {
     use super::*;
     use crate::state::testutil;
     use dt_core::hud::crc32::crc32;
+    use dt_core::hud::icons::Source;
     use dt_core::hud::install::GAME_PAK;
     use dt_core::hud::resource::{Block, Resource};
     use dt_core::hud::vpk;
@@ -795,13 +794,10 @@ pub mod tests {
         let (_dir, mut state) = loaded();
         state.select_image(Some(TEXTURE.into()));
         state.drop_image_files(None, vec![Ok(my_png(4, 4))]);
-        assert!(matches!(
-            state.image_override(TEXTURE),
-            Some(IconOverride::Png {
-                fit: Fit::Original,
-                ..
-            })
-        ));
+        assert_eq!(
+            state.image_override(TEXTURE).and_then(IconOverride::fit),
+            Some(Fit::Original)
+        );
         assert!(state.stored_image(TEXTURE).unwrap().is_file());
         assert_eq!(state.images_changed_count(), 1);
         assert_eq!(state.images.notice.as_ref().unwrap().tone, Tone::Good);
@@ -817,8 +813,8 @@ pub mod tests {
         state.select_image(Some(TEXTURE.into()));
         state.drop_image_files(Some(TOP_BAR.into()), vec![Ok(MY_SVG.as_bytes().to_vec())]);
         assert!(matches!(
-            state.image_override(TOP_BAR),
-            Some(IconOverride::Svg { .. })
+            state.image_override(TOP_BAR).map(|o| &o.source),
+            Some(Source::Svg { .. })
         ));
         assert!(state.image_override(TEXTURE).is_none());
         assert_eq!(state.images.selected.as_deref(), Some(TOP_BAR));
@@ -908,13 +904,10 @@ pub mod tests {
             "selection shows the override's fit"
         );
         state.set_image_fit(Fit::Original);
-        assert!(matches!(
-            state.image_override(TEXTURE),
-            Some(IconOverride::Png {
-                fit: Fit::Original,
-                ..
-            })
-        ));
+        assert_eq!(
+            state.image_override(TEXTURE).and_then(IconOverride::fit),
+            Some(Fit::Original)
+        );
     }
 
     #[test]

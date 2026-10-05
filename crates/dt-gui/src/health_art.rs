@@ -232,9 +232,19 @@ impl BarLayout {
     }
 }
 
+/// The number block measured against the in-game capture (`assets/vanilla_hud.jpg` and a
+/// close-up of it), in upright game px: the right end of the current health, the backer
+/// behind it and the right end of the max health line.
+const NUMBER_AT: Pos2 = pos2(119.0, 62.0);
+const BACKER_RECT: Rect = Rect::from_min_max(pos2(50.0, 34.0), pos2(132.0, 92.0));
+const MAX_AT: Pos2 = pos2(117.0, 86.0);
+/// `numericOracle`'s digits are narrower and shorter than Inter's at the same size.
+const GAME_FONT_FIT: f32 = 0.89;
+
 fn font(style: &HealthStyle, size: f32) -> FontId {
     match style.font {
-        NumberFont::Game | NumberFont::Block => FontId::new(size, theme::semibold()),
+        NumberFont::Game => FontId::new(size * GAME_FONT_FIT, theme::semibold()),
+        NumberFont::Block => FontId::new(size, theme::semibold()),
         NumberFont::Sans => FontId::proportional(size),
         NumberFont::Mono => FontId::monospace(size * 0.92),
     }
@@ -281,9 +291,20 @@ pub(crate) fn draw_health(
     };
     if !style.hide_regen && style.shape != BarShape::Hidden {
         let (place, at, align) = match style.shape {
-            BarShape::Ruler => (bar, pos2(19.0, 9.0), Align2::LEFT_CENTER),
+            BarShape::Ruler => (bar, pos2(23.0, 9.0), Align2::LEFT_CENTER),
             _ => (Place::SCREEN, bar.at(pos2(0.0, -4.0)), Align2::LEFT_BOTTOM),
         };
+        if style.shape == BarShape::Ruler {
+            let arrows = Rect::from_center_size(pos2(17.0, 9.5), vec2(7.0, 8.0));
+            images.paint_placed(
+                painter,
+                art::REGEN,
+                bar,
+                arrows,
+                &corners(arrows),
+                HEALTHY.gamma_multiply(0.3),
+            );
+        }
         placed_text(
             painter,
             place,
@@ -465,7 +486,7 @@ fn draw_number(
     }
     .turned(tilt);
     if !style.hide_backer {
-        let backer = Rect::from_min_size(pos2(52.0, 36.0), vec2(78.0, 62.4));
+        let backer = BACKER_RECT;
         let drawn = images.paint_placed(
             painter,
             art::HEALTH_BACKER,
@@ -494,22 +515,23 @@ fn draw_number(
     placed_text(
         painter,
         number,
-        pos2(116.0, 63.0),
+        NUMBER_AT,
         Align2::RIGHT_CENTER,
         &((fill * MAX_HEALTH as f32) as u32).to_string(),
         font(style, digits * scale * number_scale),
         number_color(style, fill),
-        (2.2 * scale).max(1.2),
+        (3.0 * scale).max(1.4),
     );
     if !style.hide_max {
         placed_text(
             painter,
             number.turned(if tilt == 0.0 { 0.0 } else { -3.0 }),
-            pos2(113.0, 63.0 + 19.0 * number_scale),
+            MAX_AT + vec2(0.0, 23.0 * (number_scale - 1.0)),
             Align2::RIGHT_CENTER,
-            &format!("/ {MAX_HEALTH}"),
-            font(style, 14.0 * scale),
-            HEALTHY.gamma_multiply(if style.clear_max_health { 0.85 } else { 0.4 }),
+            // The game writes "/ 4557"; numericSans draws that slash nearly upright.
+            &format!("| {MAX_HEALTH}"),
+            font(style, 13.0 * scale),
+            HEALTHY.gamma_multiply(if style.clear_max_health { 0.85 } else { 0.5 }),
             0.0,
         );
     }

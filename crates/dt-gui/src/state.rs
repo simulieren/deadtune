@@ -1166,6 +1166,7 @@ impl AppState {
     }
 
     pub fn revert_all(&mut self) {
+        self.images.edit.forget();
         self.profile = self.saved.clone().unwrap_or_else(default_profile);
         self.base = Base::resolve(&self.profile, &self.presets_dir());
         self.refresh_preview();
@@ -2138,6 +2139,7 @@ impl AppState {
 
     /// Writes the previewed plan; live commands go through the active bridge when the game runs.
     pub fn apply(&mut self) -> Result<Applied, String> {
+        self.commit_edits();
         let plan = self.preview.clone()?;
         let mut applied = Applied::default();
         let mut bridge = None;

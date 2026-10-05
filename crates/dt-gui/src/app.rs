@@ -546,7 +546,9 @@ fn find_section(name: &str) -> Option<Section> {
 /// a path>` selects the first match, `DEADTUNE_IMAGES_SET=<part of a path>=<file>,...`
 /// replaces images with files, `DEADTUNE_IMAGES_ZOOM=1` shows the preview at 1:1,
 /// `DEADTUNE_IMAGES_EXPORT=running` shows "Save all images" mid-way and `=done` (or `=zip`)
-/// runs it for real first.
+/// runs it for real first. Colour edits: `DEADTUNE_IMAGES_EDIT=<part>=<spec>[;<spec>],...`,
+/// `DEADTUNE_IMAGES_BULK=<spec>[;<spec>]` on every visible image, `DEADTUNE_IMAGES_MARK=<part>,...`
+/// and `DEADTUNE_IMAGES_UNDO=<n>`.
 fn images_levers(state: &mut AppState) {
     let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
     let mut used = false;
@@ -580,7 +582,17 @@ fn images_levers(state: &mut AppState) {
     };
     let sets = var("DEADTUNE_IMAGES_SET");
     let select = var("DEADTUNE_IMAGES_SELECT");
-    if !(used || sets.is_some() || select.is_some()) {
+    let edits = var("DEADTUNE_IMAGES_EDIT");
+    let bulk = var("DEADTUNE_IMAGES_BULK");
+    let marks = var("DEADTUNE_IMAGES_MARK");
+    let undo = var("DEADTUNE_IMAGES_UNDO").and_then(|n| n.parse::<usize>().ok());
+    if !(used
+        || sets.is_some()
+        || select.is_some()
+        || edits.is_some()
+        || bulk.is_some()
+        || marks.is_some())
+    {
         return;
     }
     state.load_images();
@@ -594,9 +606,21 @@ fn images_levers(state: &mut AppState) {
             _ => eprintln!("DEADTUNE_IMAGES_SET: no image matching {part} or no file {file}"),
         }
     }
+    if let Some(Err(e)) = edits.map(|v| state.edit_lever(&v)) {
+        eprintln!("DEADTUNE_IMAGES_EDIT: {e}");
+    }
+    if let Some(Err(e)) = bulk.map(|v| state.bulk_lever(&v)) {
+        eprintln!("DEADTUNE_IMAGES_BULK: {e}");
+    }
     if let Some(part) = select {
         let path = find(state, &part);
         state.select_image(path);
+    }
+    if let Some(value) = marks {
+        state.mark_lever(&value);
+    }
+    for _ in 0..undo.unwrap_or(0) {
+        state.undo_images();
     }
 }
 

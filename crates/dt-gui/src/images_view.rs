@@ -11,6 +11,7 @@ use eframe::egui::{
 
 use crate::icons::{self, Icon};
 use crate::images::{ExportKind, ImageEntry, Library, Picture, Tone, Zoom};
+use crate::images_edit_view::{self as edit_view, Action};
 use crate::state::{AppState, Status};
 use crate::theme::{self, ACCENT, BAD, BORDER, CARD, CARD_HOVER, GOOD, TEXT, WARN, WEAK};
 use crate::thumbs::{Slot, Thumbs};
@@ -24,7 +25,8 @@ const PANEL: f32 = 330.0;
 const PREVIEW_SIDE: u32 = 512;
 
 enum Edit {
-    Select(String),
+    Select(String, egui::Modifiers),
+    Colour(Action),
     Folder(Option<String>),
     ChangedOnly(bool),
     Fit(Fit),
@@ -38,6 +40,7 @@ enum Edit {
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     state.load_images();
+    edit_view::prepare(ui.ctx(), state);
     let library = match state.images.library.take() {
         Some(Ok(library)) => library,
         other => {
@@ -55,6 +58,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
         .unwrap_or_else(|| Thumbs::new(ui.ctx(), library.source.clone()));
     thumbs.poll();
     let mut edits = Vec::new();
+    colour(&mut edits, |actions| edit_view::shortcuts(ui, actions));
     let drop_target = body(ui, state, &library, &mut thumbs, &mut edits);
     thumbs.end_frame();
     state.images.thumbs = Some(thumbs);
@@ -67,10 +71,21 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     run(state, edits);
 }
 
+/// Collects the colour panel's actions as page edits.
+fn colour(edits: &mut Vec<Edit>, draw: impl FnOnce(&mut Vec<Action>)) {
+    let mut actions = Vec::new();
+    draw(&mut actions);
+    edits.extend(actions.into_iter().map(Edit::Colour));
+}
+
 fn run(state: &mut AppState, edits: Vec<Edit>) {
     for edit in edits {
         match edit {
-            Edit::Select(path) => state.select_image(Some(path)),
+            Edit::Select(path, keys) => {
+                let visible = state.visible_paths();
+                state.mark_image(&path, keys.command, keys.shift, &visible);
+            }
+            Edit::Colour(action) => edit_view::run(state, action),
             Edit::Folder(folder) => state.images.folder = folder,
             Edit::ChangedOnly(on) => state.images.changed_only = on,
             Edit::Fit(fit) => state.set_image_fit(fit),
@@ -164,20 +179,26 @@ fn toolbar(ui: &mut Ui, state: &mut AppState, library: &Library, edits: &mut Vec
         {
             edits.push(Edit::ResetAll);
         }
+        colour(edits, |actions| {
+            edit_view::history_buttons(ui, state, actions)
+        });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let vectors = library
                 .entries
                 .iter()
                 .filter(|e| e.kind == Target::Vector)
                 .count();
-            ui.label(
-                RichText::new(format!(
-                    "{} images, {vectors} vector · {}",
-                    library.entries.len(),
-                    library.source.describe()
-                ))
-                .size(11.5)
-                .color(WEAK),
+            ui.add(
+                egui::Label::new(
+                    RichText::new(format!(
+                        "{} images, {vectors} vector · {}",
+                        library.entries.len(),
+                        library.source.describe()
+                    ))
+                    .size(11.5)
+                    .color(WEAK),
+                )
+                .truncate(),
             );
         });
     });
@@ -297,6 +318,10 @@ fn folder_chips(ui: &mut Ui, state: &AppState, library: &Library, edits: &mut Ve
                 edits.push(Edit::Folder(Some(folder.path.clone())));
             }
         }
+        ui.add_space(8.0);
+        colour(edits, |actions| {
+            edit_view::bulk_row(ui, state, library, actions)
+        });
     });
     let Some(top) = top else { return };
     let subs: Vec<_> = library.subfolders(top).collect();
@@ -328,13 +353,12 @@ fn folder_chips(ui: &mut Ui, state: &AppState, library: &Library, edits: &mut Ve
 }
 
 fn tile_picture(state: &AppState, entry: &ImageEntry, side: u32) -> Picture {
-    match state.stored_image(&entry.path) {
-        Some(file) => Picture::Mine { file, side },
-        None => Picture::Game {
+    state
+        .your_picture(&entry.path, side)
+        .unwrap_or_else(|| Picture::Game {
             path: entry.path.clone(),
             side,
-        },
-    }
+        })
 }
 
 fn grid(
@@ -376,7 +400,8 @@ fn grid(
                     for entry in visible.iter().skip(row * columns).take(columns) {
                         let response = tile(ui, state, entry, size, side, thumbs, hovering_files);
                         if response.clicked() {
-                            edits.push(Edit::Select(entry.path.clone()));
+                            let keys = ui.input(|i| i.modifiers);
+                            edits.push(Edit::Select(entry.path.clone(), keys));
                         }
                         if pointer.is_some_and(|p| response.rect.contains(p)) {
                             target = Some(entry.path.clone());
@@ -404,6 +429,7 @@ fn tile(
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(vec2(size, size + LABEL), Sense::click());
     let selected = state.images.selected.as_deref() == Some(entry.path.as_str());
+    let marked = state.images.edit.marked.contains(&entry.path);
     let changed = state.image_override(&entry.path);
     let problem = state.image_problem(&entry.path);
     let image_rect = Rect::from_min_size(rect.min, vec2(size, size));
@@ -476,7 +502,7 @@ fn tile(
     }
     let stroke = if selected {
         Stroke::new(2.0, ACCENT)
-    } else if hovering_files && response.contains_pointer() {
+    } else if marked || hovering_files && response.contains_pointer() {
         Stroke::new(2.0, ACCENT.gamma_multiply(0.6))
     } else {
         Stroke::new(1.0, BORDER)
@@ -530,13 +556,10 @@ fn tile(
 
 /// Asks for the selected image's large pictures first, ahead of the tiles.
 fn preview_pictures(state: &AppState, entry: &ImageEntry, thumbs: &mut Thumbs) {
-    thumbs.get(&game_preview(entry));
-    if let Some(file) = state.stored_image(&entry.path) {
-        thumbs.get(&Picture::Mine {
-            file,
-            side: PREVIEW_SIDE,
-        });
+    if let Some(yours) = state.your_picture(&entry.path, PREVIEW_SIDE) {
+        thumbs.get(&yours);
     }
+    thumbs.get(&game_preview(entry));
 }
 
 fn game_preview(entry: &ImageEntry) -> Picture {
@@ -705,8 +728,9 @@ fn selected(
     ui.add_space(6.0);
     let box_side = width.min((ui.ctx().content_rect().height() * 0.27).max(150.0));
     let over = state.image_override(&entry.path);
-    let facts = match over {
-        Some(_) => {
+    let yours = state.your_picture(&entry.path, PREVIEW_SIDE);
+    let facts = match &yours {
+        Some(yours) => {
             let half = ((width - 10.0) / 2.0).min(box_side);
             let mut facts = None;
             ui.horizontal(|ui| {
@@ -719,18 +743,7 @@ fn selected(
                 ui.vertical(|ui| {
                     ui.set_width(half);
                     widgets::caption(ui, "Yours");
-                    if let Some(file) = state.stored_image(&entry.path) {
-                        picture_box(
-                            ui,
-                            thumbs,
-                            &Picture::Mine {
-                                file,
-                                side: PREVIEW_SIDE,
-                            },
-                            half,
-                            Zoom::Fit,
-                        );
-                    }
+                    picture_box(ui, thumbs, yours, half, Zoom::Fit);
                 });
             });
             facts
@@ -777,7 +790,7 @@ fn selected(
                     .color(WEAK),
             );
         }
-        if over.is_none() && facts.is_some() {
+        if yours.is_none() && facts.is_some() {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let zoom = match state.images.zoom {
                     Zoom::Fit => 1,
@@ -792,6 +805,9 @@ fn selected(
     if let Some(over) = over {
         changed_block(ui, state, entry, over, edits);
     }
+    colour(edits, |actions| {
+        edit_view::section(ui, state, entry, actions)
+    });
     ui.add_space(10.0);
     replace_block(ui, state, entry, replace_path, edits);
     ui.add_space(10.0);

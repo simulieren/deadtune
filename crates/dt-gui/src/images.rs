@@ -4,11 +4,12 @@
 //! Overrides live in `profile.hud.icons` (`dt_core::hud::icons`) and ship with Apply.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use dt_core::hud::icons::{self, IMAGES_ROOT, IconError, IconOverride, Target};
 use dt_core::snapshot::ImageInfo;
+use dt_core::texture::adjust::{self, Adjust};
 use dt_core::texture::encode::Fit;
 use dt_core::texture::{self, RgbaImage, png, svg};
 
@@ -185,11 +186,25 @@ pub enum ExportKind {
     Svg,
 }
 
-/// One picture the page may draw: a game image or the player's stored copy, at a size.
+/// One picture the page may draw: a game image, the player's stored copy, or either with
+/// colour adjustments on it, at a size.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Picture {
-    Game { path: String, side: u32 },
-    Mine { file: PathBuf, side: u32 },
+    Game {
+        path: String,
+        side: u32,
+    },
+    Mine {
+        file: PathBuf,
+        side: u32,
+    },
+    Edited {
+        path: String,
+        /// The player's stored copy, else the game's image at `path`.
+        file: Option<PathBuf>,
+        adjust: Vec<Adjust>,
+        side: u32,
+    },
 }
 
 /// What a picture's source file is, before it was scaled for drawing.
@@ -218,33 +233,41 @@ fn vector_facts(svg_text: &str) -> Result<Facts, String> {
 /// Decodes `picture` with its longer side at most its `side` (vector images exactly that).
 pub fn render(source: &ImageSource, picture: &Picture) -> Result<Rendered, String> {
     match picture {
-        Picture::Game { path, side } => {
-            let bytes = source.read(path)?;
-            if path.ends_with(".vsvg_c") {
-                let text = svg::svg_text(&bytes).map_err(|e| e.to_string())?;
-                let facts = vector_facts(&text)?;
-                let image = svg::rasterize(&text, *side).map_err(|e| e.to_string())?;
-                Ok(Rendered { image, facts })
-            } else {
-                let info = ImageInfo::of(&bytes).ok_or("not a texture DeadTune can read")?;
-                let image = texture::thumbnail(&bytes, *side).map_err(|e| e.to_string())?;
-                Ok(Rendered {
-                    image,
-                    facts: Facts {
-                        width: info.width.into(),
-                        height: info.height.into(),
-                        format: info.format,
-                    },
-                })
-            }
-        }
-        Picture::Mine { file, side } => {
+        Picture::Game { path, side } => render_one(source, path, None, &[], *side),
+        Picture::Mine { file, side } => render_one(source, "", Some(file), &[], *side),
+        Picture::Edited {
+            path,
+            file,
+            adjust,
+            side,
+        } => render_one(source, path, file.as_deref(), adjust, *side),
+    }
+}
+
+/// `file` when there is one, else the game's image at `path`, with `adjust` applied; the
+/// facts are the source's.
+fn render_one(
+    source: &ImageSource,
+    path: &str,
+    file: Option<&Path>,
+    list: &[Adjust],
+    side: u32,
+) -> Result<Rendered, String> {
+    let vector = |text: &str| -> Result<Rendered, String> {
+        let facts = vector_facts(text)?;
+        let image = svg::rasterize(&svg::adjust(text, list), side).map_err(|e| e.to_string())?;
+        Ok(Rendered { image, facts })
+    };
+    let raster = |mut image: RgbaImage, facts: Facts| {
+        adjust::apply_all(&mut image, list);
+        Rendered { image, facts }
+    };
+    match file {
+        Some(file) => {
             let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
             if file.extension().is_some_and(|e| e == "svg") {
                 let text = String::from_utf8(bytes).map_err(|_| "your SVG is not UTF-8")?;
-                let facts = vector_facts(&text)?;
-                let image = svg::rasterize(&text, *side).map_err(|e| e.to_string())?;
-                Ok(Rendered { image, facts })
+                vector(&text)
             } else {
                 let full = png::read(&bytes).map_err(|e| e.to_string())?;
                 let facts = Facts {
@@ -252,10 +275,26 @@ pub fn render(source: &ImageSource, picture: &Picture) -> Result<Rendered, Strin
                     height: full.height,
                     format: "PNG".into(),
                 };
+                let full = raster(full, facts);
                 Ok(Rendered {
-                    image: full.fit(*side),
-                    facts,
+                    image: full.image.fit(side),
+                    facts: full.facts,
                 })
+            }
+        }
+        None => {
+            let bytes = source.read(path)?;
+            if path.ends_with(".vsvg_c") {
+                vector(&svg::svg_text(&bytes).map_err(|e| e.to_string())?)
+            } else {
+                let info = ImageInfo::of(&bytes).ok_or("not a texture DeadTune can read")?;
+                let image = texture::thumbnail(&bytes, side).map_err(|e| e.to_string())?;
+                let facts = Facts {
+                    width: info.width.into(),
+                    height: info.height.into(),
+                    format: info.format,
+                };
+                Ok(raster(image, facts))
             }
         }
     }
@@ -308,6 +347,8 @@ pub struct ImagesState {
     pub thumbs: Option<crate::thumbs::Thumbs>,
     /// "Save all images" (`crate::images_export`).
     pub export_all: crate::images_export::ExportAll,
+    /// Colour edits, marks and undo (`crate::images_edit`).
+    pub edit: crate::images_edit::EditState,
 }
 
 impl ImagesState {
@@ -369,6 +410,7 @@ impl AppState {
     }
 
     pub fn select_image(&mut self, path: Option<String>) {
+        self.commit_edits();
         if let Some(fit) = path
             .as_deref()
             .and_then(|p| self.image_override(p))
@@ -380,6 +422,7 @@ impl AppState {
             self.images.notice = None;
         }
         self.images.selected = path;
+        self.sync_color_panel();
     }
 
     fn notice(&mut self, path: &str, tone: Tone, text: impl Into<String>) {
@@ -393,15 +436,17 @@ impl AppState {
     /// Replaces the game image at `path` with `bytes` (a PNG or SVG) as a pending change.
     pub fn replace_image(&mut self, path: &str, bytes: &[u8]) {
         let fit = self.images.fit;
-        match icons::set(
+        let before = self.begin_edit();
+        let result = icons::set(
             &mut self.profile.hud.icons,
             &self.store.root,
             path,
             bytes,
             fit,
-        ) {
+        );
+        self.end_edit(before);
+        match result {
             Ok(entry) => {
-                self.refresh_preview();
                 if entry.is_experimental() {
                     self.notice(
                         path,
@@ -477,14 +522,16 @@ impl AppState {
         let Some(path) = self.images.selected.clone() else {
             return;
         };
-        if icons::set_fit(&mut self.profile.hud.icons, &path, fit) {
-            self.refresh_preview();
-        }
+        let before = self.begin_edit();
+        icons::set_fit(&mut self.profile.hud.icons, &path, fit);
+        self.end_edit(before);
     }
 
     pub fn reset_image(&mut self, path: &str) {
-        if icons::reset(&mut self.profile.hud.icons, path) {
-            self.refresh_preview();
+        let before = self.begin_edit();
+        icons::reset(&mut self.profile.hud.icons, path);
+        if self.end_edit(before) {
+            self.sync_color_panel();
             self.notice(
                 path,
                 Tone::Good,
@@ -494,13 +541,13 @@ impl AppState {
     }
 
     pub fn reset_all_images(&mut self) {
-        if self.profile.hud.icons.is_empty() {
-            return;
-        }
+        let before = self.begin_edit();
         icons::reset_all(&mut self.profile.hud.icons);
-        self.images.changed_only = false;
-        self.images.notice = None;
-        self.refresh_preview();
+        if self.end_edit(before) {
+            self.images.changed_only = false;
+            self.images.notice = None;
+            self.sync_color_panel();
+        }
     }
 
     /// Writes the game's image at `path` to `<data>/exports/`, says so under the image, and
@@ -639,7 +686,7 @@ pub mod tests {
         std::fs::write(state.paths.citadel_dir.join(GAME_PAK), vpk::write(&files)).unwrap();
     }
 
-    fn loaded() -> (tempfile::TempDir, AppState) {
+    pub fn loaded() -> (tempfile::TempDir, AppState) {
         let (dir, mut state) = testutil::state();
         install_images(&state);
         state.load_images();

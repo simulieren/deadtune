@@ -273,6 +273,12 @@ fn preview(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
                 "A sketch of the settings above, not the game's own art."
             },
         );
+        ui.add_space(6.0);
+        crate::game_shot::in_game(
+            ui,
+            dt_core::hud::elements::ElementId::HealthAndAmmo,
+            vec2(ui.available_width(), 160.0),
+        );
     });
 }
 

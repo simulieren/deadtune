@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use super::apples_tunnels::{self, ApplesTunnels, ApplesTunnelsError};
 use super::css::CssError;
 use super::elements::{
-    self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
+    self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, Measured, ScaleProp, VAlign,
 };
 use super::health_style::{HealthError, HealthStyle};
 use super::icons::IconOverride;
@@ -391,6 +391,20 @@ pub fn preview(layout: &HudLayout, screen: [f32; 2]) -> Vec<PreviewRect> {
         .collect()
 }
 
+/// Where `id` sits in the 16:9 reference screenshot at vanilla settings, as x, y, width and
+/// height fractions of the image. `None` for elements measured from CSS instead.
+pub fn reference_crop(id: ElementId) -> Option<[f32; 4]> {
+    if elements::spec(id).vanilla.from != Measured::Screenshot {
+        return None;
+    }
+    let rect = preview(&HudLayout::default(), [1920.0, 1080.0])
+        .into_iter()
+        .find(|r| r.id == id)?
+        .rect;
+    let [x, y, w, h] = rect;
+    Some([x / 1920.0, y / 1080.0, w / 1920.0, h / 1080.0])
+}
+
 /// Fixed point of a scale, as fractions of the box. `ui-scale` re-lays the panel
 /// out, so its aligned edge stays put; `pre-transform-scale2d` pivots on `origin`.
 fn scale_origin(spec: &ElementSpec) -> (f32, f32) {
@@ -767,7 +781,41 @@ mod tests {
             .iter()
             .find(|r| r.id == ElementId::Minimap)
             .expect("row");
-        assert_eq!(minimap.rect, [1511.0, 654.0, 380.0, 380.0]);
+        assert_eq!(minimap.rect, [1512.0, 640.0, 370.0, 392.0]);
+    }
+
+    #[test]
+    fn vanilla_boxes_sit_on_the_reference_screenshot() {
+        let measured: [(ElementId, [f32; 4]); 6] = [
+            (ElementId::TopBar, [335.0, 0.0, 1250.0, 145.0]),
+            (ElementId::Minimap, [1512.0, 640.0, 370.0, 392.0]),
+            (ElementId::HealthAndAmmo, [418.0, 660.0, 170.0, 265.0]),
+            (ElementId::AbilitySlots, [788.0, 960.0, 348.0, 106.0]),
+            (ElementId::PlayerStats, [22.0, 770.0, 430.0, 290.0]),
+            (ElementId::AmmoCounter, [910.0, 572.0, 100.0, 60.0]),
+        ];
+        let rects = preview(&HudLayout::default(), [1920.0, 1080.0]);
+        for spec in ELEMENTS {
+            let rect = rects.iter().find(|r| r.id == spec.id).expect("row").rect;
+            let crop = reference_crop(spec.id);
+            match measured.iter().find(|(id, _)| *id == spec.id) {
+                Some((_, want)) => {
+                    assert_eq!(rect, *want, "{:?}", spec.id);
+                    assert_eq!(spec.vanilla.from, Measured::Screenshot, "{:?}", spec.id);
+                    let [x, y, w, h] = *want;
+                    assert_eq!(
+                        crop,
+                        Some([x / 1920.0, y / 1080.0, w / 1920.0, h / 1080.0]),
+                        "{:?}",
+                        spec.id
+                    );
+                }
+                None => {
+                    assert_eq!(spec.vanilla.from, Measured::Css, "{:?}", spec.id);
+                    assert_eq!(crop, None, "{:?} is not in the screenshot", spec.id);
+                }
+            }
+        }
     }
 
     #[test]
@@ -835,7 +883,7 @@ mod tests {
         let get = |id| rects.iter().find(|r| r.id == id).copied().expect("row");
         assert_eq!(
             get(ElementId::Minimap).rect,
-            [1701.0, 844.0, 190.0, 190.0],
+            [1697.0, 836.0, 185.0, 196.0],
             "bottom-right corner fixed"
         );
         assert_eq!(get(ElementId::Minimap).opacity, 0.4);

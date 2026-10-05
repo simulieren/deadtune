@@ -14,7 +14,7 @@ use crate::live::BridgeKind;
 use crate::live_status;
 use crate::settings::View;
 use crate::state::{AppState, Mode, Pending, Status, Timing};
-use crate::theme::{self, ACCENT, BAD, BORDER, CARD_HOVER, ON_ACCENT, RAIL, TEXT, WEAK};
+use crate::theme::{self, ACCENT, BAD, BORDER, CARD_HOVER, ON_ACCENT, RAIL, TEXT, WARN, WEAK};
 use crate::{app, simple, views};
 
 pub const SIZE: [f32; 2] = [340.0, 560.0];
@@ -571,6 +571,10 @@ fn footer(ui: &mut Ui, state: &mut AppState, body: Body) {
     match &state.status {
         Some(Status::Info(m)) => {
             ui.label(RichText::new(m).small());
+        }
+        Some(Status::Warn(raw)) => {
+            ui.label(RichText::new(human_error(raw)).small().color(WARN))
+                .on_hover_text(raw);
         }
         Some(Status::Error(raw)) => {
             ui.label(RichText::new(human_error(raw)).small().color(BAD))

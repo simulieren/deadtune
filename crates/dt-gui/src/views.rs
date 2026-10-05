@@ -94,6 +94,11 @@ pub fn run_apply_relaunch(ctx: &egui::Context, state: &mut AppState) {
     if has_changes && !run_apply(ctx, state) {
         return;
     }
+    restart_game(state);
+}
+
+/// Closes Deadlock and starts it again through Steam with DeadTune's boot cfg.
+pub fn restart_game(state: &mut AppState) {
     if let Err(e) = launch::kill_game() {
         state.status = Some(Status::Error(e.to_string()));
         return;

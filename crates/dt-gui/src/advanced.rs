@@ -359,6 +359,9 @@ fn footer(ui: &mut Ui, state: &AppState) {
             Some(Status::Info(m)) => {
                 ui.label(RichText::new(m).size(11.5));
             }
+            Some(Status::Warn(m)) => {
+                ui.label(RichText::new(m).size(11.5).color(WARN));
+            }
             Some(Status::Error(m)) => {
                 ui.label(RichText::new(m).size(11.5).color(BAD));
             }

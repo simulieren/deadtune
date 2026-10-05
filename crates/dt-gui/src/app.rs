@@ -108,7 +108,9 @@ impl App {
     /// Called once the window exists, for things that need the egui context.
     pub fn started(mut self, ctx: &egui::Context) -> App {
         crate::theme::install(ctx);
-        self.game_poll = Some(spawn_game_poll(ctx.clone()));
+        if !fake_running() {
+            self.game_poll = Some(spawn_game_poll(ctx.clone()));
+        }
         if let Ok(exe) = update::exe() {
             dt_core::update::cleanup(exe);
         }
@@ -254,6 +256,23 @@ impl App {
                 // that live-status; `DEADTUNE_FAKE_BOOT=1` pretends the boot cfg ran.
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_PUSH") {
                     fake_push(&mut state, &kind);
+                }
+                // `DEADTUNE_FAKE_RUNNING=1` pretends Deadlock is running (no game polling).
+                if fake_running() {
+                    state.observe_game(true, None);
+                }
+                // `DEADTUNE_FAKE_STATUS=error:<raw>`, `warn:<raw>` or `info:<text>`.
+                if let Some((kind, text)) =
+                    std::env::var("DEADTUNE_FAKE_STATUS").ok().and_then(|v| {
+                        v.split_once(':')
+                            .map(|(k, t)| (k.to_string(), t.to_string()))
+                    })
+                {
+                    state.status = match kind.as_str() {
+                        "error" => Some(Status::Error(text)),
+                        "warn" => Some(Status::Warn(text)),
+                        _ => Some(Status::Info(text)),
+                    };
                 }
                 // `DEADTUNE_LAUNCH_ARGS="-vulkan -nosplash"` replaces the launch options;
                 // `DEADTUNE_LAUNCH_OPTIONS=1` opens their window.
@@ -456,6 +475,10 @@ impl App {
     }
 }
 
+fn fake_running() -> bool {
+    std::env::var_os("DEADTUNE_FAKE_RUNNING").is_some_and(|v| v == "1")
+}
+
 fn fake_push(state: &mut AppState, kind: &str) {
     use dt_core::bridge::ack::{Outcome, PushStatus};
     let results = |items: &[(&str, Outcome)]| {
@@ -486,7 +509,7 @@ fn fake_push(state: &mut AppState, kind: &str) {
             ]),
         },
         "timeout" => PushStatus::TimedOut {
-            after: Duration::from_secs(10),
+            after: dt_core::bridge::ack::TIMEOUT,
             count: 3,
         },
         _ => return,

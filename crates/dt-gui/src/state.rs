@@ -572,6 +572,8 @@ impl MinimapPreset {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
     Info(String),
+    /// It worked, with a catch the player should know about.
+    Warn(String),
     Error(String),
 }
 
@@ -2838,9 +2840,10 @@ mod tests {
         state.set_convar(LIVE, "120".into()).unwrap();
         let t0 = Instant::now() + crate::live::DEBOUNCE;
         state.tick_live(t0).unwrap().unwrap();
-        state.poll_conlog(t0 + Duration::from_secs(9));
+        let timeout = dt_core::bridge::ack::TIMEOUT;
+        state.poll_conlog(t0 + timeout - Duration::from_secs(1));
         assert!(state.ack.is_waiting());
-        state.poll_conlog(t0 + Duration::from_secs(11));
+        state.poll_conlog(t0 + timeout + Duration::from_secs(1));
         assert!(
             matches!(state.ack.status(), PushStatus::TimedOut { count: 1, .. }),
             "{:?}",

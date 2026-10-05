@@ -14,7 +14,8 @@ pub const END: &str = "DEADTUNE_END";
 pub const BOOT: &str = "DEADTUNE_BOOT";
 /// `con_logfile` target, relative to the game's mod dir in Source 1; see `conlog::candidates`.
 pub const LOG_NAME: &str = "deadtune_console.log";
-pub const TIMEOUT: Duration = Duration::from_secs(10);
+/// Long enough to click Send test, switch to a fullscreen game and press the key.
+pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// What one push sent, for matching the console's reply to it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -610,9 +611,9 @@ mod tests {
         let t0 = Instant::now();
         let mut tracker = Tracker::default();
         tracker.start(receipt(&[cmd("fps_max", "240")]), t0);
-        tracker.tick(t0 + Duration::from_secs(9));
+        tracker.tick(t0 + TIMEOUT - Duration::from_secs(1));
         assert!(tracker.is_waiting());
-        tracker.tick(t0 + Duration::from_secs(11));
+        tracker.tick(t0 + TIMEOUT + Duration::from_secs(1));
         assert!(matches!(
             tracker.status(),
             PushStatus::TimedOut { count: 1, .. }
@@ -620,7 +621,7 @@ mod tests {
 
         tracker.start(receipt(&[cmd("fps_max", "240")]), t0);
         tracker.observe_line("DEADTUNE_ACK abc123 1");
-        tracker.tick(t0 + Duration::from_secs(11));
+        tracker.tick(t0 + TIMEOUT + Duration::from_secs(1));
         assert!(matches!(
             tracker.status(),
             PushStatus::Confirmed { results, .. } if results == &[("fps_max".to_string(), Outcome::NoEcho)]

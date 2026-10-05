@@ -57,6 +57,7 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
         HudPage::TopBar,
         HudPage::Health,
         HudPage::Ingame,
+        HudPage::Images,
     ];
     let selected = pages
         .iter()
@@ -70,6 +71,7 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
             "Top bar",
             "Health bar",
             "In-game settings",
+            "UI images",
         ],
         selected,
     ) {
@@ -82,6 +84,7 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
         HudPage::TopBar => crate::topbar_view::page(ui, state),
         HudPage::Health => crate::health_view::page(ui, state),
         HudPage::Ingame => crate::ingame_view::page(ui, state),
+        HudPage::Images => crate::images_view::page(ui, state),
     }
 }
 

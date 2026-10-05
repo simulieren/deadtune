@@ -25,11 +25,12 @@ pub enum Icon {
     Refresh,
     Folder,
     Heart,
+    Image,
 }
 
 #[cfg(test)]
 impl Icon {
-    pub const ALL: [Icon; 20] = [
+    pub const ALL: [Icon; 21] = [
         Icon::Overview,
         Icon::Display,
         Icon::Shadows,
@@ -50,6 +51,7 @@ impl Icon {
         Icon::Refresh,
         Icon::Folder,
         Icon::Heart,
+        Icon::Image,
     ];
 }
 
@@ -208,6 +210,17 @@ fn parts(icon: Icon) -> &'static [Part] {
             (20.9, 10.2),
             (19.4, 13.4),
         ])],
+        Icon::Image => &[
+            Rect(2.5, 4.0, 19.0, 16.0, 2.0),
+            Circle(8.5, 9.5, 1.8),
+            Line(&[
+                (3.5, 18.0),
+                (9.5, 12.5),
+                (13.0, 15.5),
+                (16.0, 12.5),
+                (20.5, 17.0),
+            ]),
+        ],
         Icon::Folder => &[Closed(&[
             (2.5, 5.5),
             (9.0, 5.5),

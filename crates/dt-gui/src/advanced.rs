@@ -17,7 +17,7 @@ use crate::profiles;
 use crate::relaunch::Relaunch;
 use crate::settings::{Settings, TargetSource, View};
 use crate::state::{
-    AppState, PlanSummary, Scope, Setting, Status, Tab, bool_text, fmt_num, parse_bool,
+    AppState, HudPage, PlanSummary, Scope, Setting, Status, Tab, bool_text, fmt_num, parse_bool,
 };
 use crate::theme::{ACCENT, BAD, BG, BORDER, CARD_HOVER, GOOD, RAIL, TEXT, WARN, WEAK, semibold};
 use crate::views::{self, Edit};
@@ -129,6 +129,11 @@ pub fn full_ui(ui: &mut Ui, state: &mut AppState, reopen: &mut Option<Settings>)
             bottom: 0,
         }))
         .show(ui, |ui| {
+            if state.ui.tab == Tab::Hud && state.ui.hud_page == HudPage::Images {
+                widgets::page_title(ui, "HUD", "Move, resize and hide parts of the in-game HUD.");
+                crate::hud_view::hud(ui, state);
+                return;
+            }
             egui::ScrollArea::vertical()
                 .auto_shrink(false)
                 .show(ui, |ui| {

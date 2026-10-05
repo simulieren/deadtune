@@ -1,6 +1,6 @@
 # UI image overrides
 
-Status: write side built (core, CLI, verify) and read side built (decoders, snapshot image scope, CLI export), both proven on the fake install and the research mod textures only; the GUI page is not started. In-game checks are `docs/testing-windows.md` sections 19 (GF-10) and 20. Last update 2026-10-05.
+Status: write side built (core, CLI, verify) and read side built (decoders, snapshot image scope, CLI export), both proven on the fake install and the research mod textures only; the GUI page is built (seen on the fake install and a 2706-file stand-in snapshot). In-game checks are `docs/testing-windows.md` sections 19 (GF-10), 20 and 21. Last update 2026-10-05.
 
 ## Goal
 
@@ -12,7 +12,7 @@ The work splits into three parts.
 |---|---|---|
 | Read | Decode any `.vtex_c` to RGBA (BGRA/RGBA/I8/IA88, BC1/BC3/BC4/BC5/BC7, PNG payloads, LZ4 mips), thumbnails, SVG rasterising, image export from snapshots and the CLI | built |
 | Write | Turn the player's PNG or SVG into a game file at the original path and ship it safely | this plan, built |
-| GUI | Browse the images, preview, drop a file on one, reset | not started |
+| GUI | Browse the images, preview, drop a file on one, reset | built |
 
 ## Write side (built)
 
@@ -91,7 +91,11 @@ pub fn png::write(image: &RgbaImage) -> Result<Vec<u8>, PngError>;
 
 `data_dir` is `BackupStore::root`, the same directory `apply::hud_plan` passes to the HUD build. Pass `&mut state.profile.hud.icons`; Apply does the rest.
 
-## GUI (to build)
+## GUI (built)
+
+`crates/dt-gui/src/images.rs` holds the page state and every transition (source, folders, filters, selection, drop, fit, reset, export) with tests; `thumbs.rs` decodes pictures on three worker threads (each frame's visible tiles replace the queue, so tiles scrolled past never decode) into egui textures in a 96 MB least-recently-used cache; `images_view.rs` draws it. Exports go to `<data>/exports/<folder>/<name>.png|svg` (no file dialog crate: drag-and-drop and a path box instead). Vector icons accept a PNG, labelled as a test, until IC-6 settles it. Icon problems from the current plan show as a red dot on the tile and a sentence in the panel.
+
+The original brief:
 
 - **Browser.** A grid of every `panorama/images/**` entry from pak01's tree (instant, no pixels read), grouped by folder with the minimap, top bar and hero portraits first, and a search box. Thumbnails decode lazily through `texture::thumbnail` (textures) and `svg::rasterize` (vector icons) on the job thread, a few per frame. Overridden tiles carry a badge; experimental ones say so.
 - **Preview.** Selecting a tile shows the game image and the player's image side by side at the game's size, with the fit toggle (Original letterboxed, Own size) where it applies.

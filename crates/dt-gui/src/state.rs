@@ -196,6 +196,7 @@ pub enum Section {
     Hud,
     Minimap,
     TopBar,
+    Images,
     Health,
     Ingame,
     Addons,
@@ -205,7 +206,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 15] = [
+    pub const ALL: [Section; 16] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -215,6 +216,7 @@ impl Section {
         Section::Hud,
         Section::Minimap,
         Section::TopBar,
+        Section::Images,
         Section::Health,
         Section::Ingame,
         Section::Addons,
@@ -234,6 +236,7 @@ impl Section {
             Section::Hud => "HUD",
             Section::Minimap => "Minimap",
             Section::TopBar => "Top bar",
+            Section::Images => "UI images",
             Section::Health => "Health bar",
             Section::Ingame => "In-game settings",
             Section::Addons => "Addons",
@@ -254,6 +257,9 @@ impl Section {
             Section::Hud => "Move and resize parts of the in-game HUD.",
             Section::Minimap => "Colours, marker sizes and the look of the minimap.",
             Section::TopBar => "Hero portraits, clock and soul lead, plus spawn timers and more.",
+            Section::Images => {
+                "Every picture and icon in the game's interface. Look at any of them, save a copy, or drop in your own."
+            }
             Section::Health => "A bigger health number, colours by health, less shaking.",
             Section::Ingame => {
                 "DeadTune rows inside Deadlock's own settings menu: a Wide FOV slider and live performance sliders."
@@ -509,6 +515,7 @@ pub enum HudPage {
     TopBar,
     Health,
     Ingame,
+    Images,
 }
 
 /// The game's own enemy colour setting (2026-09-29 accessibility update).
@@ -654,6 +661,8 @@ pub struct AppState {
     pub latest_diff: Option<dt_core::snapshot::SnapshotDiff>,
     /// The pak tree classified, scanned when the page first needs it; dropped on a game update.
     pub snapshot_inventory: Option<Result<dt_core::snapshot::Inventory, String>>,
+    /// The UI images page (`crate::images`).
+    pub images: crate::images::ImagesState,
     /// The game build the appmanifest reports, read with the snapshot listing.
     pub game_build: Option<String>,
     /// Creation time of the backup the last Undo restored; cleared by Apply.
@@ -794,6 +803,7 @@ impl AppState {
             snapshots: Vec::new(),
             latest_diff: None,
             snapshot_inventory: None,
+            images: Default::default(),
             game_build: None,
             undo_cursor: None,
             checks: None,
@@ -1892,6 +1902,7 @@ impl AppState {
         let health = std::mem::take(&mut self.profile.hud.health);
         let apples_tunnels = self.profile.hud.apples_tunnels;
         let ingame = std::mem::take(&mut self.profile.hud.ingame);
+        let icons = std::mem::take(&mut self.profile.hud.icons);
         self.profile.hud = HudLayout {
             minimap_colors,
             minimap,
@@ -1899,6 +1910,7 @@ impl AppState {
             health,
             apples_tunnels,
             ingame,
+            icons,
             ..preset.layout()
         };
         self.refresh_preview();
@@ -1915,6 +1927,7 @@ impl AppState {
                 health: self.profile.hud.health.clone(),
                 apples_tunnels: self.profile.hud.apples_tunnels,
                 ingame: self.profile.hud.ingame.clone(),
+                icons: self.profile.hud.icons.clone(),
                 ..p.layout()
             } == self.profile.hud
         })

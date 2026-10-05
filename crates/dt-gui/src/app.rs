@@ -35,6 +35,8 @@ pub enum Screen {
 struct Screenshot {
     path: PathBuf,
     frames: u32,
+    /// Frames spent waiting for the UI images page to finish decoding.
+    waited: u32,
     requested: bool,
     /// `DEADTUNE_SCREENSHOT_APPLY=1` clicks Apply (same code as the button) before the capture.
     apply: bool,
@@ -99,6 +101,7 @@ impl App {
             screenshot: screenshot.map(|path| Screenshot {
                 path,
                 frames: 0,
+                waited: 0,
                 requested: false,
                 apply: std::env::var_os("DEADTUNE_SCREENSHOT_APPLY").is_some_and(|v| v == "1"),
             }),
@@ -149,9 +152,7 @@ impl App {
                 }
                 // Screenshot lever: `DEADTUNE_SECTION=shadows` opens that simple-view section.
                 if let Ok(name) = std::env::var("DEADTUNE_SECTION")
-                    && let Some(section) = Section::ALL
-                        .into_iter()
-                        .find(|s| s.label().to_lowercase().starts_with(&name.to_lowercase()))
+                    && let Some(section) = find_section(&name)
                 {
                     state.ui.section = section;
                 }
@@ -192,9 +193,14 @@ impl App {
                         state.ui.hud_page = HudPage::Ingame;
                         state.ui.section = Section::Ingame;
                     }
+                    Ok(v) if v.starts_with("im") => {
+                        state.ui.hud_page = HudPage::Images;
+                        state.ui.section = Section::Images;
+                    }
                     _ => {}
                 }
                 self.startup_profile(&mut state);
+                images_levers(&mut state);
                 if let Ok(name) = std::env::var("DEADTUNE_MINIMAP_PRESET") {
                     let preset = MinimapPreset::ALL.into_iter().find(|p| {
                         p.label()
@@ -473,6 +479,13 @@ impl App {
                 state.inject_trial_started(fake_paks(list));
             }
         }
+        // Hold the capture while the UI images page is still decoding what it shows.
+        let decoding = matches!(&self.screen, Screen::Main(state)
+            if state.images.thumbs.as_ref().is_some_and(|t| t.busy()));
+        if job.frames == 19 && decoding && job.waited < 600 {
+            job.frames -= 1;
+            job.waited += 1;
+        }
         if job.frames == 20 && !job.requested {
             job.requested = true;
             ctx.send_viewport_cmd(ViewportCommand::Screenshot(egui::UserData::default()));
@@ -503,6 +516,71 @@ fn fake_paks(list: &str) -> Vec<Pak> {
 }
 
 /// A faked trial needs the game to look running, or the next poll ends it as an early exit.
+/// A section by the start of its label or of any word in it (`images` finds "UI images").
+fn find_section(name: &str) -> Option<Section> {
+    let name = name.to_lowercase();
+    let starts = |s: &Section| s.label().to_lowercase().starts_with(&name);
+    let word = |s: &Section| {
+        s.label()
+            .to_lowercase()
+            .split_whitespace()
+            .any(|w| w.starts_with(&name))
+    };
+    Section::ALL
+        .into_iter()
+        .find(starts)
+        .or_else(|| Section::ALL.into_iter().find(word))
+}
+
+/// Screenshot levers for the UI images page: `DEADTUNE_IMAGES_FROM=<snapshot folder>`
+/// previews a snapshot's images instead of the game's, `DEADTUNE_IMAGES_FOLDER=hud/top_bar`
+/// opens a folder, `DEADTUNE_IMAGES_SEARCH=ping` searches, `DEADTUNE_IMAGES_SELECT=<part of
+/// a path>` selects the first match, `DEADTUNE_IMAGES_SET=<part of a path>=<file>,...`
+/// replaces images with files, `DEADTUNE_IMAGES_ZOOM=1` shows the preview at 1:1.
+fn images_levers(state: &mut AppState) {
+    let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+    let mut used = false;
+    if let Some(dir) = var("DEADTUNE_IMAGES_FROM") {
+        state.images.from = Some(PathBuf::from(dir));
+        used = true;
+    }
+    state.images.folder = var("DEADTUNE_IMAGES_FOLDER");
+    if let Some(query) = var("DEADTUNE_IMAGES_SEARCH") {
+        state.images.search = query;
+    }
+    if var("DEADTUNE_IMAGES_ZOOM").is_some() {
+        state.images.zoom = crate::images::Zoom::Actual;
+    }
+    let find = |state: &AppState, part: &str| {
+        state
+            .image_library()?
+            .entries
+            .iter()
+            .find(|e| e.path.contains(part))
+            .map(|e| e.path.clone())
+    };
+    let sets = var("DEADTUNE_IMAGES_SET");
+    let select = var("DEADTUNE_IMAGES_SELECT");
+    if !(used || sets.is_some() || select.is_some()) {
+        return;
+    }
+    state.load_images();
+    for (part, file) in sets
+        .iter()
+        .flat_map(|v| v.split(','))
+        .filter_map(|kv| kv.split_once('='))
+    {
+        match (find(state, part.trim()), std::fs::read(file.trim())) {
+            (Some(path), Ok(bytes)) => state.replace_image(&path, &bytes),
+            _ => eprintln!("DEADTUNE_IMAGES_SET: no image matching {part} or no file {file}"),
+        }
+    }
+    if let Some(part) = select {
+        let path = find(state, &part);
+        state.select_image(path);
+    }
+}
+
 fn fake_running() -> bool {
     std::env::var_os("DEADTUNE_FAKE_RUNNING").is_some_and(|v| v == "1")
         || std::env::var("DEADTUNE_FAKE_TRIAL").is_ok_and(|v| v.starts_with("testing"))

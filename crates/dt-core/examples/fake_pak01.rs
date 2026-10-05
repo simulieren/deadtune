@@ -6,7 +6,8 @@
 //! stylesheets and layouts, a stand-in settings menu with the rows our in-game settings anchor
 //! on, the HUD and health stylesheets (the HUD stylesheet standing in for every stylesheet),
 //! and a vector icon for UI image overrides (a Panorama container laid out as DeadTune reads
-//! it, not a copy of the game's file).
+//! it, not a copy of the game's file), plus a few dozen generated stand-in images (shapes and
+//! gradients in the game's folders, and one undecodable file) for the UI images page.
 //!
 //! cargo run -p dt-core --example fake_pak01 -- <out pak01_dir.vpk>
 
@@ -25,6 +26,8 @@ use dt_core::hud::minimap_colors::MINIMAP_STYLE;
 use dt_core::hud::resource::{Block, Resource};
 use dt_core::hud::topbar::{TOP_BAR_LAYOUT, TOP_BAR_STYLE};
 use dt_core::hud::vpk::{self, VpkDir};
+use dt_core::texture::RgbaImage;
+use dt_core::texture::encode::{self, Fit};
 use dt_core::texture::vtex::Vtex;
 
 const UPSTREAM: &str =
@@ -111,6 +114,160 @@ fn vector_icon(svg: &str) -> Vec<u8> {
     .to_bytes()
 }
 
+#[derive(Clone, Copy)]
+enum Shape {
+    Ring,
+    Disc,
+    Diamond,
+    Square,
+    Bar,
+    Portrait,
+}
+
+/// A generated stand-in picture: `shape` in `rgb` on transparency, softly edged.
+fn picture(width: u32, height: u32, shape: Shape, rgb: [u8; 3]) -> RgbaImage {
+    let (w, h) = (width as f32, height as f32);
+    let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            let u = (x as f32 + 0.5) / w * 2.0 - 1.0;
+            let v = (y as f32 + 0.5) / h * 2.0 - 1.0;
+            let r = (u * u + v * v).sqrt();
+            let edge = |d: f32| (d * w.min(h) * 0.5).clamp(0.0, 1.0);
+            let (alpha, shade) = match shape {
+                Shape::Ring => (edge(0.18 - (r - 0.68).abs()), 1.0),
+                Shape::Disc => (edge(0.8 - r), 1.0 - 0.35 * r),
+                Shape::Diamond => (edge(0.85 - u.abs() - v.abs()), 1.0 - 0.3 * v),
+                Shape::Square => (edge(0.8 - u.abs().max(v.abs())), 0.75 - 0.25 * v),
+                Shape::Bar => (edge(0.7 - v.abs()), 0.45 + 0.55 * (u + 1.0) / 2.0),
+                Shape::Portrait => {
+                    let head = (u * u + (v + 0.25).powi(2)).sqrt();
+                    let body = (u * u * 0.6 + (v - 0.95).powi(2)).sqrt();
+                    let figure = head < 0.38 || body < 0.62;
+                    (1.0, if figure { 1.0 } else { 0.35 + 0.2 * (1.0 - v) })
+                }
+            };
+            let c = |ch: u8| (f32::from(ch) * shade).min(255.0) as u8;
+            pixels.extend_from_slice(&[c(rgb[0]), c(rgb[1]), c(rgb[2]), (alpha * 255.0) as u8]);
+        }
+    }
+    RgbaImage::new(width, height, pixels).expect("sized")
+}
+
+const STAND_IN_SVGS: [(&str, &str); 12] = [
+    (
+        "minimap/ping_danger",
+        r##"<path d="M16 3 L30 28 H2 Z" fill="#ef6b6b"/><rect x="15" y="11" width="2" height="9" fill="#fff"/>"##,
+    ),
+    (
+        "minimap/ping_go",
+        r##"<path d="M4 16 H22 M15 8 L24 16 L15 24" stroke="#5fcb8c" stroke-width="4" fill="none"/>"##,
+    ),
+    (
+        "hud/top_bar/icon_ultimate",
+        r##"<path d="M16 2 L20 12 L31 12 L22 19 L25 30 L16 23 L7 30 L10 19 L1 12 L12 12 Z" fill="#f0b341"/>"##,
+    ),
+    (
+        "hud/top_bar/icon_dead",
+        r##"<circle cx="16" cy="16" r="13" fill="#2b2f37"/><path d="M10 10 L22 22 M22 10 L10 22" stroke="#ef6b6b" stroke-width="4"/>"##,
+    ),
+    (
+        "hud/top_bar/soul_orb",
+        r##"<circle cx="16" cy="16" r="12" fill="#56b4e9"/><circle cx="12" cy="12" r="4" fill="#d6f0ff"/>"##,
+    ),
+    (
+        "upgrades/stand_in_weapon",
+        r##"<rect x="4" y="4" width="24" height="24" rx="5" fill="#e69f00"/><path d="M9 23 L23 9" stroke="#fff" stroke-width="3"/>"##,
+    ),
+    (
+        "upgrades/stand_in_vitality",
+        r##"<rect x="4" y="4" width="24" height="24" rx="5" fill="#5fcb8c"/><path d="M16 9 V23 M9 16 H23" stroke="#fff" stroke-width="3"/>"##,
+    ),
+    (
+        "upgrades/stand_in_spirit",
+        r##"<rect x="4" y="4" width="24" height="24" rx="5" fill="#b07cf0"/><circle cx="16" cy="16" r="6" fill="none" stroke="#fff" stroke-width="3"/>"##,
+    ),
+    (
+        "icons/stand_in_lock",
+        r##"<rect x="7" y="14" width="18" height="14" rx="2" fill="#ece8e1"/><path d="M11 14 V10 A5 5 0 0 1 21 10 V14" stroke="#ece8e1" stroke-width="3" fill="none"/>"##,
+    ),
+    (
+        "icons/stand_in_gear",
+        r##"<circle cx="16" cy="16" r="9" fill="none" stroke="#ece8e1" stroke-width="5" stroke-dasharray="4 3"/><circle cx="16" cy="16" r="4" fill="#ece8e1"/>"##,
+    ),
+    (
+        "icons/stand_in_bell",
+        r##"<path d="M8 22 Q8 8 16 7 Q24 8 24 22 Z" fill="#ece8e1"/><circle cx="16" cy="25" r="2.5" fill="#ece8e1"/>"##,
+    ),
+    (
+        "icons/stand_in_eye",
+        r##"<path d="M2 16 Q16 4 30 16 Q16 28 2 16 Z" fill="#ece8e1"/><circle cx="16" cy="16" r="5" fill="#15171b"/>"##,
+    ),
+];
+
+/// Generated stand-ins under `panorama/images/`, so the UI images page has something to
+/// show on a machine without the game. Textures reuse `template`'s container.
+fn stand_in_images(template: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, Box<dyn Error>> {
+    use Shape::*;
+    let textures: [(&str, u32, u32, Shape, [u8; 3]); 20] = [
+        ("minimap/hero_ally", 64, 64, Ring, [86, 180, 233]),
+        ("minimap/hero_enemy", 64, 64, Ring, [230, 159, 0]),
+        (
+            "minimap/objective_guardian",
+            64,
+            64,
+            Diamond,
+            [236, 232, 225],
+        ),
+        ("minimap/objective_walker", 96, 96, Diamond, [240, 179, 65]),
+        ("minimap/urn", 48, 48, Square, [95, 203, 140]),
+        ("minimap/soul_orb", 32, 32, Disc, [86, 180, 233]),
+        ("hud/top_bar/soul_lead_bar", 256, 32, Bar, [240, 179, 65]),
+        ("hud/top_bar/clock_bg", 128, 64, Square, [70, 76, 88]),
+        ("hud/health_bar_fill", 256, 24, Bar, [95, 203, 140]),
+        ("hud/crosshair/dot", 32, 32, Disc, [255, 255, 255]),
+        (
+            "heroes/stand_in_01_card",
+            96,
+            128,
+            Portrait,
+            [176, 124, 240],
+        ),
+        ("heroes/stand_in_02_card", 96, 128, Portrait, [230, 159, 0]),
+        ("heroes/stand_in_03_card", 96, 128, Portrait, [86, 180, 233]),
+        (
+            "heroes/stand_in_04_card",
+            96,
+            128,
+            Portrait,
+            [239, 107, 107],
+        ),
+        ("heroes/stand_in_01_mm", 64, 64, Disc, [176, 124, 240]),
+        ("heroes/stand_in_02_mm", 64, 64, Disc, [230, 159, 0]),
+        ("items/stand_in_shield", 64, 64, Square, [86, 180, 233]),
+        ("items/stand_in_blade", 64, 64, Diamond, [230, 159, 0]),
+        ("items/stand_in_orb", 64, 64, Disc, [176, 124, 240]),
+        ("items/stand_in_ring", 64, 64, Ring, [95, 203, 140]),
+    ];
+    let mut out = BTreeMap::new();
+    for (name, w, h, shape, rgb) in textures {
+        out.insert(
+            format!("panorama/images/{name}_psd.vtex_c"),
+            encode::replace(template, &picture(w, h, shape, rgb), Fit::Own)?,
+        );
+    }
+    for (name, body) in STAND_IN_SVGS {
+        let svg =
+            format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">{body}</svg>"#);
+        out.insert(format!("panorama/images/{name}.vsvg_c"), vector_icon(&svg));
+    }
+    out.insert(
+        "panorama/images/hud/stand_in_unreadable_psd.vtex_c".into(),
+        b"not a texture".to_vec(),
+    );
+    Ok(out)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let out = std::env::args()
         .nth(1)
@@ -159,6 +316,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ),
     ]);
     let mut files = files;
+    files.extend(stand_in_images(&pak89.read(native_scope::TEXTURE)?)?);
     files.insert(VECTOR_ICON.to_string(), vector_icon(VECTOR_SVG));
     for style in [HUD_STYLE, HEALTH_STYLE, HEALTH_CONTAINER_STYLE] {
         files.insert(

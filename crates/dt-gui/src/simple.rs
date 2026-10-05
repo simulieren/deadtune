@@ -422,6 +422,11 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
             bottom: 0,
         }))
         .show(ui, |ui| {
+            if page == Page::Section(Section::Images) {
+                header(ui, state, page, &mut edits);
+                crate::images_view::page(ui, state);
+                return;
+            }
             let mut scroll = egui::ScrollArea::vertical().auto_shrink(false);
             // Screenshot lever: `DEADTUNE_SCROLL=600` opens the page scrolled down that far.
             if let Some(y) = std::env::var("DEADTUNE_SCROLL")
@@ -508,6 +513,7 @@ fn section_changes(state: &AppState, section: Section) -> usize {
         Section::Hud => state.hud_changed_count(),
         Section::Minimap => state.minimap_changed_count(),
         Section::TopBar => state.top_bar_changed_count(),
+        Section::Images => state.images_changed_count(),
         Section::Health => state.health_changed_count(),
         Section::Ingame => state.ingame_changed_count(),
         Section::Addons => state.addons_enabled_count(),
@@ -568,7 +574,7 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 let heading = match i {
                     1 => Some("Graphics"),
                     6 => Some("HUD & mods"),
-                    11 => Some("Tools"),
+                    12 => Some("Tools"),
                     _ => None,
                 };
                 if let Some(heading) = heading {
@@ -649,6 +655,7 @@ fn section_icon(section: Section) -> Icon {
         Section::Hud => Icon::Hud,
         Section::Minimap => Icon::Minimap,
         Section::TopBar => Icon::TopBar,
+        Section::Images => Icon::Image,
         Section::Health => Icon::Heart,
         Section::Ingame => Icon::Sliders,
         Section::Addons => Icon::Addons,

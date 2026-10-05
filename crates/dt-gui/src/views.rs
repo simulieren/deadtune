@@ -914,7 +914,7 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
         );
         widgets::hint(
             ui,
-            "Inter typeface by The Inter Project Authors (rsms.me/inter), SIL Open Font License 1.1.",
+            "Inter typeface by The Inter Project Authors (rsms.me/inter), SIL Open Font License 1.1. Hack typeface by Source Foundry, MIT licence.",
         );
     });
 }

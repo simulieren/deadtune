@@ -235,8 +235,10 @@ fn preset_chip(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
         ui.set_min_width(220.0);
         for (id, title, sub) in friendly::GOALS {
             let selected = base == Some(*id);
+            let author = preset::info(*id).author;
             if ui
                 .selectable_label(selected, format!("{title}  {sub}"))
+                .on_hover_text(format!("Preset by {author}"))
                 .clicked()
             {
                 edits.push(Edit::Base(*id));
@@ -252,7 +254,10 @@ fn preset_chip(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
                 continue;
             };
             if ui
-                .selectable_label(base == Some(info.id), info.label)
+                .selectable_label(
+                    base == Some(info.id),
+                    format!("{} by {}", info.label, info.author),
+                )
                 .on_hover_text(blurb)
                 .clicked()
             {

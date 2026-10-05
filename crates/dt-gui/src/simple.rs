@@ -784,7 +784,8 @@ fn version_line(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 Tone::Accent => ACCENT,
                 Tone::Bad => BAD,
             };
-            let clickable = status.click != RailClick::Nothing;
+            // The refresh icon checks; the text only links where the icon can't.
+            let clickable = status.click == RailClick::OpenUpdates;
             let mut text = RichText::new(&status.text).size(11.5).color(color);
             if status.tone == Tone::Accent {
                 text = text.family(theme::semibold());
@@ -800,14 +801,17 @@ fn version_line(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 let (dot, _) = ui.allocate_exact_size(vec2(8.0, 12.0), Sense::hover());
                 ui.painter().circle_filled(dot.center(), 3.0, color);
             }
+            let failed = match &state.update.state {
+                crate::update::UpdateState::Failed { message, .. } => Some(message.clone()),
+                _ => None,
+            };
             if !clickable {
+                if let Some(message) = failed {
+                    response.on_hover_text(message);
+                }
                 return;
             }
-            let hover = match (&state.update.state, status.click) {
-                (crate::update::UpdateState::Failed { message, .. }, _) => message.clone(),
-                (_, RailClick::Check) => "Check for a new version now".to_string(),
-                _ => "Open the Updates card".to_string(),
-            };
+            let hover = failed.unwrap_or_else(|| "Open the Updates card".to_string());
             let response = response
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(hover);
@@ -819,11 +823,7 @@ fn version_line(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 );
             }
             if response.clicked() {
-                match status.click {
-                    RailClick::Check => state.check_update(true),
-                    RailClick::OpenUpdates => edits.push(Edit::Go(Section::Safety)),
-                    RailClick::Nothing => {}
-                }
+                edits.push(Edit::Go(Section::Safety));
             }
         });
     });

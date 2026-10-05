@@ -134,6 +134,9 @@ impl App {
         });
         match opened {
             Ok(mut state) => {
+                if let Some(status) = state.sync_ingame() {
+                    state.status = Some(status);
+                }
                 if let Err(e) = state.start_watch() {
                     state.status = Some(Status::Error(format!("file watcher: {e}")));
                 }
@@ -169,7 +172,8 @@ impl App {
                         .map(|s| s.id);
                 }
                 // `DEADTUNE_HUD_PAGE=colors` opens the Minimap colours page in either view,
-                // `DEADTUNE_HUD_PAGE=top` the Top bar page;
+                // `DEADTUNE_HUD_PAGE=top` the Top bar page, `DEADTUNE_HUD_PAGE=ingame` the
+                // In-game settings page;
                 // `DEADTUNE_MINIMAP_PRESET=colourblind` (or `contrast`) applies a colour preset.
                 match std::env::var("DEADTUNE_HUD_PAGE").as_deref() {
                     Ok(v) if v.starts_with("colo") => {
@@ -179,6 +183,10 @@ impl App {
                     Ok(v) if v.starts_with("top") => {
                         state.ui.hud_page = HudPage::TopBar;
                         state.ui.section = Section::TopBar;
+                    }
+                    Ok(v) if v.starts_with("in") => {
+                        state.ui.hud_page = HudPage::Ingame;
+                        state.ui.section = Section::Ingame;
                     }
                     _ => {}
                 }

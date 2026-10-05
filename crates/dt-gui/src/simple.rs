@@ -277,6 +277,17 @@ pub(crate) fn toggle_ranked_safe(state: &mut AppState) -> Status {
     }
 }
 
+/// The note for a row whose effect practice mode overrides; the Shadows page gets one
+/// banner instead of a note per row.
+fn practice_override(
+    practice: &dt_core::practice::PracticeMode,
+    name: &str,
+) -> Option<&'static str> {
+    const FOG_ROWS: [&str; 2] = ["r_enable_volume_fog", "r_citadel_fog_quality"];
+    (practice.fog && FOG_ROWS.contains(&name))
+        .then_some("Practice mode turns fog off, so this changes nothing while it's on.")
+}
+
 /// What the simple view asks of the state, collected while drawing and run afterwards.
 enum Edit {
     Set(&'static str, String),
@@ -1496,6 +1507,21 @@ fn settings_page(
     inline_help: bool,
     edits: &mut Vec<Edit>,
 ) {
+    if section == Section::Shadows && state.profile.practice.shadows {
+        egui::Frame::new()
+            .fill(WARN.gamma_multiply(0.14))
+            .corner_radius(CornerRadius::same(theme::RADIUS))
+            .inner_margin(Margin::symmetric(14, 10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.colored_label(
+                    WARN,
+                    "Practice mode turns shadows off, so the settings on this page change nothing \
+                     until you turn it off on the Performance page.",
+                );
+            });
+        ui.add_space(8.0);
+    }
     let groups = friendly::groups(section);
     let columns = if ui.available_width() >= 1100.0 && groups.len() > 1 {
         2
@@ -1685,11 +1711,14 @@ fn setting_row(
             }
             if entry.gameinfo_ignored {
                 ui.label(
-                    RichText::new("Deadlock ignores this in gameinfo.gi")
+                    RichText::new("The game ignores this setting now")
                         .small()
                         .color(WARN),
                 )
-                .on_hover_text("Ignored: the engine flags this gameinfo_cannot_override, so Deadlock skips it in gameinfo.gi. If it is cheat-flagged, the console still takes it in hideout or sandbox.");
+                .on_hover_text("Since the September 2026 update the game skips this setting when it comes from its settings file. In the hideout or sandbox the console may still take it.");
+            }
+            if let Some(note) = practice_override(&state.profile.practice, name) {
+                ui.label(RichText::new(note).small().color(WARN));
             }
             if name == clutter::FADE_CONVAR && clutter::fade_hides_effects(&value) {
                 ui.label(RichText::new(clutter::FADE_WARNING).small().color(WARN));
@@ -2548,5 +2577,20 @@ pub fn check_setup(ui: &mut Ui, state: &mut AppState) {
                 ui.hyperlink_to("Open Windows Settings", uri);
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn practice_fog_marks_only_the_fog_rows() {
+        let mut practice = dt_core::practice::PracticeMode::default();
+        assert_eq!(practice_override(&practice, "r_enable_volume_fog"), None);
+        practice.fog = true;
+        assert!(practice_override(&practice, "r_enable_volume_fog").is_some());
+        assert!(practice_override(&practice, "r_citadel_fog_quality").is_some());
+        assert_eq!(practice_override(&practice, "r_farz"), None);
     }
 }

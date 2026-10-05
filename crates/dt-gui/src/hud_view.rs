@@ -28,6 +28,9 @@ const BEZEL: f32 = 6.0;
 const HANDLE: f32 = 8.0;
 /// Screen px within which a dragged edge or centre sticks to the frame's.
 const SNAP: f32 = 7.0;
+/// `team2Color` and `team1Color` in the game's base styles; the player's team is on the left.
+const TEAM_SAPPHIRE: Color32 = Color32::from_rgb(0x4D, 0x75, 0xC3);
+const TEAM_AMBER: Color32 = Color32::from_rgb(0xD4, 0x86, 0x0B);
 /// Narrower than `layout::SCALE_RANGE`: anything past this is unreadable or off screen.
 pub const SIZE_RANGE: RangeInclusive<u16> = 50..=200;
 const HINT: &str =
@@ -772,26 +775,55 @@ fn picture(p: &Painter, images: &mut Images, r: Rect, id: ElementId, tint: Color
             let side = r.width().min(r.height());
             let frame = Rect::from_center_size(r.center(), Vec2::splat(side));
             let map = frame.shrink(side * 20.0 / 400.0);
-            images.paint(p, art::MINIMAP_MAP, map, tint)
-                && images.paint(p, art::MINIMAP_FRAME, frame, tint)
+            if images.get(art::MINIMAP_MAP, map.width()).is_none() {
+                return false;
+            }
+            p.circle_filled(
+                frame.center(),
+                side * 0.47,
+                Color32::from_rgb(22, 18, 16).gamma_multiply(tint.a() as f32 / 255.0),
+            );
+            images.paint(p, art::MINIMAP_FRAME, frame, tint);
+            images.paint(p, art::MINIMAP_MAP, map, tint);
+            true
         }
         ElementId::TopBar => {
             let n = art::ALLIES.len() + art::ENEMIES.len();
             let gap = r.width() * 0.2 / n as f32;
-            let radius =
-                ((r.width() * 0.8 - gap * n as f32) / n as f32 / 2.0).min(r.height() * 0.45);
-            if images.get(art::ALLIES[0].portrait, radius * 2.0).is_none() {
+            let disc = ((r.width() * 0.8 - gap * n as f32) / n as f32).min(r.height() * 0.7);
+            if images.get(art::ALLIES[0].portrait, disc).is_none() {
                 return false;
             }
-            let row = n as f32 * (radius * 2.0 + gap) + r.width() * 0.2;
-            let mut x = r.center().x - row / 2.0 + radius;
-            let y = r.top() + radius + 1.0;
+            let row = n as f32 * (disc + gap) + r.width() * 0.2;
+            let mut x = r.center().x - row / 2.0 + disc / 2.0;
+            let [w, h] = art::ALLIES[0].portrait.size.map(f32::from);
+            let bottom = (r.top() + disc * h / w).min(r.bottom());
             for (i, hero) in art::ALLIES.iter().chain(&art::ENEMIES).enumerate() {
                 if i == art::ALLIES.len() {
                     x += r.width() * 0.2;
                 }
-                images.paint_disc(p, hero.portrait, pos2(x, y), radius, tint);
-                x += radius * 2.0 + gap;
+                let team = if i < art::ALLIES.len() {
+                    TEAM_SAPPHIRE
+                } else {
+                    TEAM_AMBER
+                };
+                p.circle_filled(
+                    pos2(x, bottom - disc / 2.0),
+                    disc / 2.0,
+                    team.gamma_multiply(tint.a() as f32 / 255.0),
+                );
+                let image = Rect::from_min_max(
+                    pos2(x - disc / 2.0, bottom - disc * h / w),
+                    pos2(x + disc / 2.0, bottom),
+                );
+                images.paint_shape(
+                    p,
+                    hero.portrait,
+                    image,
+                    &crate::hud_art::badge_mask(image),
+                    tint,
+                );
+                x += disc + gap;
             }
             true
         }
@@ -801,8 +833,16 @@ fn picture(p: &Painter, images: &mut Images, r: Rect, id: ElementId, tint: Color
             let frame = Rect::from_center_size(r.center(), vec2(w, h) * k);
             let [bw, bh] = art::HEALTH_FILL.size.map(f32::from);
             let bar = Rect::from_center_size(frame.center(), vec2(bw, bh) * k);
-            images.paint(p, art::HEALTH_FILL, bar, tint)
-                && images.paint(p, art::HEALTH_FRAME, frame, tint)
+            let ruler = [
+                pos2(bar.left(), bar.top() + bar.height() * 0.03),
+                pos2(bar.right(), bar.top()),
+                pos2(bar.left() + bar.width() * 0.26, bar.bottom()),
+                pos2(bar.left(), bar.bottom()),
+            ];
+            let frame_tint =
+                Color32::from_rgb(0x14, 0x23, 0x04).gamma_multiply(tint.a() as f32 / 255.0);
+            images.paint_shape(p, art::HEALTH_FILL, bar, &ruler, tint)
+                && images.paint(p, art::HEALTH_FRAME, frame, frame_tint)
         }
         _ => false,
     }

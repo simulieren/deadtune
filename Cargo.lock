@@ -566,7 +566,7 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "dt-cli"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "dt-core",
@@ -576,7 +576,7 @@ dependencies = [
 
 [[package]]
 name = "dt-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "csv",
@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "dt-gui"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "chrono",

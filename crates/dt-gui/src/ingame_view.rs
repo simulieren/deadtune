@@ -133,7 +133,6 @@ fn row_switch(
             .map(|e| e.notes.clone())
             .unwrap_or_default();
         ui.label(marked(row.label, on)).on_hover_text(note);
-        ui.label(RichText::new(row.convar).small().color(WEAK));
     });
 }
 

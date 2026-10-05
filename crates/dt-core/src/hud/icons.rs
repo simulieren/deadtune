@@ -15,6 +15,7 @@ use super::vpk::VpkDir;
 use crate::backup::{atomic_write, sha256_hex};
 use crate::texture::adjust::{self, Adjust, AdjustKind};
 use crate::texture::encode::{self, EncodeError, Fit};
+use crate::texture::frame::Crop;
 use crate::texture::png::{self, PngError};
 use crate::texture::svg::{self, SvgError};
 use crate::texture::{self, RgbaImage};
@@ -43,6 +44,9 @@ pub enum Source {
         image_sha256: String,
         #[serde(default)]
         fit: Fit,
+        /// The part of the PNG that fills the slot; `None` places it by `fit` alone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        crop: Option<Crop>,
     },
     /// SVG text written into a `.vsvg_c`.
     Svg { image_sha256: String },
@@ -92,6 +96,13 @@ impl IconOverride {
     pub fn fit(&self) -> Option<Fit> {
         match self.source {
             Source::Png { fit, .. } => Some(fit),
+            _ => None,
+        }
+    }
+
+    pub fn crop(&self) -> Option<Crop> {
+        match self.source {
+            Source::Png { crop, .. } => crop,
             _ => None,
         }
     }
@@ -192,7 +203,11 @@ pub fn set(
     let source = if image.starts_with(PNG_MAGIC) {
         png::read(image)?;
         match target {
-            Target::Raster => Source::Png { image_sha256, fit },
+            Target::Raster => Source::Png {
+                image_sha256,
+                fit,
+                crop: None,
+            },
             Target::Vector => Source::PngInSvg { image_sha256 },
         }
     } else if let Some(text) = std::str::from_utf8(image)
@@ -221,12 +236,31 @@ pub fn set(
     Ok(entry.clone())
 }
 
-/// Sets the fit of a PNG source; `false` when `game_path` has no PNG source or it already
-/// has that fit.
+/// Sets the fit of a PNG source and drops its crop, so the picture snaps to the new fit;
+/// `false` when `game_path` has no PNG source or it already sits that way.
 pub fn set_fit(icons: &mut BTreeMap<String, IconOverride>, game_path: &str, fit: Fit) -> bool {
     match icons.get_mut(game_path).map(|o| &mut o.source) {
-        Some(Source::Png { fit: current, .. }) if *current != fit => {
+        Some(Source::Png {
+            fit: current, crop, ..
+        }) if *current != fit || crop.is_some() => {
             *current = fit;
+            *crop = None;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Sets the window of a PNG source that fills the slot; `false` when `game_path` has no PNG
+/// source or it already has that window.
+pub fn set_crop(
+    icons: &mut BTreeMap<String, IconOverride>,
+    game_path: &str,
+    window: Option<Crop>,
+) -> bool {
+    match icons.get_mut(game_path).map(|o| &mut o.source) {
+        Some(Source::Png { crop, .. }) if *crop != window => {
+            *crop = window;
             true
         }
         _ => false,
@@ -373,8 +407,12 @@ fn build_one(
             svg::with_svg_text(&original, &svg::adjust(&text, &entry.adjust))
                 .map_err(|e| e.to_string())?
         }
-        (Source::Png { fit, .. }, _) => {
+        (Source::Png { fit, crop, .. }, _) => {
             let rgba = png::read(&image).map_err(|e| e.to_string())?;
+            let rgba = match crop {
+                Some(window) => window.apply(&rgba),
+                None => rgba,
+            };
             encode::replace(&original, &adjusted(rgba), *fit)
                 .map_err(|e: EncodeError| e.to_string())?
         }
@@ -449,6 +487,7 @@ pub(crate) mod tests {
         IconOverride::new(Source::Png {
             image_sha256: sha.into(),
             fit,
+            crop: None,
         })
     }
 
@@ -640,6 +679,44 @@ pub(crate) mod tests {
     fn bgra_pixels(file: &[u8]) -> Vec<[u8; 4]> {
         let v = Vtex::parse(file).unwrap();
         file[v.pixel_start()..].as_chunks::<4>().0.to_vec()
+    }
+
+    #[test]
+    fn a_crop_window_is_what_fills_the_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut icons = BTreeMap::new();
+        let mut pixels = [255, 0, 0, 255].repeat(4);
+        pixels.extend([0, 0, 255, 255].repeat(4));
+        let png = png::write(&RgbaImage::new(8, 1, pixels).unwrap()).unwrap();
+        set(&mut icons, dir.path(), RASTER, &png, Fit::Fill).unwrap();
+        let window = Crop {
+            x: 4,
+            y: 0,
+            width: 4,
+            height: 1,
+        };
+        assert!(set_crop(&mut icons, RASTER, Some(window)));
+        assert!(!set_crop(&mut icons, RASTER, Some(window)));
+        assert_eq!(icons[RASTER].crop(), Some(window));
+        let text = toml::to_string(&icons).unwrap();
+        assert_eq!(
+            toml::from_str::<BTreeMap<String, IconOverride>>(&text).unwrap(),
+            icons
+        );
+        let (files, problems) = build(&game(), &icons, dir.path());
+        assert_eq!(problems, []);
+        assert!(
+            bgra_pixels(&files[RASTER])
+                .iter()
+                .all(|p| *p == [255, 0, 0, 255]),
+            "only the blue half, stretched over the 4x2 slot"
+        );
+        assert!(
+            set_fit(&mut icons, RASTER, Fit::Fill),
+            "a fit snaps the crop away"
+        );
+        assert_eq!(icons[RASTER].crop(), None);
+        assert!(!set_crop(&mut icons, VECTOR, Some(window)));
     }
 
     #[test]

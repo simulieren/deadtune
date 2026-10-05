@@ -142,31 +142,10 @@ pub fn bulk_row(ui: &mut Ui, state: &AppState, library: &Library, actions: &mut 
     }
 }
 
-/// Undo and redo for the page's toolbar.
-pub fn history_buttons(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
-    let small = |text: &str| egui::Button::new(RichText::new(text).size(12.0));
-    if ui
-        .add_enabled(state.can_undo(), small("Undo"))
-        .on_hover_text("Ctrl+Z")
-        .clicked()
-    {
-        actions.push(Action::Undo);
-    }
-    if ui
-        .add_enabled(state.can_redo(), small("Redo"))
-        .on_hover_text("Ctrl+Shift+Z")
-        .clicked()
-    {
-        actions.push(Action::Redo);
-    }
-}
-
 /// The colour controls for the selected image.
 pub fn section(ui: &mut Ui, state: &AppState, entry: &ImageEntry, actions: &mut Vec<Action>) {
     let path = &entry.path;
     let shown = state.shown_adjustments(path);
-    ui.add_space(10.0);
-    widgets::caption(ui, "Edit colours");
     if entry.kind == Target::Vector {
         palette_row(ui, state, path, shown, actions);
     }

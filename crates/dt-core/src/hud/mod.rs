@@ -14,6 +14,7 @@
 
 pub mod apples_tunnels;
 pub mod art;
+pub mod collection;
 pub mod convars;
 pub mod crc32;
 pub mod css;

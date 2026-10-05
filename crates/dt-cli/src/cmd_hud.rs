@@ -141,7 +141,8 @@ pub fn icon(env: &Env, args: &Args) -> CliResult {
                 args.positionals("set <game_path> <image.png|image.svg>")?;
             let fit = match args.value("fit") {
                 None => Fit::default(),
-                Some(text) => Fit::parse(text).ok_or_else(|| usage("--fit is original or own"))?,
+                Some(text) => Fit::parse(text)
+                    .ok_or_else(|| usage("--fit is original, fill, stretch or own"))?,
             };
             let bytes = std::fs::read(image).map_err(|e| fail(format!("{image}: {e}")))?;
             let entry = icons::set(&mut layout.icons, &env.records(), game_path, &bytes, fit)?;

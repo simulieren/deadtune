@@ -9,6 +9,7 @@
 //! `.vtex_c` is compiled. Mipmapped world textures would need a generated mip chain and
 //! are refused, as are cubemaps, volumes, arrays and sprite sheets.
 
+use super::frame::{self, Crop};
 use super::png::RgbaImage;
 use super::resample::Image;
 use super::vtex::{self, Flags, Vtex, VtexError};
@@ -26,20 +27,32 @@ pub enum Fit {
     Original,
     /// The player's image at its own size, scaled down only past [`MAX_SIDE`].
     Own,
+    /// The game image's size, covered by the player's image with its aspect kept and the
+    /// overflow cropped evenly from both sides.
+    Fill,
+    /// The game image's size, the player's image squeezed to it.
+    Stretch,
 }
 
 impl Fit {
+    pub const ALL: [Fit; 4] = [Fit::Original, Fit::Fill, Fit::Stretch, Fit::Own];
+
     pub fn key(self) -> &'static str {
         match self {
             Fit::Original => "original",
             Fit::Own => "own",
+            Fit::Fill => "fill",
+            Fit::Stretch => "stretch",
         }
     }
 
     pub fn parse(text: &str) -> Option<Fit> {
-        [Fit::Original, Fit::Own]
-            .into_iter()
-            .find(|f| f.key() == text)
+        Fit::ALL.into_iter().find(|f| f.key() == text)
+    }
+
+    /// Whether the result always has the game image's size.
+    pub fn keeps_slot(self) -> bool {
+        self != Fit::Own
     }
 }
 
@@ -104,11 +117,10 @@ pub fn replace(original: &[u8], image: &RgbaImage, fit: Fit) -> Result<Vec<u8>, 
         return Err(EncodeError::EmptyImage);
     }
 
-    let (width, height) = match fit {
-        Fit::Original => v.display_rect.unwrap_or((v.width, v.height)),
-        Fit::Own => own_size(image.width, image.height),
-    };
-    let pixels = to_bgra(&fitted(image, u32::from(width), u32::from(height)));
+    let (sw, sh) = v.display_rect.unwrap_or((v.width, v.height));
+    let image = sized(image, fit, (sw.into(), sh.into()));
+    let (width, height) = (image.width as u16, image.height as u16);
+    let pixels = to_bgra(&image);
 
     let kept: Vec<&[u8]> = extras
         .iter()
@@ -135,6 +147,33 @@ pub fn replace(original: &[u8], image: &RgbaImage, fit: Fit) -> Result<Vec<u8>, 
     out.extend_from_slice(&pixels);
     check(&out, width, height, &kinds, &kept)?;
     Ok(out)
+}
+
+/// `image` sized for a game image of `slot` pixels the way `fit` says.
+pub fn sized(image: &RgbaImage, fit: Fit, slot: (u32, u32)) -> RgbaImage {
+    let (width, height) = slot;
+    match fit {
+        Fit::Original => fitted(image, width, height),
+        Fit::Own => {
+            let (w, h) = own_size(image.width, image.height);
+            fitted(image, w.into(), h.into())
+        }
+        Fit::Fill => {
+            let size = (image.width, image.height);
+            let scale = frame::fill_scale(size, slot);
+            let centre = (f64::from(image.width) / 2.0, f64::from(image.height) / 2.0);
+            let window = Crop::window(size, slot, scale, centre).apply(image);
+            stretched(&window, width, height)
+        }
+        Fit::Stretch => stretched(image, width, height),
+    }
+}
+
+fn stretched(image: &RgbaImage, width: u32, height: u32) -> RgbaImage {
+    if (image.width, image.height) == (width, height) {
+        return image.clone();
+    }
+    resample_premultiplied(image, width.max(1), height.max(1))
 }
 
 fn own_size(width: u32, height: u32) -> (u16, u16) {
@@ -407,6 +446,31 @@ mod tests {
     }
 
     #[test]
+    fn fill_crops_evenly_and_stretch_squeezes() {
+        let mut pixels = Vec::new();
+        for _ in 0..2 {
+            for x in 0..4 {
+                pixels.extend_from_slice(&[x * 60, 0, 0, 255]);
+            }
+        }
+        let img = RgbaImage::new(4, 2, pixels).unwrap();
+        let fill = sized(&img, Fit::Fill, (2, 2));
+        assert_eq!((fill.width, fill.height), (2, 2));
+        assert_eq!(fill.pixels[0], 60, "the left column is cropped off");
+        assert_eq!(fill.pixels[4], 120, "and the right one");
+        let stretch = sized(&img, Fit::Stretch, (2, 4));
+        assert_eq!((stretch.width, stretch.height), (2, 4));
+        assert!(stretch.pixels.chunks(4).all(|p| p[3] == 255), "no bars");
+        let own = sized(&img, Fit::Own, (64, 64));
+        assert_eq!((own.width, own.height), (4, 2));
+        let up = vindicta();
+        let out = replace(&up, &pattern(300, 200), Fit::Fill).unwrap();
+        let v = Vtex::parse(&out).unwrap();
+        assert_eq!((v.width, v.height), (1080, 1080));
+        assert_ne!(bgra_at(&out, 1080, 540, 0)[3], 0, "no transparent band");
+    }
+
+    #[test]
     fn same_size_is_exact_and_downscale_keeps_edges_clean() {
         let src = plain_vtex(37, 21, 28, 1, Flags::NO_LOD.0, &[], &vec![0; 37 * 21 * 4]);
         let img = pattern(37, 21);
@@ -536,12 +600,12 @@ mod tests {
 
     #[test]
     fn fit_keys_round_trip() {
-        for fit in [Fit::Original, Fit::Own] {
+        for fit in Fit::ALL {
             assert_eq!(Fit::parse(fit.key()), Some(fit));
             let text = toml::to_string(&std::collections::BTreeMap::from([("fit", fit)])).unwrap();
             assert_eq!(text.trim(), format!("fit = \"{}\"", fit.key()));
         }
-        assert_eq!(Fit::parse("stretch"), None);
+        assert_eq!(Fit::parse("squash"), None);
         assert_eq!(Fit::default(), Fit::Original);
     }
 }

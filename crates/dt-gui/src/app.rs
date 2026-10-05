@@ -593,7 +593,10 @@ fn hud_edit_lever(state: &mut AppState) {
 /// `DEADTUNE_IMAGES_EXPORT=running` shows "Save all images" mid-way and `=done` (or `=zip`)
 /// runs it for real first. Colour edits: `DEADTUNE_IMAGES_EDIT=<part>=<spec>[;<spec>],...`,
 /// `DEADTUNE_IMAGES_BULK=<spec>[;<spec>]` on every visible image, `DEADTUNE_IMAGES_MARK=<part>,...`
-/// and `DEADTUNE_IMAGES_UNDO=<n>`.
+/// and `DEADTUNE_IMAGES_UNDO=<n>`. Files in: `DEADTUNE_IMAGES_FIT=fill|stretch|own` sets the
+/// selected replacement's fit, `DEADTUNE_IMAGES_IMPORT=<file or folder>,...` drops them (a
+/// collection waits in its review card), `DEADTUNE_IMAGES_HOVER=<path>,...` draws the drop
+/// overlay as if those were dragged over the window.
 fn images_levers(state: &mut AppState) {
     let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
     let mut used = false;
@@ -631,7 +634,13 @@ fn images_levers(state: &mut AppState) {
     let bulk = var("DEADTUNE_IMAGES_BULK");
     let marks = var("DEADTUNE_IMAGES_MARK");
     let undo = var("DEADTUNE_IMAGES_UNDO").and_then(|n| n.parse::<usize>().ok());
+    let fit = var("DEADTUNE_IMAGES_FIT").and_then(|f| dt_core::texture::encode::Fit::parse(&f));
+    let import = var("DEADTUNE_IMAGES_IMPORT");
+    if let Some(hover) = var("DEADTUNE_IMAGES_HOVER") {
+        state.images.hover_lever = Some(hover.split(',').map(PathBuf::from).collect());
+    }
     if !(used
+        || import.is_some()
         || sets.is_some()
         || select.is_some()
         || edits.is_some()
@@ -661,8 +670,18 @@ fn images_levers(state: &mut AppState) {
         let path = find(state, &part);
         state.select_image(path);
     }
+    if let Some(fit) = fit {
+        state.set_image_fit(fit);
+    }
     if let Some(value) = marks {
         state.mark_lever(&value);
+    }
+    if let Some(files) = import {
+        let items = files
+            .split(',')
+            .map(|f| crate::images_collect::Incoming::from_path(std::path::Path::new(f.trim())))
+            .collect();
+        state.receive_files(items);
     }
     for _ in 0..undo.unwrap_or(0) {
         state.undo_images();

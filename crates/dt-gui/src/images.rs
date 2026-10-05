@@ -11,7 +11,8 @@ use dt_core::hud::icons::{self, IMAGES_ROOT, IconError, IconOverride, Target};
 use dt_core::snapshot::ImageInfo;
 use dt_core::snapshot::images::Found;
 use dt_core::texture::adjust::{self, Adjust};
-use dt_core::texture::encode::Fit;
+use dt_core::texture::encode::{self, Fit};
+use dt_core::texture::frame::Crop;
 use dt_core::texture::{self, RgbaImage, png, svg};
 
 use crate::state::AppState;
@@ -160,6 +161,35 @@ impl Library {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TileSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+impl TileSize {
+    pub const ALL: [TileSize; 3] = [TileSize::Small, TileSize::Medium, TileSize::Large];
+
+    /// The tile's side in points.
+    pub fn side(self) -> f32 {
+        match self {
+            TileSize::Small => 68.0,
+            TileSize::Medium => 92.0,
+            TileSize::Large => 132.0,
+        }
+    }
+}
+
+/// A position the player is dragging or zooming, ahead of the profile like a colour draft.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CropDraft {
+    pub path: String,
+    pub crop: Crop,
+    pub changed: std::time::Instant,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Zoom {
     #[default]
     Fit,
@@ -198,6 +228,7 @@ pub enum Picture {
     Mine {
         file: PathBuf,
         side: u32,
+        frame: Option<Frame>,
     },
     Edited {
         path: String,
@@ -205,7 +236,26 @@ pub enum Picture {
         file: Option<PathBuf>,
         adjust: Vec<Adjust>,
         side: u32,
+        frame: Option<Frame>,
     },
+}
+
+/// How a player's PNG is placed in the game's slot, for drawing it the way the game gets it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Frame {
+    pub fit: Fit,
+    pub crop: Option<Crop>,
+    pub slot: (u32, u32),
+}
+
+impl Frame {
+    fn apply(&self, image: RgbaImage) -> RgbaImage {
+        let image = match self.crop {
+            Some(window) => window.apply(&image),
+            None => image,
+        };
+        encode::sized(&image, self.fit, self.slot)
+    }
 }
 
 /// What a picture's source file is, before it was scaled for drawing.
@@ -235,18 +285,20 @@ fn vector_facts(svg_text: &str) -> Result<Facts, String> {
 pub fn render(source: &ImageSource, picture: &Picture) -> Result<Rendered, String> {
     match picture {
         Picture::Game { path, side } => render_game(source, path, &[], *side),
-        Picture::Mine { file, side } => render_file(file, &[], *side),
+        Picture::Mine { file, side, frame } => render_file(file, &[], *side, frame.as_ref()),
         Picture::Edited {
             file: Some(file),
             adjust,
             side,
+            frame,
             ..
-        } => render_file(file, adjust, *side),
+        } => render_file(file, adjust, *side, frame.as_ref()),
         Picture::Edited {
             path,
             file: None,
             adjust,
             side,
+            ..
         } => render_game(source, path, adjust, *side),
     }
 }
@@ -259,7 +311,7 @@ fn render_game(
     side: u32,
 ) -> Result<Rendered, String> {
     match source.find(path)? {
-        Found::Decoded(file) => render_file(&file, list, side),
+        Found::Decoded(file) => render_file(&file, list, side, None),
         Found::Compiled(bytes) if path.ends_with(".vsvg_c") => render_svg(
             &svg::svg_text(&bytes).map_err(|e| e.to_string())?,
             list,
@@ -288,18 +340,27 @@ fn render_svg(text: &str, list: &[Adjust], side: u32) -> Result<Rendered, String
 }
 
 /// A PNG or SVG file with `list` applied, decoded with its longer side at most `side` (an
-/// SVG exactly that).
-fn render_file(file: &Path, list: &[Adjust], side: u32) -> Result<Rendered, String> {
+/// SVG exactly that); a PNG placed in its slot by `frame` first. The facts are the file's.
+fn render_file(
+    file: &Path,
+    list: &[Adjust],
+    side: u32,
+    frame: Option<&Frame>,
+) -> Result<Rendered, String> {
     let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
     if file.extension().is_some_and(|e| e == "svg") {
         let text = String::from_utf8(bytes).map_err(|_| "the SVG is not UTF-8")?;
         render_svg(&text, list, side)
     } else {
-        let mut full = png::read(&bytes).map_err(|e| e.to_string())?;
+        let full = png::read(&bytes).map_err(|e| e.to_string())?;
         let facts = Facts {
             width: full.width,
             height: full.height,
             format: "PNG".into(),
+        };
+        let mut full = match frame {
+            Some(frame) => frame.apply(full),
+            None => full,
         };
         adjust::apply_all(&mut full, list);
         Ok(Rendered {
@@ -310,7 +371,7 @@ fn render_file(file: &Path, list: &[Adjust], side: u32) -> Result<Rendered, Stri
 }
 
 /// One sentence the player can act on, for a file that could not replace an image.
-fn plain_error(error: &IconError) -> String {
+pub(crate) fn plain_error(error: &IconError) -> String {
     match error {
         IconError::UnknownImage => {
             "That file isn't a PNG or SVG. Save it as PNG or SVG and try again.".into()
@@ -333,6 +394,27 @@ fn plain_error(error: &IconError) -> String {
     }
 }
 
+fn slot_size(source: &ImageSource, path: &str) -> Option<(u32, u32)> {
+    match source.find(path).ok()? {
+        Found::Decoded(file) if file.extension().is_some_and(|e| e == "svg") => {
+            let facts = vector_facts(&std::fs::read_to_string(file).ok()?).ok()?;
+            Some((facts.width, facts.height))
+        }
+        Found::Decoded(file) => {
+            let image = png::read(&std::fs::read(file).ok()?).ok()?;
+            Some((image.width, image.height))
+        }
+        Found::Compiled(bytes) if path.ends_with(".vsvg_c") => {
+            let facts = vector_facts(&svg::svg_text(&bytes).ok()?).ok()?;
+            Some((facts.width, facts.height))
+        }
+        Found::Compiled(bytes) => {
+            let info = ImageInfo::of(&bytes)?;
+            Some((info.width.into(), info.height.into()))
+        }
+    }
+}
+
 /// The page's state: the library once loaded, filters, selection and the last message.
 #[derive(Default)]
 pub struct ImagesState {
@@ -349,7 +431,17 @@ pub struct ImagesState {
     /// How the next picture dropped on a texture is sized.
     pub fit: Fit,
     pub zoom: Zoom,
-    pub replace_path: String,
+    pub tile: TileSize,
+    /// The game images' slot sizes, read once per path: what a replacement is sized to.
+    pub slots: BTreeMap<String, (u32, u32)>,
+    pub crop_draft: Option<CropDraft>,
+    /// A dropped or picked collection waiting for the player to confirm it.
+    pub import: Option<crate::images_collect::ImportReview>,
+    /// `DEADTUNE_IMAGES_HOVER`: files the drop overlay acts as if they hovered the window.
+    pub hover_lever: Option<Vec<PathBuf>>,
+    /// An open file dialog (`crate::file_pick`).
+    pub picker: Option<crate::file_pick::Picking>,
+    /// The last message: under its image, or over the grid when its path is empty.
     pub notice: Option<Notice>,
     /// The last exported file, for "Open folder".
     pub exported: Option<PathBuf>,
@@ -392,6 +484,7 @@ impl AppState {
                 .map_err(|e| format!("Couldn't read the game's images ({e}). Check the game folder in Safety & setup.")),
         };
         self.images.library = Some(source.map(Library::new));
+        self.cache_slots();
     }
 
     pub fn image_library(&self) -> Option<&Library> {
@@ -432,16 +525,79 @@ impl AppState {
         if self.images.notice.as_ref().map(|n| &n.path) != path.as_ref() {
             self.images.notice = None;
         }
+        if let Some(path) = &path {
+            self.image_slot(path);
+        }
         self.images.selected = path;
         self.sync_color_panel();
     }
 
-    fn notice(&mut self, path: &str, tone: Tone, text: impl Into<String>) {
+    /// The game image's size at `path` (its display size for a texture, view box for a
+    /// vector icon), read once and kept.
+    pub fn image_slot(&mut self, path: &str) -> Option<(u32, u32)> {
+        if let Some(slot) = self.images.slots.get(path) {
+            return Some(*slot);
+        }
+        let source = self.image_library()?.source.clone();
+        let slot = slot_size(&source, path)?;
+        self.images.slots.insert(path.to_string(), slot);
+        Some(slot)
+    }
+
+    /// Reads the slot of every replaced image, so its preview is drawn at the game's size.
+    pub(crate) fn cache_slots(&mut self) {
+        let paths: Vec<String> = self.profile.hud.icons.keys().cloned().collect();
+        for path in paths {
+            self.image_slot(&path);
+        }
+    }
+
+    /// The window a replaced PNG fills its slot with: the one being dragged, else the saved.
+    pub fn shown_crop(&self, path: &str) -> Option<Crop> {
+        match &self.images.crop_draft {
+            Some(draft) if draft.path == path => Some(draft.crop),
+            _ => self.image_override(path).and_then(IconOverride::crop),
+        }
+    }
+
+    /// One drag or zoom step on a replaced PNG's position; saved once it rests.
+    pub fn drag_crop(&mut self, path: &str, crop: Crop, now: std::time::Instant) {
+        if self
+            .image_override(path)
+            .and_then(IconOverride::fit)
+            .is_none()
+        {
+            return;
+        }
+        self.images.crop_draft = Some(CropDraft {
+            path: path.to_string(),
+            crop,
+            changed: now,
+        });
+    }
+
+    /// Saves the dragged position as one undo step.
+    pub(crate) fn write_crop_draft(&mut self) {
+        let Some(draft) = self.images.crop_draft.take() else {
+            return;
+        };
+        let before = self.profile.hud.icons.clone();
+        if icons::set_crop(&mut self.profile.hud.icons, &draft.path, Some(draft.crop)) {
+            self.end_edit(before);
+        }
+    }
+
+    pub(crate) fn notice(&mut self, path: &str, tone: Tone, text: impl Into<String>) {
         self.images.notice = Some(Notice {
             path: path.to_string(),
             tone,
             text: text.into(),
         });
+    }
+
+    /// A message about the page rather than one image, shown over the grid.
+    pub(crate) fn page_notice(&mut self, tone: Tone, text: impl Into<String>) {
+        self.notice("", tone, text);
     }
 
     /// Replaces the game image at `path` with `bytes` (a PNG or SVG) as a pending change.
@@ -456,6 +612,7 @@ impl AppState {
             fit,
         );
         self.end_edit(before);
+        self.image_slot(path);
         match result {
             Ok(entry) => {
                 if entry.is_experimental() {
@@ -472,67 +629,13 @@ impl AppState {
         }
     }
 
-    /// The "Replace" box: reads the file at `file` and replaces the selected image with it.
-    pub fn replace_selected_from_path(&mut self, file: &str) {
-        let Some(path) = self.images.selected.clone() else {
-            return;
-        };
-        let file = file.trim().trim_matches('"');
-        match std::fs::read(file) {
-            Ok(bytes) => {
-                self.replace_image(&path, &bytes);
-                if self
-                    .images
-                    .notice
-                    .as_ref()
-                    .is_some_and(|n| n.tone != Tone::Bad)
-                {
-                    self.images.replace_path.clear();
-                }
-            }
-            Err(_) => self.notice(
-                &path,
-                Tone::Bad,
-                "Couldn't open that file. Check the path and try again.",
-            ),
-        }
-    }
-
-    /// Files dropped on the window: the first goes to `target` (the tile under the pointer)
-    /// or else the selected image.
-    pub fn drop_image_files(
-        &mut self,
-        target: Option<String>,
-        files: Vec<Result<Vec<u8>, String>>,
-    ) {
-        let Some(first) = files.into_iter().next() else {
-            return;
-        };
-        let Some(path) = target.or_else(|| self.images.selected.clone()) else {
-            self.images.notice = Some(Notice {
-                path: String::new(),
-                tone: Tone::Bad,
-                text: "Pick an image first, then drop your file on it.".into(),
-            });
-            return;
-        };
-        self.select_image(Some(path.clone()));
-        match first {
-            Ok(bytes) => self.replace_image(&path, &bytes),
-            Err(_) => self.notice(
-                &path,
-                Tone::Bad,
-                "Couldn't read the dropped file. Copy it to a normal folder and drop it again.",
-            ),
-        }
-    }
-
     /// Sets how textures are sized; an already replaced texture that is selected follows.
     pub fn set_image_fit(&mut self, fit: Fit) {
         self.images.fit = fit;
         let Some(path) = self.images.selected.clone() else {
             return;
         };
+        self.images.crop_draft = None;
         let before = self.begin_edit();
         icons::set_fit(&mut self.profile.hud.icons, &path, fit);
         self.end_edit(before);
@@ -575,7 +678,7 @@ impl AppState {
         result
     }
 
-    fn write_export(&self, path: &str, kind: ExportKind) -> Result<PathBuf, String> {
+    pub(crate) fn write_export(&self, path: &str, kind: ExportKind) -> Result<PathBuf, String> {
         let source = self
             .image_library()
             .map(|l| l.source.clone())
@@ -630,7 +733,6 @@ pub mod tests {
     use super::*;
     use crate::state::testutil;
     use dt_core::hud::crc32::crc32;
-    use dt_core::hud::icons::Source;
     use dt_core::hud::install::GAME_PAK;
     use dt_core::hud::resource::{Block, Resource};
     use dt_core::hud::vpk;
@@ -887,6 +989,7 @@ pub mod tests {
             &Picture::Mine {
                 file: state.stored_image(TEXTURE).unwrap(),
                 side: 10,
+                frame: None,
             },
         )
         .unwrap();
@@ -894,11 +997,18 @@ pub mod tests {
         assert_eq!((mine.facts.width, mine.facts.format.as_str()), (40, "PNG"));
     }
 
+    fn drop(state: &mut AppState, bytes: Vec<u8>) {
+        state.receive_files(vec![crate::images_collect::Incoming::File {
+            name: "mine".into(),
+            bytes: Ok(bytes),
+        }]);
+    }
+
     #[test]
     fn a_dropped_png_replaces_a_texture_as_a_pending_change() {
         let (_dir, mut state) = loaded();
         state.select_image(Some(TEXTURE.into()));
-        state.drop_image_files(None, vec![Ok(my_png(4, 4))]);
+        drop(&mut state, my_png(4, 4));
         assert_eq!(
             state.image_override(TEXTURE).and_then(IconOverride::fit),
             Some(Fit::Original)
@@ -913,22 +1023,10 @@ pub mod tests {
     }
 
     #[test]
-    fn a_drop_on_a_tile_wins_over_the_selection() {
-        let (_dir, mut state) = loaded();
-        state.select_image(Some(TEXTURE.into()));
-        state.drop_image_files(Some(TOP_BAR.into()), vec![Ok(MY_SVG.as_bytes().to_vec())]);
-        assert!(matches!(
-            state.image_override(TOP_BAR).map(|o| &o.source),
-            Some(Source::Svg { .. })
-        ));
-        assert!(state.image_override(TEXTURE).is_none());
-        assert_eq!(state.images.selected.as_deref(), Some(TOP_BAR));
-    }
-
-    #[test]
     fn a_png_on_a_vector_icon_is_allowed_but_marked_as_a_test() {
         let (_dir, mut state) = loaded();
-        state.drop_image_files(Some(TOP_BAR.into()), vec![Ok(my_png(4, 4))]);
+        state.select_image(Some(TOP_BAR.into()));
+        drop(&mut state, my_png(4, 4));
         assert!(state.image_override(TOP_BAR).unwrap().is_experimental());
         let notice = state.images.notice.clone().unwrap();
         assert_eq!(notice.tone, Tone::Warn);
@@ -938,11 +1036,6 @@ pub mod tests {
     #[test]
     fn bad_drops_change_nothing_and_say_what_to_do() {
         let (_dir, mut state) = loaded();
-        state.drop_image_files(None, vec![Ok(my_png(4, 4))]);
-        assert_eq!(
-            state.images.notice.as_ref().unwrap().text,
-            "Pick an image first, then drop your file on it."
-        );
         let cases: [(&str, Vec<u8>, &str); 4] = [
             (TEXTURE, b"hello".to_vec(), "isn't a PNG or SVG"),
             (TEXTURE, MY_SVG.as_bytes().to_vec(), "needs a PNG"),
@@ -954,44 +1047,27 @@ pub mod tests {
             ),
         ];
         for (path, bytes, says) in cases {
-            state.drop_image_files(Some(path.into()), vec![Ok(bytes)]);
+            state.select_image(Some(path.into()));
+            drop(&mut state, bytes);
             let notice = state.images.notice.clone().unwrap();
             assert_eq!(notice.tone, Tone::Bad, "{says}");
             assert!(notice.text.contains(says), "{}", notice.text);
             assert_eq!(notice.path, path);
         }
-        state.drop_image_files(Some(TEXTURE.into()), vec![Err("gone".into())]);
+        state.receive_files(vec![crate::images_collect::Incoming::File {
+            name: "gone.png".into(),
+            bytes: Err("gone".into()),
+        }]);
         assert!(
             state
                 .images
                 .notice
                 .unwrap()
                 .text
-                .starts_with("Couldn't read the dropped file")
+                .starts_with("Couldn't read that file")
         );
         assert!(state.profile.hud.icons.is_empty());
         assert!(!state.data_dir.join("backups/icons").exists());
-    }
-
-    #[test]
-    fn the_replace_box_reads_a_path_and_clears_on_success() {
-        let (dir, mut state) = loaded();
-        let file = dir.path().join("mine.png");
-        std::fs::write(&file, my_png(4, 4)).unwrap();
-        state.select_image(Some(ITEM.into()));
-        state.images.replace_path = format!("\"{}\"", file.display());
-        state.replace_selected_from_path(&state.images.replace_path.clone());
-        assert!(state.image_override(ITEM).is_some());
-        assert!(state.images.replace_path.is_empty());
-        state.replace_selected_from_path("/nope/missing.png");
-        assert!(
-            state
-                .images
-                .notice
-                .unwrap()
-                .text
-                .starts_with("Couldn't open that file")
-        );
     }
 
     #[test]

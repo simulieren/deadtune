@@ -253,7 +253,7 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "hud icon",
-        usage: "hud icon list|set <game_path> <image.png|image.svg> [--fit original|own]|reset <game_path>|reset-all --layout <hud.toml>; hud icon export <game_path> <out.png|out.svg>",
+        usage: "hud icon list|set <game_path> <image.png|image.svg> [--fit original|fill|stretch|own]|reset <game_path>|reset-all --layout <hud.toml>; hud icon export <game_path> <out.png|out.svg>",
         summary: "swap any UI image (panorama/images/**) for your own PNG or SVG; ship with `hud apply`; export decodes the game's own image",
         values: &["layout", "fit"],
         switches: &[],

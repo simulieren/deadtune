@@ -1,5 +1,5 @@
-//! Just enough of the zip format to pull one file out of a mod archive, and to write one
-//! (the UI images export): stored or deflated entries, no zip64, no encryption.
+//! Just enough of the zip format to pull files out of a mod archive or an image collection,
+//! and to write one (the UI images export): stored or deflated entries, no zip64, no encryption.
 
 use std::io::{self, Read, Write};
 
@@ -90,6 +90,19 @@ pub fn extract(zip: &[u8], file_name: &str) -> Result<Vec<u8>, ZipError> {
     if matches.next().is_some() {
         return Err(ZipError::Ambiguous(file_name.to_string()));
     }
+    read(zip, entry)
+}
+
+/// Every file in the archive with its full name, folders left out.
+pub fn files(zip: &[u8]) -> Result<Vec<(String, Vec<u8>)>, ZipError> {
+    entries(zip)?
+        .iter()
+        .filter(|e| !e.name.ends_with('/'))
+        .map(|e| Ok((e.name.to_string(), read(zip, e)?)))
+        .collect()
+}
+
+fn read(zip: &[u8], entry: &Entry<'_>) -> Result<Vec<u8>, ZipError> {
     let unsupported = || ZipError::Unsupported(entry.name.to_string());
     if entry.flags & 1 != 0 || entry.size == u32::MAX as usize {
         return Err(unsupported());
@@ -288,6 +301,19 @@ mod tests {
             b"{\"a\": 1}\n".repeat(200)
         );
         assert_eq!(extract(&bytes, "empty.txt").unwrap(), b"");
+        let names: Vec<(String, usize)> = files(&bytes)
+            .unwrap()
+            .into_iter()
+            .map(|(name, data)| (name, data.len()))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("panorama/images/minimap/a_psd.png".to_string(), 4096),
+                ("manifest.json".to_string(), 1800),
+                ("empty.txt".to_string(), 0)
+            ]
+        );
         let all = entries(&bytes).unwrap();
         let methods: Vec<(&str, u16)> = all.iter().map(|e| (e.name, e.method)).collect();
         assert_eq!(

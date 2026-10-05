@@ -14,7 +14,7 @@ use eframe::egui::{
     self, Color32, Painter, Pos2, Rect, Shape, Stroke, TextureHandle, Vec2, pos2, vec2,
 };
 
-use crate::images::{ImageSource, Picture};
+use crate::images::{Frame, ImageSource, Picture};
 use crate::state::AppState;
 use crate::thumbs::{Slot, Thumbs};
 
@@ -68,8 +68,9 @@ impl AppState {
     pub fn preview_picture(&self, game_path: &str, side: u32) -> Picture {
         let file = self.stored_image(game_path);
         let adjust = self.shown_adjustments(game_path);
+        let frame = self.image_frame(game_path);
         match (file, adjust.is_empty()) {
-            (Some(file), true) => Picture::Mine { file, side },
+            (Some(file), true) => Picture::Mine { file, side, frame },
             (None, true) => Picture::Game {
                 path: game_path.to_string(),
                 side,
@@ -79,8 +80,19 @@ impl AppState {
                 file,
                 adjust: adjust.to_vec(),
                 side,
+                frame,
             },
         }
+    }
+
+    /// How a replaced PNG sits in its slot, once the slot's size is known.
+    pub fn image_frame(&self, game_path: &str) -> Option<Frame> {
+        let fit = self.image_override(game_path)?.fit()?;
+        Some(Frame {
+            fit,
+            crop: self.shown_crop(game_path),
+            slot: *self.images.slots.get(game_path)?,
+        })
     }
 
     /// `game_path` as the previews draw it, decoded now.

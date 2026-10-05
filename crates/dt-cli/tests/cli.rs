@@ -848,11 +848,14 @@ fn hud_icon_set_list_apply_reset() {
     assert!(refused.contains("not a replaceable image"), "{refused}");
     let bad_fit = fake.expect(
         &[
-            "hud", "icon", "set", icon, "x.png", "--fit", "stretch", "--layout", "hud.toml",
+            "hud", "icon", "set", icon, "x.png", "--fit", "squash", "--layout", "hud.toml",
         ],
         2,
     );
-    assert!(bad_fit.contains("--fit is original or own"), "{bad_fit}");
+    assert!(
+        bad_fit.contains("--fit is original, fill, stretch or own"),
+        "{bad_fit}"
+    );
     assert!(
         fake.expect(&["hud", "icon", "frob", "--layout", "hud.toml"], 2)
             .contains("list, set, reset, reset-all or export")

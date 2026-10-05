@@ -1188,6 +1188,7 @@ impl AppState {
 
     pub fn revert_all(&mut self) {
         self.images.edit.forget();
+        self.images.crop_draft = None;
         self.profile = self.saved.clone().unwrap_or_else(default_profile);
         self.base = Base::resolve(&self.profile, &self.presets_dir());
         self.refresh_preview();

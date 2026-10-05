@@ -172,8 +172,21 @@ impl AppState {
         }
     }
 
-    /// Commits a draft that has rested for [`SETTLE`]; true while one is still waiting.
+    /// Commits a draft (colour or position) that has rested for [`SETTLE`]; true while one
+    /// is still waiting.
     pub fn settle_edits(&mut self, now: Instant) -> bool {
+        let position = match &self.images.crop_draft {
+            Some(draft) if now.saturating_duration_since(draft.changed) < SETTLE => true,
+            Some(_) => {
+                self.write_crop_draft();
+                false
+            }
+            None => false,
+        };
+        position || self.settle_colour(now)
+    }
+
+    fn settle_colour(&mut self, now: Instant) -> bool {
         let Some(changed) = self.images.edit.draft.as_ref().map(|d| d.changed) else {
             return false;
         };
@@ -189,6 +202,7 @@ impl AppState {
 
     /// Commits the draft now and ends it. Every other page edit calls this first.
     pub fn commit_edits(&mut self) {
+        self.write_crop_draft();
         self.write_draft();
         self.images.edit.draft = None;
     }
@@ -226,6 +240,7 @@ impl AppState {
         self.images.edit.history.record(before);
         self.images.edit.palette = None;
         self.refresh_preview();
+        self.cache_slots();
         true
     }
 
@@ -258,7 +273,9 @@ impl AppState {
     }
 
     pub fn can_undo(&self) -> bool {
-        !self.images.edit.history.undo.is_empty() || self.draft_waiting()
+        !self.images.edit.history.undo.is_empty()
+            || self.draft_waiting()
+            || self.images.crop_draft.is_some()
     }
 
     pub fn can_redo(&self) -> bool {
@@ -287,6 +304,7 @@ impl AppState {
         self.images.edit.palette = None;
         self.images.notice = None;
         self.refresh_preview();
+        self.cache_slots();
         self.sync_color_panel();
     }
 
@@ -323,6 +341,16 @@ impl AppState {
         self.images.edit.marked.clear();
         self.images.edit.anchor = Some(path.to_string());
         self.select_image(Some(path.to_string()));
+    }
+
+    /// Picks every image the filters leave visible.
+    pub fn mark_all_visible(&mut self) {
+        self.images.edit.marked = self.visible_paths().into_iter().collect();
+    }
+
+    pub fn clear_marks(&mut self) {
+        self.images.edit.marked.clear();
+        self.images.edit.anchor = None;
     }
 
     /// What a bulk edit on "selected" means: the marked tiles, else the selected one.
@@ -532,8 +560,9 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::images::tests::{ITEM, TEXTURE, TOP_BAR, loaded, my_png};
-    use crate::images::{Picture, render};
+    use crate::images::{Frame, Picture, render};
     use dt_core::hud::install::HudAction;
+    use dt_core::texture::encode::Fit;
 
     const RED: Rgb = Rgb([255, 0, 0]);
     const BLUE_ICON: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"5\" fill=\"#ece8e1\"/><rect y=\"5\" width=\"10\" height=\"5\" fill=\"#000000\"/></svg>";
@@ -809,12 +838,19 @@ mod tests {
         assert!(!state.is_edited(ITEM));
         state.replace_image(ITEM, &my_png(4, 4));
         let file = state.stored_image(ITEM).unwrap();
+        let frame = Some(Frame {
+            fit: Fit::Original,
+            crop: None,
+            slot: (8, 8),
+        });
         assert_eq!(
             state.preview_picture(ITEM, 64),
             Picture::Mine {
                 file: file.clone(),
-                side: 64
-            }
+                side: 64,
+                frame,
+            },
+            "drawn at the game's size"
         );
         state.edit_image(ITEM, Adjust::Invert, Instant::now());
         assert_eq!(
@@ -823,7 +859,8 @@ mod tests {
                 path: ITEM.into(),
                 file: Some(file),
                 adjust: vec![Adjust::Invert],
-                side: 64
+                side: 64,
+                frame,
             },
             "the draft shows before it is committed"
         );

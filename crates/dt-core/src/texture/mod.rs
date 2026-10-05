@@ -12,6 +12,7 @@ pub mod addon;
 pub mod adjust;
 pub mod decode;
 pub mod encode;
+pub mod frame;
 pub mod png;
 pub mod resample;
 pub mod select;

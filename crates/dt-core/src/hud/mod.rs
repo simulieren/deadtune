@@ -13,6 +13,7 @@
 //! layout via `inject`, packs via `vpk`) -> `install::execute`.
 
 pub mod apples_tunnels;
+pub mod art;
 pub mod convars;
 pub mod crc32;
 pub mod css;

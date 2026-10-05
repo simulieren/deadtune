@@ -182,7 +182,7 @@ fn launch_menu(ui: &mut Ui, state: &mut AppState, fit: Fit) {
     let (rect, response) = ui.allocate_exact_size(vec2(26.0, height), Sense::click());
     let response = response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text("Safe mode");
+        .on_hover_text("Launch options and safe mode");
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
     let lit = response.hovered() || open;
     let painter = ui.painter();
@@ -200,6 +200,14 @@ fn launch_menu(ui: &mut Ui, state: &mut AppState, fit: Fit) {
         if lit { TEXT } else { WEAK },
     );
     egui::Popup::menu(&response).show(|ui| {
+        if ui
+            .button("Launch options")
+            .on_hover_text("Renderer, intro video, extra options, and the text to paste into Steam")
+            .clicked()
+        {
+            ui.close();
+            state.ui.launch_options_open = true;
+        }
         if safe {
             if ui
                 .button("Restore addons")

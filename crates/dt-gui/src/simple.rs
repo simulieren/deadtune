@@ -1901,8 +1901,7 @@ fn instant_changes(ui: &mut Ui, state: &mut AppState) {
                 .color(WEAK),
             );
             if !booted {
-                let text =
-                    dt_core::bridge::boot::steam_launch_options(state.settings.console_window);
+                let text = state.steam_launch_options();
                 ui.horizontal(|ui| {
                     mono_box(ui, &text);
                     if ui.button("Copy").clicked() {

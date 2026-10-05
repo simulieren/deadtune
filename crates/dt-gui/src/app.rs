@@ -223,6 +223,15 @@ impl App {
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_PUSH") {
                     fake_push(&mut state, &kind);
                 }
+                // `DEADTUNE_LAUNCH_ARGS="-vulkan -nosplash"` replaces the launch options;
+                // `DEADTUNE_LAUNCH_OPTIONS=1` opens their window.
+                if let Ok(line) = std::env::var("DEADTUNE_LAUNCH_ARGS") {
+                    state.settings.launch = dt_core::launch_options::LaunchOptions::from_args(
+                        &dt_core::launch_options::split_command_line(&line),
+                    );
+                }
+                state.ui.launch_options_open =
+                    std::env::var_os("DEADTUNE_LAUNCH_OPTIONS").is_some_and(|v| v == "1");
                 // `DEADTUNE_FAKE_UPDATE=0.9.0` offers that version instead of checking.
                 if let Some(version) = std::env::var("DEADTUNE_FAKE_UPDATE")
                     .ok()
@@ -475,6 +484,11 @@ impl eframe::App for App {
                 (Mode::Full, View::Simple) => simple::simple(ui, state),
                 (Mode::Full, View::Advanced) => advanced::full_ui(ui, state, &mut reopen),
             },
+        }
+        if let Screen::Main(state) = &mut self.screen
+            && state.ui.launch_options_open
+        {
+            crate::launch_view::window(&ctx, state);
         }
         if let Some(settings) = reopen {
             self.open_game(settings);

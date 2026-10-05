@@ -7,33 +7,26 @@ use sysinfo::{Process, ProcessRefreshKind, ProcessesToUpdate, System};
 
 use crate::locate::APP_ID;
 
-#[derive(Clone, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub struct LaunchOptions {
+/// The final command line handed to Steam. Build it from `launch_options::LaunchOptions::args`.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct LaunchArgs {
     pub args: Vec<String>,
 }
+
+/// The config `+exec` runs at start, and the flag that makes the game write `console.log`.
+pub const BOOT_CFG: &str = "deadtune_boot";
+pub const CONDEBUG: &str = "-condebug";
 
 /// `steam://rungameid/1422450` or `steam://run/1422450//<args>/` when args are set.
 ///
 /// The args are one command line: args containing whitespace are double-quoted, then everything
 /// outside the URL unreserved set is percent-encoded so `+`, `/`, `&` and `%` survive the shell and Steam.
-pub fn steam_url(opts: &LaunchOptions) -> String {
+pub fn steam_url(opts: &LaunchArgs) -> String {
     if opts.args.is_empty() {
         return format!("steam://rungameid/{APP_ID}");
     }
-    let command_line = opts
-        .args
-        .iter()
-        .map(|arg| {
-            if arg.contains(char::is_whitespace) {
-                format!("\"{arg}\"")
-            } else {
-                arg.clone()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
     let mut encoded = String::new();
-    for byte in command_line.bytes() {
+    for byte in command_line(&opts.args).bytes() {
         if byte.is_ascii_alphanumeric() || b"-_.~".contains(&byte) {
             encoded.push(byte as char);
         } else {
@@ -43,25 +36,37 @@ pub fn steam_url(opts: &LaunchOptions) -> String {
     format!("steam://run/{APP_ID}//{encoded}/")
 }
 
+/// Args joined with spaces, double-quoting any that contain whitespace: what Steam's Launch
+/// Options box takes, and what `launch_options::split_command_line` reads back.
+pub fn command_line(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| {
+            if arg.contains(char::is_whitespace) {
+                format!("\"{arg}\"")
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// The user's options plus what the ack loop needs: `+exec deadtune_boot`, `-condebug`, and
 /// `-console` when asked. Arguments the user already lists are not repeated.
-pub fn with_boot(opts: &LaunchOptions, console: bool) -> LaunchOptions {
-    let mut args = opts.args.clone();
+pub fn with_boot(args: &[String], console: bool) -> LaunchArgs {
+    let mut args = args.to_vec();
     let has_exec_boot = args
         .windows(2)
-        .any(|w| w[0] == "+exec" && w[1].trim_end_matches(".cfg") == "deadtune_boot");
+        .any(|w| w[0] == "+exec" && w[1].trim_end_matches(".cfg") == BOOT_CFG);
     if !has_exec_boot {
-        args.extend(["+exec".to_string(), "deadtune_boot".to_string()]);
+        args.extend(["+exec".to_string(), BOOT_CFG.to_string()]);
     }
-    for flag in ["-condebug"]
-        .into_iter()
-        .chain(console.then_some("-console"))
-    {
+    for flag in [CONDEBUG].into_iter().chain(console.then_some("-console")) {
         if !args.iter().any(|a| a == flag) {
             args.push(flag.to_string());
         }
     }
-    LaunchOptions { args }
+    LaunchArgs { args }
 }
 
 pub fn is_game_running() -> bool {
@@ -95,7 +100,7 @@ pub fn kill_game() -> std::io::Result<bool> {
     }
 }
 
-pub fn launch(opts: &LaunchOptions) -> std::io::Result<()> {
+pub fn launch(opts: &LaunchArgs) -> std::io::Result<()> {
     let url = steam_url(opts);
     open_url(&url)
 }
@@ -161,10 +166,12 @@ fn is_game_process(name: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn opts(args: &[&str]) -> LaunchOptions {
-        LaunchOptions {
-            args: args.iter().map(|a| a.to_string()).collect(),
-        }
+    fn opts(args: &[&str]) -> LaunchArgs {
+        LaunchArgs { args: strs(args) }
+    }
+
+    fn strs(args: &[&str]) -> Vec<String> {
+        args.iter().map(|a| a.to_string()).collect()
     }
 
     #[test]
@@ -191,16 +198,16 @@ mod tests {
     #[test]
     fn with_boot_appends_the_boot_exec_and_log_flags_once() {
         assert_eq!(
-            with_boot(&opts(&["-novid"]), false).args,
+            with_boot(&strs(&["-novid"]), false).args,
             ["-novid", "+exec", "deadtune_boot", "-condebug"]
         );
         assert_eq!(
-            with_boot(&opts(&["-novid"]), true).args,
+            with_boot(&strs(&["-novid"]), true).args,
             ["-novid", "+exec", "deadtune_boot", "-condebug", "-console"]
         );
         assert_eq!(
             with_boot(
-                &opts(&["+exec", "deadtune_boot", "-condebug", "-console"]),
+                &strs(&["+exec", "deadtune_boot", "-condebug", "-console"]),
                 true
             )
             .args,
@@ -208,8 +215,20 @@ mod tests {
             "nothing is repeated"
         );
         assert_eq!(
-            steam_url(&with_boot(&opts(&[]), false)),
+            steam_url(&with_boot(&strs(&[]), false)),
             "steam://run/1422450//%2Bexec%20deadtune_boot%20-condebug/"
+        );
+    }
+
+    #[test]
+    fn command_line_quotes_args_with_spaces_and_is_steams_paste_text() {
+        assert_eq!(
+            command_line(&with_boot(&strs(&["-vulkan", "+exec", "my cfg"]), true).args),
+            "-vulkan +exec \"my cfg\" +exec deadtune_boot -condebug -console"
+        );
+        assert_eq!(
+            command_line(&with_boot(&[], false).args),
+            "+exec deadtune_boot -condebug"
         );
     }
 

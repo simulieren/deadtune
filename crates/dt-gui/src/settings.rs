@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use dt_core::launch::LaunchOptions;
+use dt_core::launch_options::LaunchOptions;
 use dt_core::power::PowerSource;
 
 use crate::live::BridgeKind;
@@ -95,9 +95,7 @@ impl Default for Settings {
             safe_mode: false,
             favourites: BTreeSet::new(),
             pinned: BTreeSet::new(),
-            launch: LaunchOptions {
-                args: vec!["-novid".into()],
-            },
+            launch: LaunchOptions::default(),
             power: PowerProfiles::default(),
             update: UpdateSettings::default(),
         }
@@ -179,6 +177,18 @@ mod tests {
         let update = Settings::load(dir.path()).update;
         assert_eq!(update.channel, dt_core::update::Channel::Testing);
         assert!(update.enabled, "missing keys default too");
+    }
+
+    #[test]
+    fn old_free_form_launch_args_load_into_the_launch_model() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(FILE_NAME),
+            "onboarded = true\n\n[launch]\nargs = [\"-high\", \"-novid\", \"-dx11\", \"+fps_max\", \"0\"]\n",
+        )
+        .unwrap();
+        let launch = Settings::load(dir.path()).launch;
+        assert_eq!(launch.args(), ["-dx11", "-novid", "-high", "+fps_max", "0"]);
     }
 
     #[test]

@@ -776,55 +776,16 @@ pub fn launch(ui: &mut egui::Ui, state: &mut AppState) {
         "Launch",
         "Start Deadlock through Steam, and choose how live changes reach the running game.",
     );
+    widgets::section(ui, "Launch options", |ui| {
+        crate::launch_view::panel(ui, state);
+    });
     widgets::section(ui, "Launch", |ui| {
-        form(ui, "launch_form", |ui| {
-            form_label(ui, "Launch options");
-            let mut args = state.settings.launch.args.join(" ");
-            if ui
-                .add(
-                    egui::TextEdit::singleline(&mut args)
-                        .hint_text("-novid -high")
-                        .desired_width(420.0),
-                )
-                .changed()
-            {
-                state.settings.launch.args = args.split_whitespace().map(str::to_string).collect();
-            }
-            ui.end_row();
-            form_label(ui, "Console window");
-            ui.checkbox(&mut state.settings.console_window, "add -console");
-            ui.end_row();
-            form_label(ui, "Steam URL");
-            ui.label(
-                RichText::new(launch::steam_url(&state.launch_args()))
-                    .monospace()
-                    .size(11.5)
-                    .color(WEAK),
-            )
-            .on_hover_text(
-                "DeadTune adds +exec deadtune_boot (its boot cfg: key bind, live convars, a marker \
-                 for the console log) and -condebug (writes the console log it reads back).",
-            );
-            ui.end_row();
-            form_label(ui, "From Steam");
-            ui.horizontal(|ui| {
-                let text = dt_core::bridge::boot::steam_launch_options(state.settings.console_window);
-                ui.label(RichText::new(&text).monospace().size(11.5));
-                if ui
-                    .small_button("Copy")
-                    .on_hover_text(
-                        "Paste into Steam: right-click Deadlock > Properties > General > Launch Options",
-                    )
-                    .clicked()
-                {
-                    ui.ctx().copy_text(text);
-                }
-            });
-            ui.end_row();
-        });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            if ui.button("Launch game").clicked()
+            if ui
+                .button("Launch game")
+                .on_hover_text(launch::steam_url(&state.launch_args()))
+                .clicked()
                 && let Err(e) = state.launch_game()
             {
                 state.status = Some(Status::Error(e));

@@ -9,10 +9,6 @@ use super::{BridgeError, ConsoleCmd};
 
 pub const FILE_NAME: &str = "deadtune_boot.cfg";
 
-/// Launch arguments that run the boot cfg and turn the console log on (`-condebug` writes
-/// `console.log` next to gameinfo.gi in Source 2 games).
-pub const LAUNCH_ARGS: [&str; 3] = ["+exec", "deadtune_boot", "-condebug"];
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BootCfg {
     pub bind_key: String,
@@ -34,15 +30,6 @@ impl BootCfg {
     pub fn write(&self, cfg_dir: &Path) -> Result<(), BridgeError> {
         Ok(write_cfg(cfg_dir, FILE_NAME, &self.lines()?)?)
     }
-}
-
-/// What a player who starts the game from Steam pastes into its Launch Options.
-pub fn steam_launch_options(console: bool) -> String {
-    let mut text = LAUNCH_ARGS.join(" ");
-    if console {
-        text.push_str(" -console");
-    }
-    text
 }
 
 #[cfg(test)]
@@ -95,14 +82,5 @@ mod tests {
         };
         assert!(bad.write(dir.path()).is_err());
         assert!(!dir.path().join(FILE_NAME).exists());
-    }
-
-    #[test]
-    fn steam_text_lists_the_launch_args() {
-        assert_eq!(steam_launch_options(false), "+exec deadtune_boot -condebug");
-        assert_eq!(
-            steam_launch_options(true),
-            "+exec deadtune_boot -condebug -console"
-        );
     }
 }

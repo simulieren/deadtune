@@ -132,7 +132,7 @@ pub fn doctor(env: &Env, args: &Args) -> CliResult {
         .map_err(|e| eprintln!("locate: {}", e.message()))
         .ok();
     if args.switch("report") {
-        let launch = launch::with_boot(&dt_core::launch::LaunchOptions::default(), false);
+        let launch = launch::with_boot(&[], false);
         print!(
             "{}",
             doctor::report(

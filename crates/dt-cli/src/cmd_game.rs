@@ -6,10 +6,11 @@ use std::sync::mpsc;
 use dt_core::bridge::{ConsoleCmd, boot};
 use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::hud::install::{self, InstalledState};
-use dt_core::launch::{self, LaunchOptions};
+use dt_core::launch;
+use dt_core::launch_options::{self, LaunchOptions, Verdict};
 use dt_core::watch::{self, Change};
 
-use crate::args::{Args, CliResult, fail};
+use crate::args::{Args, CliResult, fail, usage};
 use crate::env::{self, Env};
 
 pub fn watch(env: &Env, args: &Args) -> CliResult {
@@ -77,14 +78,47 @@ pub fn launch(env: &Env, args: &Args) -> CliResult {
         .write(&paths.cfg_dir)?;
         println!("Wrote {}", boot_path.display());
     }
-    let opts = launch::with_boot(
-        &LaunchOptions {
-            args: args.rest.clone(),
-        },
-        args.switch("console"),
-    );
+    let opts = LaunchOptions::from_args(&args.rest);
+    for checked in launch_options::check(&opts.args()) {
+        if matches!(
+            checked.verdict,
+            Verdict::Unknown | Verdict::Conflicts { .. }
+        ) {
+            eprintln!(
+                "warning: {}: {}",
+                checked.arg.text(),
+                checked.verdict.summary()
+            );
+        }
+    }
+    let opts = launch::with_boot(&opts.args(), args.switch("console"));
     println!("Opening {}", launch::steam_url(&opts));
     launch::launch(&opts)?;
+    Ok(())
+}
+
+/// One line per option with its verdict; exits 1 when two options contradict each other.
+pub fn launch_options_check(_: &Env, args: &Args) -> CliResult {
+    let tokens = match (args.pos.as_slice(), args.rest.is_empty()) {
+        ([line], true) => launch_options::split_command_line(line),
+        ([], false) => args.rest.clone(),
+        _ => return Err(usage("pass the options as one quoted string, or after --")),
+    };
+    let checked = launch_options::check(&tokens);
+    let width = checked
+        .iter()
+        .map(|c| c.arg.text().len())
+        .max()
+        .unwrap_or(0);
+    for c in &checked {
+        println!("{:width$}  {}", c.arg.text(), c.verdict.summary());
+    }
+    if checked
+        .iter()
+        .any(|c| matches!(c.verdict, Verdict::Conflicts { .. }))
+    {
+        return Err(fail("some options contradict each other"));
+    }
     Ok(())
 }
 

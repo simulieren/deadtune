@@ -141,10 +141,18 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "launch",
         usage: "launch [--profile <file>] [--console] [-- args...]",
-        summary: "start Deadlock through Steam with +exec deadtune_boot -condebug",
+        summary: "start Deadlock through Steam with the args plus +exec deadtune_boot -condebug",
         values: &["profile"],
         switches: &["console"],
         run: cmd_game::launch,
+    },
+    Command {
+        name: "launch-options check",
+        usage: "launch-options check \"<args>\" | launch-options check -- <args...>",
+        summary: "say which launch options this game build knows, ignores or contradicts",
+        values: &[],
+        switches: &[],
+        run: cmd_game::launch_options_check,
     },
     Command {
         name: "kill",

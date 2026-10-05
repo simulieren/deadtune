@@ -28,7 +28,7 @@ use dt_core::hud::minimap_colors::{self, Color, IconId};
 use dt_core::hud::minimap_style::{
     MAP_OPACITY_RANGE, MARKER_SCALE_RANGE, MarkerGroup, MinimapStyle,
 };
-use dt_core::launch::{self, LaunchOptions};
+use dt_core::launch::{self, LaunchArgs};
 use dt_core::locate::GamePaths;
 use dt_core::preset::PresetId;
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
@@ -375,6 +375,8 @@ pub struct UiState {
     pub addon_import_path: String,
     /// The launch-guard banner's "Show details" fold.
     pub guard_details: bool,
+    /// The Launch options window, opened from the Launch button's menu.
+    pub launch_options_open: bool,
 }
 
 /// What an addon card says about the launch guard's experience with it.
@@ -1878,8 +1880,13 @@ impl AppState {
             .map_err(|e| e.to_string())
     }
 
-    pub fn launch_args(&self) -> LaunchOptions {
-        launch::with_boot(&self.settings.launch, self.settings.console_window)
+    pub fn launch_args(&self) -> LaunchArgs {
+        launch::with_boot(&self.settings.launch.args(), self.settings.console_window)
+    }
+
+    /// What someone who starts the game from Steam pastes into its Launch Options box.
+    pub fn steam_launch_options(&self) -> String {
+        launch::command_line(&self.launch_args().args)
     }
 
     /// Writes the boot cfg and starts the game through Steam with `+exec deadtune_boot`.
@@ -2504,6 +2511,13 @@ mod tests {
         assert_eq!(
             state.launch_args().args,
             ["-novid", "+exec", "deadtune_boot", "-condebug"]
+        );
+        state.settings.launch.renderer = dt_core::launch_options::Renderer::Vulkan;
+        state.settings.launch.extra = vec!["-high".into()];
+        state.settings.console_window = true;
+        assert_eq!(
+            state.steam_launch_options(),
+            "-vulkan -novid -high +exec deadtune_boot -condebug -console"
         );
     }
 

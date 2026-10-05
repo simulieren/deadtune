@@ -13,9 +13,10 @@ use eframe::egui::{self, ViewportCommand};
 use crate::live::PushOutcome;
 use crate::relaunch::{self, Relaunch};
 use crate::settings::{Settings, View};
-use crate::state::{AppState, HudPage, MinimapPreset, Mode, Section, Status, Tab};
+use crate::state::{AppState, HudPage, MinimapPreset, Mode, Section, Status, Tab, TopBarPreview};
 use crate::update::{self, UpdateState};
 use crate::{Args, advanced, compact, profiles, simple, views};
+use dt_core::hud::topbar::TopBarPreset;
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
 const GAME_POLL: Duration = Duration::from_secs(2);
@@ -167,11 +168,19 @@ impl App {
                         .find(|s| s.label.to_lowercase().starts_with(&name.to_lowercase()))
                         .map(|s| s.id);
                 }
-                // `DEADTUNE_HUD_PAGE=colors` opens the Minimap colours page in either view;
+                // `DEADTUNE_HUD_PAGE=colors` opens the Minimap colours page in either view,
+                // `DEADTUNE_HUD_PAGE=top` the Top bar page;
                 // `DEADTUNE_MINIMAP_PRESET=colourblind` (or `contrast`) applies a colour preset.
-                if std::env::var("DEADTUNE_HUD_PAGE").is_ok_and(|v| v.starts_with("colo")) {
-                    state.ui.hud_page = HudPage::Colors;
-                    state.ui.section = Section::Minimap;
+                match std::env::var("DEADTUNE_HUD_PAGE").as_deref() {
+                    Ok(v) if v.starts_with("colo") => {
+                        state.ui.hud_page = HudPage::Colors;
+                        state.ui.section = Section::Minimap;
+                    }
+                    Ok(v) if v.starts_with("top") => {
+                        state.ui.hud_page = HudPage::TopBar;
+                        state.ui.section = Section::TopBar;
+                    }
+                    _ => {}
                 }
                 self.startup_profile(&mut state);
                 if let Ok(name) = std::env::var("DEADTUNE_MINIMAP_PRESET") {
@@ -182,6 +191,21 @@ impl App {
                             .contains(&name.to_lowercase())
                     });
                     state.apply_minimap_preset(preset);
+                }
+                // `DEADTUNE_TOP_BAR_PRESET=fight` (any prefix of a preset label) applies a top
+                // bar preset; `DEADTUNE_TOP_BAR_PREVIEW=none` shows every mock hero in vision.
+                if let Ok(name) = std::env::var("DEADTUNE_TOP_BAR_PRESET")
+                    && let Some(preset) = TopBarPreset::ALL
+                        .into_iter()
+                        .find(|p| p.label().to_lowercase().starts_with(&name.to_lowercase()))
+                {
+                    state.apply_top_bar_preset(preset);
+                }
+                if std::env::var("DEADTUNE_TOP_BAR_PREVIEW").is_ok_and(|v| v == "none") {
+                    state.ui.top_bar_preview = TopBarPreview {
+                        missing_enemy: false,
+                        dead_hero: false,
+                    };
                 }
                 // `DEADTUNE_ADDONS=particle_disabler,blur_disabler` turns addons on after loading;
                 // `DEADTUNE_ADDON_EXPAND=particle_disabler` unfolds that card's options.

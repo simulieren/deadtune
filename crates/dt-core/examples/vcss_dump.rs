@@ -1,6 +1,7 @@
 //! Prints the structure of every `.vcss_c` in a VPK or a loose file: blocks, the DATA
 //! prefix and which CRC rule it satisfies, the image table and the text head.
-//! `cargo run -p dt-core --example vcss_dump -- <file.vpk | file.vcss_c>`
+//! `cargo run -p dt-core --example vcss_dump -- <file.vpk | file.vcss_c> [--text <out_dir>]`
+//! writes each stylesheet's full text under `out_dir`, for diffing against Valve's source.
 
 use std::path::Path;
 
@@ -8,7 +9,7 @@ use dt_core::hud::crc32::crc32;
 use dt_core::hud::resource::{self, Resource};
 use dt_core::hud::vpk::VpkDir;
 
-fn dump(label: &str, bytes: &[u8]) {
+fn dump(label: &str, bytes: &[u8], text_dir: Option<&Path>) {
     println!("== {label}: {} bytes", bytes.len());
     let res = match Resource::parse(bytes) {
         Ok(r) => r,
@@ -53,22 +54,35 @@ fn dump(label: &str, bytes: &[u8]) {
             );
             let head: String = text.chars().take(160).collect();
             println!("  text: {head}");
+            if let Some(dir) = text_dir {
+                let name = Path::new(label).file_name().unwrap_or_default();
+                let out = dir.join(name).with_extension("css");
+                std::fs::create_dir_all(dir).unwrap();
+                std::fs::write(&out, text).unwrap();
+                println!("  wrote {}", out.display());
+            }
         }
         Err(e) => println!("  text: {e}"),
     }
 }
 
 fn main() {
-    let arg = std::env::args().nth(1).expect("path");
-    let path = Path::new(&arg);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let arg = args.first().expect("path");
+    let text_dir = args
+        .iter()
+        .position(|a| a == "--text")
+        .and_then(|i| args.get(i + 1))
+        .map(Path::new);
+    let path = Path::new(arg);
     if arg.ends_with(".vpk") {
         let vpk = VpkDir::open(path).unwrap();
         for p in vpk.entries.keys() {
             if p.ends_with(".vcss_c") {
-                dump(p, &vpk.read(p).unwrap());
+                dump(p, &vpk.read(p).unwrap(), text_dir);
             }
         }
     } else {
-        dump(&arg, &std::fs::read(path).unwrap());
+        dump(arg, &std::fs::read(path).unwrap(), text_dir);
     }
 }

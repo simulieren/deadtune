@@ -63,8 +63,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         HudAction::Remove => println!("action:  remove (layout is vanilla)"),
         HudAction::Nothing => println!("action:  nothing (already up to date)"),
     }
-    for (file, css) in plan.patch.files.iter().filter(|(_, css)| !css.is_empty()) {
+    for (file, css) in plan.patch.styles.iter().filter(|(_, css)| !css.is_empty()) {
         println!("\npatched: {file}\n{css}");
+    }
+    for (file, edit) in &plan.patch.layouts {
+        println!("\nrebuilt: {file}\n{edit:?}");
+    }
+    for (file, text) in &plan.patch.own_files {
+        println!("\nadded: {file} ({} bytes)", text.len());
     }
     for c in &plan.conflicts {
         println!(

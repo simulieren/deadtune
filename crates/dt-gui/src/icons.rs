@@ -13,6 +13,7 @@ pub enum Icon {
     Performance,
     Hud,
     Minimap,
+    TopBar,
     Addons,
     System,
     Safety,
@@ -26,7 +27,7 @@ pub enum Icon {
 
 #[cfg(test)]
 impl Icon {
-    pub const ALL: [Icon; 17] = [
+    pub const ALL: [Icon; 18] = [
         Icon::Overview,
         Icon::Display,
         Icon::Shadows,
@@ -35,6 +36,7 @@ impl Icon {
         Icon::Performance,
         Icon::Hud,
         Icon::Minimap,
+        Icon::TopBar,
         Icon::Addons,
         Icon::System,
         Icon::Safety,
@@ -131,6 +133,14 @@ fn parts(icon: Icon) -> &'static [Part] {
             Circle(12.0, 12.0, 8.5),
             Fill(&[(12.0, 6.0), (14.6, 12.0), (9.4, 12.0)]),
             Closed(&[(9.4, 12.0), (14.6, 12.0), (12.0, 18.0)]),
+        ],
+        Icon::TopBar => &[
+            Rect(2.5, 5.0, 19.0, 7.0, 2.0),
+            Circle(6.5, 8.5, 1.8),
+            Circle(12.0, 8.5, 1.8),
+            Circle(17.5, 8.5, 1.8),
+            Line(&[(8.0, 16.0), (16.0, 16.0)]),
+            Line(&[(10.0, 19.5), (14.0, 19.5)]),
         ],
         Icon::Addons => &[
             Closed(&[

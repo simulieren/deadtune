@@ -28,6 +28,9 @@ use dt_core::hud::minimap_colors::{self, Color, IconId};
 use dt_core::hud::minimap_style::{
     MAP_OPACITY_RANGE, MARKER_SCALE_RANGE, MarkerGroup, MinimapStyle,
 };
+use dt_core::hud::topbar::{
+    MISSING_OPACITY_RANGE, PORTRAIT_GAP_RANGE, PORTRAIT_SCALE_RANGE, TopBarPreset, TopBarStyle,
+};
 use dt_core::launch::{self, LaunchArgs};
 use dt_core::locate::GamePaths;
 use dt_core::practice::{self, PracticeMode};
@@ -189,13 +192,14 @@ pub enum Section {
     Performance,
     Hud,
     Minimap,
+    TopBar,
     Addons,
     System,
     Safety,
 }
 
 impl Section {
-    pub const ALL: [Section; 11] = [
+    pub const ALL: [Section; 12] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -204,6 +208,7 @@ impl Section {
         Section::Performance,
         Section::Hud,
         Section::Minimap,
+        Section::TopBar,
         Section::Addons,
         Section::System,
         Section::Safety,
@@ -219,6 +224,7 @@ impl Section {
             Section::Performance => "Performance",
             Section::Hud => "HUD",
             Section::Minimap => "Minimap",
+            Section::TopBar => "Top bar",
             Section::Addons => "Addons",
             Section::System => "System check",
             Section::Safety => "Safety & setup",
@@ -235,6 +241,7 @@ impl Section {
             Section::Performance => "Frame rate caps, menus and CPU.",
             Section::Hud => "Move and resize parts of the in-game HUD.",
             Section::Minimap => "Colours, marker sizes and the look of the minimap.",
+            Section::TopBar => "Hero portraits, clock and soul lead, plus spawn timers and more.",
             Section::Addons => {
                 "Community performance mods, rebuilt by DeadTune so they survive game updates."
             }
@@ -387,6 +394,23 @@ pub struct UiState {
     pub guard_details: bool,
     /// The Launch options window, opened from the Launch button's menu.
     pub launch_options_open: bool,
+    /// The Top bar page's mock shows an enemy out of vision and a dead hero.
+    pub top_bar_preview: TopBarPreview,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TopBarPreview {
+    pub missing_enemy: bool,
+    pub dead_hero: bool,
+}
+
+impl Default for TopBarPreview {
+    fn default() -> Self {
+        TopBarPreview {
+            missing_enemy: true,
+            dead_hero: true,
+        }
+    }
 }
 
 /// What an addon card says about the launch guard's experience with it.
@@ -464,12 +488,13 @@ impl HudPreset {
     }
 }
 
-/// The HUD tab's two pages.
+/// The HUD tab's pages.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HudPage {
     #[default]
     Layout,
     Colors,
+    TopBar,
 }
 
 /// The game's own enemy colour setting (2026-09-29 accessibility update).
@@ -1701,27 +1726,62 @@ impl AppState {
                 .count()
     }
 
-    /// Layout presets leave the Minimap page's settings alone.
+    /// Layout presets leave the Minimap and Top bar pages' settings alone.
     pub fn apply_hud_preset(&mut self, preset: HudPreset) {
         let minimap_colors = std::mem::take(&mut self.profile.hud.minimap_colors);
         let minimap = std::mem::take(&mut self.profile.hud.minimap);
+        let top_bar = std::mem::take(&mut self.profile.hud.top_bar);
         self.profile.hud = HudLayout {
             minimap_colors,
             minimap,
+            top_bar,
             ..preset.layout()
         };
         self.refresh_preview();
     }
 
-    /// The toolbar preset the current layout equals, if any, ignoring the Minimap page.
+    /// The toolbar preset the current layout equals, if any, ignoring the Minimap and
+    /// Top bar pages.
     pub fn hud_preset(&self) -> Option<HudPreset> {
         HudPreset::ALL.into_iter().find(|p| {
             HudLayout {
                 minimap_colors: self.profile.hud.minimap_colors.clone(),
                 minimap: self.profile.hud.minimap.clone(),
+                top_bar: self.profile.hud.top_bar.clone(),
                 ..p.layout()
             } == self.profile.hud
         })
+    }
+
+    /// Replaces the top bar style; values are clamped to their ranges.
+    pub fn set_top_bar(&mut self, style: TopBarStyle) {
+        self.profile.hud.top_bar = TopBarStyle {
+            missing_opacity_pct: style
+                .missing_opacity_pct
+                .clamp(*MISSING_OPACITY_RANGE.start(), *MISSING_OPACITY_RANGE.end()),
+            portrait_scale_pct: style
+                .portrait_scale_pct
+                .clamp(*PORTRAIT_SCALE_RANGE.start(), *PORTRAIT_SCALE_RANGE.end()),
+            portrait_gap_px: style
+                .portrait_gap_px
+                .clamp(*PORTRAIT_GAP_RANGE.start(), *PORTRAIT_GAP_RANGE.end()),
+            ..style
+        };
+        self.refresh_preview();
+    }
+
+    pub fn apply_top_bar_preset(&mut self, preset: TopBarPreset) {
+        self.set_top_bar(preset.style());
+    }
+
+    pub fn top_bar_preset(&self) -> Option<TopBarPreset> {
+        TopBarPreset::ALL
+            .into_iter()
+            .find(|p| p.style() == self.profile.hud.top_bar)
+    }
+
+    pub fn top_bar_changed_count(&self) -> usize {
+        self.profile.hud.top_bar.changed_count()
     }
 
     /// Clamped to the allowed range; 100 % is not stored.
@@ -3076,7 +3136,7 @@ mod tests {
             state.apply_minimap_preset(Some(preset));
             assert_eq!(state.minimap_preset(), Some(preset));
             let patch = dt_core::hud::layout::compile(&state.profile.hud).unwrap();
-            let css = &patch.files[minimap_colors::MINIMAP_STYLE];
+            let css = &patch.styles[minimap_colors::MINIMAP_STYLE];
             assert!(css.contains(".player.enemy #BackgroundImage"), "{css}");
             assert!(
                 !state
@@ -3150,7 +3210,7 @@ mod tests {
         );
         let patch = dt_core::hud::layout::compile(&state.profile.hud).unwrap();
         assert!(
-            patch.files[minimap_colors::MINIMAP_STYLE]
+            patch.styles[minimap_colors::MINIMAP_STYLE]
                 .contains("player.enemy{pre-transform-scale2d:1.5;}")
         );
 

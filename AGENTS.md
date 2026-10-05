@@ -4,7 +4,7 @@ Guidance for coding agents working on DeadTune. Read this before changing anythi
 
 ## What this is
 
-DeadTune is a Windows desktop app (Rust, egui/eframe 0.36) that tunes Deadlock's performance settings: the `ConVars` block of `game/citadel/gameinfo.gi`, `cfg/video.txt`, HUD layout and colours, and performance addons. It works only through files, launch options and the official console. No DLL injection, memory access or hooks. Competitive-information ConVars (outlines through walls, visibility) are on a denylist and never changed.
+DeadTune is a Windows desktop app (Rust, egui/eframe 0.36) that tunes Deadlock's performance settings: the `ConVars` block of `game/citadel/gameinfo.gi`, `cfg/video.txt`, HUD layout and colours, and performance addons. It works only through files, launch options and the official console. No DLL injection, memory access or hooks. Competitive-information ConVars (outlines through walls, visibility) are on a denylist and never changed. HUD features that re-present information through the game's own UI (top bar dimming, spawn timers, urn soul lead, purchase popups) are allowed: Simon decided on 2026-10-05 that top bar information features are safe. They stay opt-in and off in the Vanilla preset.
 
 The game runs on Windows (primary) and Linux/Proton. Development happens on macOS, which cannot run the game. Anything that touches the real game is proven on Windows by Simon, using `docs/testing-windows.md`.
 

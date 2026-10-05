@@ -79,6 +79,17 @@ pub fn show(_: &env::Env, args: &Args) -> CliResult {
             practice_line(p.practice)
         );
     }
+    if !p.hud.top_bar.is_vanilla() {
+        println!(
+            "hud      top bar: {} options set{}",
+            p.hud.top_bar.changed_count(),
+            if p.hud.top_bar.has_extras() {
+                " (adds a script to the top bar)"
+            } else {
+                ""
+            }
+        );
+    }
     Ok(())
 }
 

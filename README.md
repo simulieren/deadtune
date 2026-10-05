@@ -49,6 +49,7 @@ DeadTune turns that into an app:
 - **Built from your own game files.** DeadTune patches the stylesheet from your installed Deadlock and packs it into one addon. A game update never leaves stale copies behind; DeadTune rebuilds it.
 - **208 HUD ConVars** in the same place: crosshair style, minimap icons, overhead health bars, damage numbers. Settings that reveal extra enemy information are blocked.
 - **Conflict warnings** when another HUD mod (QoL Lite, QoL Lock) replaces the same file.
+- **Top bar page** (experimental): fade, grey or darken enemies out of vision (idea by NA-45), dead hero look, portrait size and gap, team colours, compact or hidden clock, soul lead and rejuvenator rows, and optional spawn timers, urn soul lead and purchase popups (ideas by Stovven and bonclide), all previewed live on a mock of the bar.
 
 ### Performance addons
 

@@ -22,6 +22,7 @@ mod settings;
 mod simple;
 mod state;
 mod theme;
+mod topbar_view;
 mod update;
 mod update_view;
 mod views;

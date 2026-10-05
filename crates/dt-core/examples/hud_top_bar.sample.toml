@@ -1,0 +1,15 @@
+# Experimental: the top bar's look and extras, untested in game. Same keys as the
+# profile's [hud.top_bar] table; every key is optional and defaults to the game's own.
+# missing_opacity_pct 10..=100, portrait_scale_pct 70..=130, portrait_gap_px 0..=24;
+# dead = "vanilla" | "grayscale" | "darken" | "faded";
+# clock, soul_lead, rejuv_charges = "vanilla" | "compact" | "hidden";
+# ally_color, enemy_color = "#RRGGBB".
+# spawn_timers, urn_lead and purchases add DeadTune's script to the top bar layout.
+[top_bar]
+missing_opacity_pct = 20
+missing_desaturate = true
+dead = "grayscale"
+soul_lead = "compact"
+spawn_timers = true
+urn_lead = true
+purchases = false

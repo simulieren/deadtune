@@ -1,0 +1,120 @@
+#DtSpawnTimers {
+	horizontal-align: center;
+	vertical-align: top;
+	margin-top: 40px;
+	flow-children: right;
+	ignore-parent-flow: true;
+	z-index: 3;
+}
+.DtTimer {
+	flow-children: right;
+	padding: 2px 7px;
+	margin: 0px 3px;
+	height: 20px;
+	background-color: #00000090;
+	border-radius: 4px;
+}
+.DtTimerIcon {
+	width: 13px;
+	height: 13px;
+	vertical-align: center;
+	margin-right: 4px;
+	background-size: contain;
+	background-repeat: no-repeat;
+	background-position: center;
+	wash-color: #ECE8E1;
+	opacity: 0.8;
+}
+#DtPowerupIcon {
+	background-image: url("s2r://panorama/images/hud/modifiers/icon_powerup.svg");
+}
+#DtRejuvIcon {
+	background-image: url("s2r://panorama/images/hud/icons/rejuvenator.vsvg");
+}
+.DtTimerLabel {
+	font-family: block;
+	font-size: 12px;
+	font-weight: semi-bold;
+	vertical-align: center;
+	color: #ECE8E1E0;
+}
+.DtTimer.DtSoon .DtTimerLabel {
+	color: #F0B341;
+}
+.DtTimer.DtNow .DtTimerLabel {
+	color: #74F06A;
+}
+#DtUrnLead {
+	horizontal-align: center;
+	vertical-align: center;
+	width: 56px;
+	height: 22px;
+	background-color: #00000090;
+	border-radius: 4px;
+}
+#DtUrnLeadLabel {
+	font-family: oracle;
+	font-size: 14px;
+	font-weight: bold;
+	text-align: center;
+	horizontal-align: center;
+	vertical-align: center;
+	color: #ECE8E1;
+}
+#DtUrnLead.DtAhead #DtUrnLeadLabel {
+	color: #74F06A;
+}
+#DtUrnLead.DtBehind #DtUrnLeadLabel {
+	color: #FF5757;
+}
+.DtPurchases {
+	ignore-parent-flow: true;
+	horizontal-align: center;
+	vertical-align: top;
+	margin-top: 132px;
+	flow-children: down;
+	width: 100px;
+	z-index: 5;
+}
+.DtPurchase {
+	margin-top: 2px;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background-color: #1B1B1BE0;
+	border: 1px solid #FFFFFF30;
+	horizontal-align: center;
+	opacity: 1;
+	transition-property: opacity;
+	transition-duration: 0.3s;
+}
+.DtPurchase.DtFading {
+	opacity: 0;
+}
+.DtPurchase.isWeaponPurchase {
+	border-color: #E7A14F;
+}
+.DtPurchase.isArmorPurchase {
+	border-color: #9CC66B;
+}
+.DtPurchase.isTechPurchase {
+	border-color: #C68BE6;
+}
+.DtPurchase.isTier4Purchase {
+	border-width: 2px;
+}
+.DtPurchaseName {
+	font-family: block;
+	font-size: 11px;
+	color: #ECE8E1;
+	white-space: nowrap;
+	max-width: 90px;
+	text-overflow: shrink;
+}
+.connectedToHideout #DtSpawnTimers,
+.gStreetBrawl #DtSpawnTimers,
+.gScoreboardOpen #DtSpawnTimers,
+.gStreetBrawl #DtUrnLead,
+.gScoreboardOpen .DtPurchases,
+.gShopOpen .DtPurchases {
+	visibility: collapse;
+}

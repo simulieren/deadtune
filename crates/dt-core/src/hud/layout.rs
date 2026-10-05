@@ -6,8 +6,10 @@ use super::css::CssError;
 use super::elements::{
     self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
 };
+use super::inject::LayoutEdit;
 use super::minimap_colors::{self, Color, IconId, MINIMAP_STYLE};
 use super::minimap_style::{MinimapStyle, StyleError};
+use super::topbar::{TOP_BAR_LAYOUT, TOP_BAR_STYLE, TopBarError, TopBarStyle};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -57,20 +59,41 @@ pub struct HudLayout {
     pub minimap_colors: BTreeMap<IconId, Color>,
     /// Experimental, untested in game: marker sizes, map opacity, frameless minimap.
     pub minimap: MinimapStyle,
+    /// Experimental, untested in game: the top bar's look and extras (`hud::topbar`).
+    #[serde(skip_serializing_if = "TopBarStyle::is_vanilla")]
+    pub top_bar: TopBarStyle,
     /// Advanced: raw CSS appended after the generated rules, keyed by style file path
     /// (`panorama/styles/hud.vcss_c`). Must parse with balanced braces.
     pub extra_css: BTreeMap<String, String>,
 }
 
-/// Minified CSS to append, per compiled style file inside the game VPK.
+/// Everything the addon changes, keyed by path inside the game VPK.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct StylePatch {
-    pub files: BTreeMap<String, String>,
+pub struct HudPatch {
+    /// Minified CSS appended to the game's own compiled stylesheet at this path.
+    pub styles: BTreeMap<String, String>,
+    /// Additions to the game's own layout at this path, rebuilt as text (`hud::inject`).
+    pub layouts: BTreeMap<String, LayoutEdit>,
+    /// Our own plaintext scripts and stylesheets under `inject::SCRIPTS_DIR` and
+    /// `inject::STYLES_DIR`.
+    pub own_files: BTreeMap<String, String>,
 }
 
-impl StylePatch {
+impl HudPatch {
     pub fn is_empty(&self) -> bool {
-        self.files.values().all(|css| css.is_empty())
+        self.styles.values().all(|css| css.is_empty())
+            && self.layouts.values().all(LayoutEdit::is_empty)
+            && self.own_files.is_empty()
+    }
+
+    /// Paths the addon will carry, in VPK order.
+    pub fn paths(&self) -> impl Iterator<Item = &str> {
+        self.styles
+            .iter()
+            .filter(|(_, css)| !css.is_empty())
+            .map(|(path, _)| path.as_str())
+            .chain(self.layouts.keys().map(String::as_str))
+            .chain(self.own_files.keys().map(String::as_str))
     }
 }
 
@@ -84,6 +107,8 @@ pub enum LayoutError {
     Opacity(ElementId, u8),
     #[error("minimap: {0}")]
     Minimap(#[from] StyleError),
+    #[error("top bar: {0}")]
+    TopBar(#[from] TopBarError),
     #[error("extra css for {0}: {1}")]
     ExtraCss(String, CssError),
 }
@@ -93,15 +118,16 @@ impl HudLayout {
         self.elements.values().all(|e| *e == ElementEdit::default())
             && self.minimap_colors.is_empty()
             && self.minimap.is_vanilla()
+            && self.top_bar.is_vanilla()
             && self.extra_css.values().all(|c| c.trim().is_empty())
     }
 }
 
 /// Validates and emits one rule per non-identity element (sorted by `ElementId`),
-/// one rule per minimap colour (sorted by `IconId`), the minimap style rules, then the
-/// minified extra CSS.
+/// one rule per minimap colour (sorted by `IconId`), the minimap style rules, the top
+/// bar's rules and files, then the minified extra CSS.
 /// Deterministic.
-pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
+pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
     let mut files: BTreeMap<String, String> = BTreeMap::new();
     for (&id, edit) in &layout.elements {
         validate(id, edit)?;
@@ -131,6 +157,17 @@ pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
     for (path, css) in layout.minimap.compile()? {
         files.entry(path.to_string()).or_default().push_str(&css);
     }
+    let top_bar = layout.top_bar.compile()?;
+    if !top_bar.css.is_empty() {
+        files
+            .entry(TOP_BAR_STYLE.to_string())
+            .or_default()
+            .push_str(&top_bar.css);
+    }
+    let mut layouts = BTreeMap::new();
+    if let Some(edit) = top_bar.layout {
+        layouts.insert(TOP_BAR_LAYOUT.to_string(), edit);
+    }
     for (path, css) in &layout.extra_css {
         let css = super::css::parse_rules(css)
             .and_then(|_| super::css::minify(css))
@@ -139,7 +176,11 @@ pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
             files.entry(path.clone()).or_default().push_str(&css);
         }
     }
-    Ok(StylePatch { files })
+    Ok(HudPatch {
+        styles: files,
+        layouts,
+        own_files: top_bar.own_files,
+    })
 }
 
 fn validate(id: ElementId, edit: &ElementEdit) -> Result<(), LayoutError> {
@@ -293,7 +334,7 @@ mod tests {
     fn hud_css(layout: &HudLayout) -> String {
         compile(layout)
             .expect("valid layout")
-            .files
+            .styles
             .get(HUD_STYLE)
             .cloned()
             .unwrap_or_default()
@@ -304,12 +345,12 @@ mod tests {
         assert!(
             compile(&HudLayout::default())
                 .expect("valid")
-                .files
+                .styles
                 .is_empty()
         );
         let all_default = layout(&[(ElementId::Minimap, edit()), (ElementId::Chat, edit())]);
         assert!(all_default.is_vanilla());
-        assert!(compile(&all_default).expect("valid").files.is_empty());
+        assert!(compile(&all_default).expect("valid").is_empty());
     }
 
     #[test]
@@ -537,14 +578,14 @@ mod tests {
         );
         let patch = compile(&l).expect("valid");
         assert_eq!(
-            patch.files[HUD_STYLE],
+            patch.styles[HUD_STYLE],
             "#Chat{opacity:0.5;}#hud_signature{wash-color:red;}"
         );
         assert_eq!(
-            patch.files["panorama/styles/chat.vcss_c"],
+            patch.styles["panorama/styles/chat.vcss_c"],
             "CitadelChat{width:400px;}"
         );
-        assert!(!patch.files.contains_key("panorama/styles/empty.vcss_c"));
+        assert!(!patch.styles.contains_key("panorama/styles/empty.vcss_c"));
     }
 
     #[test]
@@ -736,9 +777,9 @@ mod tests {
         );
         assert!(!l.is_vanilla());
         let patch = compile(&l).expect("valid");
-        assert_eq!(patch.files[HUD_STYLE], "#Chat{opacity:0.5;}");
+        assert_eq!(patch.styles[HUD_STYLE], "#Chat{opacity:0.5;}");
         assert_eq!(
-            patch.files[MINIMAP_STYLE],
+            patch.styles[MINIMAP_STYLE],
             "#hud_minimap .map_button.player.enemy #BackgroundImage{background-color:#00D5FF80;}\
              #hud_minimap .map_button.enemy.boss .boss_image{wash-color:#00D5FF;}\
              #hud_minimap{opacity:0.9;}"
@@ -755,7 +796,7 @@ mod tests {
             },
         )]);
         let patch = compile(&l).expect("valid");
-        assert!(!patch.files.contains_key(MINIMAP_STYLE), "{patch:?}");
+        assert!(!patch.styles.contains_key(MINIMAP_STYLE), "{patch:?}");
         l.minimap_colors
             .insert(IconId::AllyHero, Color([0, 0x8C, 0xFF, 255]));
         l.minimap_colors.clear();

@@ -16,6 +16,6 @@ pub mod svg;
 pub mod vtex;
 
 pub use addon::{AddonError, Progress, Stats, build_texture_addon};
-pub use decode::RgbaImage;
+pub use decode::{DecodeError, RgbaImage, decode, decode_mip, thumbnail};
 pub use select::{Category, Factor, TextureDownscale};
 pub use vtex::{SkipReason, Vtex, VtexError, downscale};

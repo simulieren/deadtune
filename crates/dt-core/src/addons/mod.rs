@@ -18,6 +18,7 @@ pub mod guard;
 pub mod install;
 pub mod native_blur;
 pub mod native_particles;
+pub mod native_sinner;
 pub mod particles;
 pub mod sources;
 pub mod textures;

@@ -13,6 +13,9 @@ use crate::theme::{ACCENT, BORDER, RAIL, TEXT, WARN, WEAK};
 use crate::widgets;
 
 const PREVIEW: f32 = 230.0;
+// TODO: improve the minimap preview before showing it again: draw the real map and
+// icon textures instead of the hand-placed mock, so it matches what the game shows.
+const SHOW_PREVIEW: bool = false;
 const GROUPS: [(&str, &[IconId]); 3] = [
     (
         "Heroes",
@@ -77,7 +80,10 @@ enum Action {
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
     let mut actions = Vec::new();
-    if ui.available_width() >= 760.0 {
+    if !SHOW_PREVIEW {
+        official(ui, state, &mut actions);
+        icons(ui, state, &mut actions);
+    } else if ui.available_width() >= 760.0 {
         ui.horizontal_top(|ui| {
             let gap = 12.0;
             let left = ui.available_width() - PREVIEW - 28.0 - gap;

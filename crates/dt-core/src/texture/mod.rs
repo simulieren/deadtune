@@ -5,6 +5,7 @@
 //! restores full quality.
 
 pub mod addon;
+pub mod resample;
 pub mod select;
 pub mod vtex;
 

@@ -18,6 +18,7 @@ pub mod guard;
 pub mod install;
 pub mod native_blur;
 pub mod native_particles;
+pub mod native_scope;
 pub mod native_sinner;
 pub mod particles;
 pub mod sources;
@@ -315,6 +316,8 @@ pub enum AddonError {
     NotRecognised(PathBuf),
     #[error("texture build: {0}")]
     TextureBuild(#[from] crate::texture::AddonError),
+    #[error(transparent)]
+    Scope(#[from] native_scope::ScopeError),
     #[error("{file} does not match the pinned upstream file (sha256 {expected}, got {got})")]
     ShaMismatch {
         file: String,

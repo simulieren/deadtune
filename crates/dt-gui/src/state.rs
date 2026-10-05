@@ -1080,6 +1080,12 @@ impl AppState {
         }
     }
 
+    /// Whether the preset or the profile gives `name` a value, so a `+name` launch option
+    /// competes with it.
+    pub fn sets_convar(&self, name: &str) -> bool {
+        self.profile.convars.set.contains_key(name) || self.base_value(name).is_some()
+    }
+
     fn base_value(&self, name: &str) -> Option<&str> {
         self.base
             .as_ref()
@@ -3485,6 +3491,14 @@ mod tests {
         );
         state.reset_to_preset();
         assert!(state.profile.video.is_empty());
+    }
+
+    #[test]
+    fn sets_convar_covers_profile_and_preset() {
+        let (_dir, mut state) = state();
+        assert!(!state.sets_convar("definitely_not_a_convar"));
+        state.set_convar("r_farz", "6000".into()).unwrap();
+        assert!(state.sets_convar("r_farz"));
     }
 
     #[test]

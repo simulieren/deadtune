@@ -56,6 +56,7 @@ enum Action {
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
+    crate::hud_view::show_layout_note(ui, state, dt_core::hud::elements::ElementId::TopBar);
     let mut actions = Vec::new();
     toolbar(ui, state, &mut actions);
     ui.add_space(6.0);
@@ -100,7 +101,7 @@ fn toolbar(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui
-                .add_enabled(n > 0, egui::Button::new("Reset all"))
+                .add_enabled(n > 0, egui::Button::new("Reset top bar"))
                 .on_hover_text("Back to the game's own top bar")
                 .clicked()
             {
@@ -250,7 +251,11 @@ fn portraits_card(ui: &mut Ui, s: &mut TopBarStyle) {
 
 fn colours_card(ui: &mut Ui, s: &mut TopBarStyle) {
     card(ui, "Team colours", None, |ui| {
-        widgets::hint(ui, "Health bars and souls tags of each side.");
+        widgets::hint(
+            ui,
+            "Health bars and souls tags of each side. With the game's own enemy colour \
+             (Minimap page) turned on, it may win for enemies; untested.",
+        );
         ui.add_space(4.0);
         color_row(ui, "Allies", &mut s.ally_color, ALLY_HEALTH);
         color_row(ui, "Enemies", &mut s.enemy_color, ENEMY_HEALTH);

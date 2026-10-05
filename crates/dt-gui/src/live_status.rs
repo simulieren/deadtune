@@ -226,7 +226,8 @@ fn launch_menu(ui: &mut Ui, state: &mut AppState, fit: Fit) {
             .button("Safe mode: launch without addons")
             .on_hover_text(
                 "Removes every DeadTune pak from game/citadel/addons right now (other mods stay), \
-                 remembers what was on, and starts Deadlock. Restore addons from this menu later.",
+                 remembers what was on, and starts Deadlock. Restore addons from this menu later. \
+                 Your settings stay; Ranked-safe mode on Safety & setup also resets them.",
             )
             .clicked()
         {

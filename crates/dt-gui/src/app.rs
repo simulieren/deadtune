@@ -15,7 +15,7 @@ use crate::relaunch::{self, Relaunch};
 use crate::settings::{Settings, View};
 use crate::state::{AppState, HudPage, MinimapPreset, Mode, Section, Status, Tab, TopBarPreview};
 use crate::update::{self, UpdateState};
-use crate::{Args, advanced, compact, profiles, simple, views};
+use crate::{Args, advanced, compact, profiles, simple};
 use dt_core::hud::topbar::TopBarPreset;
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
@@ -351,6 +351,12 @@ impl App {
         if launch::is_game_running() {
             return;
         }
+        if state.ranked_safe_blocks_auto_profile() {
+            state.status = Some(Status::Info(format!(
+                "Ranked-safe mode is on, so the {name} profile for {source:?} power was not switched in."
+            )));
+            return;
+        }
         let Some(profile) = profiles::load(&state.profiles_dir(), &name) else {
             state.status = Some(Status::Error(format!("auto profile {name} not found")));
             return;
@@ -440,12 +446,7 @@ impl App {
             && job.frames == 5
             && let Screen::Main(state) = &mut self.screen
         {
-            match state.settings.view {
-                View::Simple => simple::apply(ctx, state),
-                View::Advanced => {
-                    views::run_apply(ctx, state);
-                }
-            }
+            simple::apply(ctx, state);
         }
         // `DEADTUNE_FAKE_TRIAL=verified` marks whatever Apply just installed as started with.
         if job.frames == 6

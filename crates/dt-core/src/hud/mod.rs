@@ -15,6 +15,7 @@ pub mod crc32;
 pub mod css;
 pub mod elements;
 pub mod install;
+pub mod kv3;
 pub mod layout;
 pub mod minimap_colors;
 pub mod minimap_style;

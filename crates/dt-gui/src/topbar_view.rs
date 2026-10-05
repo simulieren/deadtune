@@ -1,7 +1,9 @@
-//! Top bar page (simple-view section, advanced HUD tab): a painted mock of the in-game
-//! top bar that follows every option as it changes, presets, and the options in cards.
+//! Top bar page (simple-view section, advanced HUD tab): a preview of the in-game top bar,
+//! drawn from the game's portraits and icons when they load and painted shapes otherwise,
+//! that follows every option as it changes; presets, and the options in cards.
 //! Edits live in `profile.hud.top_bar` (`hud::topbar`) and go out with the normal Apply.
 
+use dt_core::hud::art::{self, Art};
 use dt_core::hud::minimap_colors::Color;
 use dt_core::hud::topbar::{
     DeadLook, MISSING_OPACITY_RANGE, PORTRAIT_GAP_RANGE, PORTRAIT_SCALE_RANGE, TopBarPreset,
@@ -12,6 +14,7 @@ use eframe::egui::{
     Sense, Shape, Stroke, StrokeKind, Ui, pos2, vec2,
 };
 
+use crate::hud_art::Images;
 use crate::state::{AppState, TopBarPreview};
 use crate::theme::{self, ACCENT, RAIL, TEXT, WARN, WEAK};
 use crate::widgets;
@@ -60,7 +63,10 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     let mut actions = Vec::new();
     toolbar(ui, state, &mut actions);
     ui.add_space(6.0);
-    mock_card(ui, state, &mut actions);
+    let ctx = ui.ctx().clone();
+    crate::hud_art::with(&ctx, state, |state, images| {
+        mock_card(ui, state, images, &mut actions);
+    });
     ui.add_space(6.0);
     controls(ui, state, &mut actions);
     ui.add_space(4.0);
@@ -111,7 +117,7 @@ fn toolbar(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
     });
 }
 
-fn mock_card(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
+fn mock_card(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
     let style = &state.profile.hud.top_bar;
     let preview = state.ui.top_bar_preview;
     widgets::card(ui, |ui| {
@@ -138,11 +144,22 @@ fn mock_card(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
         let width = ui.available_width();
         let height = (width / BAR_WIDTH * BAR_HEIGHT).max(60.0);
         let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
-        bar(&ui.painter().with_clip_rect(rect), rect, style, preview);
+        let real = bar(
+            &ui.painter().with_clip_rect(rect),
+            rect,
+            style,
+            preview,
+            images,
+        );
         ui.add_space(2.0);
         widgets::hint(
             ui,
-            "A mock-up with stand-in heroes. The game draws the real portraits, names and numbers.",
+            if real {
+                "Your game's portraits and icons with the options above; the heroes and numbers \
+                 are examples."
+            } else {
+                "A mock-up with stand-in heroes. The game draws the real portraits, names and numbers."
+            },
         );
     });
 }
@@ -534,8 +551,15 @@ impl Look {
     }
 }
 
-/// Paints the mock into `rect`. Deterministic for a style and preview.
-fn bar(p: &Painter, rect: Rect, style: &TopBarStyle, preview: TopBarPreview) {
+/// Paints the preview into `rect`. Deterministic for a style, preview and the pictures
+/// ready; true when the portraits are the game's.
+fn bar(
+    p: &Painter,
+    rect: Rect,
+    style: &TopBarStyle,
+    preview: TopBarPreview,
+    images: &mut Images,
+) -> bool {
     let k = rect.width() / BAR_WIDTH;
     let at = |x: f32, y: f32| pos2(rect.left() + x * k, rect.top() + y * k);
     p.rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(28, 30, 34));
@@ -549,13 +573,20 @@ fn bar(p: &Painter, rect: Rect, style: &TopBarStyle, preview: TopBarPreview) {
     let ps = f32::from(style.portrait_scale_pct) / 100.0;
     let cell = PORTRAIT_WIDTH * ps + f32::from(style.portrait_gap_px) * 2.0;
     let centre = BAR_WIDTH / 2.0;
-    for (i, (name, hue)) in ALLIES.iter().enumerate() {
+    let mut real = false;
+    for (i, ((name, hue), hero)) in ALLIES.iter().zip(&art::ALLIES).enumerate() {
         let x = centre - CENTRE_WIDTH / 2.0 - cell * (ALLIES.len() - i) as f32 + cell / 2.0;
         let dead = preview.dead_hero && i == DEAD_ALLY;
         let look = if dead { Look::dead(style) } else { Look::PLAIN };
-        portrait(p, at, k, x, name, *hue, false, style, look, dead, true);
+        let hero = Stand {
+            name,
+            hue: *hue,
+            art: hero.portrait,
+            enemy: false,
+        };
+        real |= portrait(p, images, at, k, x, hero, style, look, dead, true);
     }
-    for (i, (name, hue)) in ENEMIES.iter().enumerate() {
+    for (i, ((name, hue), hero)) in ENEMIES.iter().zip(&art::ENEMIES).enumerate() {
         let x = centre + CENTRE_WIDTH / 2.0 + cell * i as f32 + cell / 2.0;
         let missing = preview.missing_enemy && i == MISSING_ENEMY;
         let look = if missing {
@@ -563,28 +594,64 @@ fn bar(p: &Painter, rect: Rect, style: &TopBarStyle, preview: TopBarPreview) {
         } else {
             Look::PLAIN
         };
-        portrait(p, at, k, x, name, *hue, true, style, look, false, !missing);
+        let hero = Stand {
+            name,
+            hue: *hue,
+            art: hero.portrait,
+            enemy: true,
+        };
+        real |= portrait(p, images, at, k, x, hero, style, look, false, !missing);
         if style.purchases && i == PURCHASE_ENEMY {
             purchase_popup(p, at, k, x, ps);
         }
     }
-    centre_block(p, at, k, style);
+    centre_block(p, images, at, k, style);
+    real
 }
 
+/// One example hero: initials and a colour for the painted coin, the portrait otherwise.
+#[derive(Clone, Copy)]
+struct Stand<'a> {
+    name: &'a str,
+    hue: Color32,
+    art: Art,
+    enemy: bool,
+}
+
+/// `art` in `rect` if it is ready; false so the caller paints its shape instead.
+fn icon(
+    p: &Painter,
+    images: &mut Images,
+    art: Art,
+    centre: Pos2,
+    side: f32,
+    tint: Color32,
+) -> bool {
+    let [w, h] = art.size.map(f32::from);
+    let size = vec2(w, h) * (side / w.max(h));
+    images.paint(p, art, Rect::from_center_size(centre, size), tint)
+}
+
+/// Paints one portrait; true when the hero's picture is the game's.
 #[allow(clippy::too_many_arguments)]
 fn portrait(
     p: &Painter,
+    images: &mut Images,
     at: impl Fn(f32, f32) -> Pos2,
     k: f32,
     x: f32,
-    name: &str,
-    hue: Color32,
-    enemy: bool,
+    hero: Stand,
     style: &TopBarStyle,
     look: Look,
     dead: bool,
     health_visible: bool,
-) {
+) -> bool {
+    let Stand {
+        name,
+        hue,
+        art: face,
+        enemy,
+    } = hero;
     let ps = f32::from(style.portrait_scale_pct) / 100.0;
     let radius = 34.0 * ps * k;
     let centre = at(x, 58.0 * ps + 4.0);
@@ -595,20 +662,44 @@ fn portrait(
         style.ally_color.map_or(ALLY_HEALTH, to_color32)
     };
 
-    let coin = if dead { Color32::from_gray(40) } else { hue };
-    p.circle_filled(centre, radius, look.apply(coin));
+    let shown = if dead {
+        Look {
+            wash: 0.8,
+            gray: true,
+            ..look
+        }
+    } else {
+        look
+    };
+    p.circle_filled(
+        centre,
+        radius,
+        shown.apply(if dead { Color32::from_gray(40) } else { team }),
+    );
+    let real = images.paint_disc(p, face, centre, radius * 0.94, shown.apply(Color32::WHITE));
+    if real && shown.gray {
+        p.circle_filled(
+            centre,
+            radius,
+            Color32::from_rgba_unmultiplied(110, 110, 110, 130),
+        );
+    }
+    if !real {
+        let coin = if dead { Color32::from_gray(40) } else { hue };
+        p.circle_filled(centre, radius, look.apply(coin));
+        let initials = if dead { "" } else { name };
+        p.text(
+            centre,
+            Align2::CENTER_CENTER,
+            initials,
+            FontId::new((20.0 * ps * k).max(6.0), theme::semibold()),
+            look.apply(OFF_WHITE),
+        );
+    }
     p.circle_stroke(
         centre,
         radius,
         Stroke::new(2.0 * k, look.apply(team.gamma_multiply(0.9))),
-    );
-    let initials = if dead { "" } else { name };
-    p.text(
-        centre,
-        Align2::CENTER_CENTER,
-        initials,
-        FontId::new((20.0 * ps * k).max(6.0), theme::semibold()),
-        look.apply(OFF_WHITE),
     );
     if dead {
         p.text(
@@ -633,11 +724,22 @@ fn portrait(
         );
         let fill = Rect::from_min_max(pos2(bar.left(), bar.top() + h * 0.3), bar.max);
         p.rect_filled(fill, CornerRadius::same(2), look.apply(health_color));
+        let border = bar.expand2(vec2(3.0, 3.0) * ps * k);
+        images.paint(p, art::PORTRAIT_HEALTH, border, look.apply(Color32::WHITE));
     }
 
     let dot = pos2(centre.x + radius * 0.75, centre.y - radius * 0.75);
     p.circle_filled(dot, 6.0 * ps * k, look.apply(Color32::from_rgb(10, 10, 12)));
-    p.circle_filled(dot, 4.0 * ps * k, look.apply(team));
+    if !icon(
+        p,
+        images,
+        art::ULTIMATE,
+        dot,
+        10.0 * ps * k,
+        look.apply(OFF_WHITE),
+    ) {
+        p.circle_filled(dot, 4.0 * ps * k, look.apply(team));
+    }
 
     if style.show_levels {
         let badge = pos2(centre.x, centre.y + radius - 2.0 * k);
@@ -682,6 +784,7 @@ fn portrait(
             tag_look.apply(Color32::from_rgb(20, 18, 14)),
         );
     }
+    real
 }
 
 fn purchase_popup(p: &Painter, at: impl Fn(f32, f32) -> Pos2, k: f32, x: f32, ps: f32) {
@@ -706,7 +809,13 @@ fn purchase_popup(p: &Painter, at: impl Fn(f32, f32) -> Pos2, k: f32, x: f32, ps
     );
 }
 
-fn centre_block(p: &Painter, at: impl Fn(f32, f32) -> Pos2, k: f32, style: &TopBarStyle) {
+fn centre_block(
+    p: &Painter,
+    images: &mut Images,
+    at: impl Fn(f32, f32) -> Pos2,
+    k: f32,
+    style: &TopBarStyle,
+) {
     let cx = BAR_WIDTH / 2.0;
     let clock_scale = match style.clock {
         Treatment::Vanilla => 1.0,
@@ -740,25 +849,22 @@ fn centre_block(p: &Painter, at: impl Fn(f32, f32) -> Pos2, k: f32, style: &TopB
                 CornerRadius::same(4),
                 Color32::from_rgba_unmultiplied(0, 0, 0, 144),
             );
-            let icon = pos2(rect.left() + 11.0 * k, rect.center().y);
+            let spot = pos2(rect.left() + 11.0 * k, rect.center().y);
+            let tint = OFF_WHITE.gamma_multiply(0.8);
             if i == 0 {
                 let s = 5.0 * k;
                 p.add(Shape::convex_polygon(
                     vec![
-                        icon + vec2(0.0, -s),
-                        icon + vec2(s, 0.0),
-                        icon + vec2(0.0, s),
-                        icon + vec2(-s, 0.0),
+                        spot + vec2(0.0, -s),
+                        spot + vec2(s, 0.0),
+                        spot + vec2(0.0, s),
+                        spot + vec2(-s, 0.0),
                     ],
-                    OFF_WHITE.gamma_multiply(0.8),
+                    tint,
                     Stroke::NONE,
                 ));
-            } else {
-                p.circle_stroke(
-                    icon,
-                    4.5 * k,
-                    Stroke::new(1.5 * k, OFF_WHITE.gamma_multiply(0.8)),
-                );
+            } else if !icon(p, images, art::REJUV_ICON, spot, 13.0 * k, tint) {
+                p.circle_stroke(spot, 4.5 * k, Stroke::new(1.5 * k, tint));
             }
             p.text(
                 pos2(rect.left() + 22.0 * k, rect.center().y),
@@ -796,10 +902,21 @@ fn centre_block(p: &Painter, at: impl Fn(f32, f32) -> Pos2, k: f32, style: &TopB
             font,
             OFF_WHITE,
         );
-        let icon = 7.0 * lead_scale * k;
+        let side = 7.0 * lead_scale * k;
         let spread = if style.urn_lead { 40.0 } else { 28.0 };
-        p.circle_filled(at(cx - spread * lead_scale, y), icon, AMBER);
-        p.circle_filled(at(cx + spread * lead_scale, y), icon, SAPPHIRE);
+        for (dx, team, color) in [(-spread, 0, AMBER), (spread, 1, SAPPHIRE)] {
+            let spot = at(cx + dx * lead_scale, y);
+            if !icon(
+                p,
+                images,
+                art::TEAM_ICONS[team],
+                spot,
+                side * 3.0,
+                Color32::WHITE,
+            ) {
+                p.circle_filled(spot, side, color);
+            }
+        }
         if style.urn_lead {
             let rect = Rect::from_center_size(at(cx, y), vec2(48.0 * k, 20.0 * k));
             p.rect_filled(
@@ -826,6 +943,9 @@ fn centre_block(p: &Painter, at: impl Fn(f32, f32) -> Pos2, k: f32, style: &TopB
         for (dx, color) in [(-56.0, AMBER), (56.0, SAPPHIRE)] {
             let c = at(cx + dx * rejuv_scale, y);
             let s = 9.0 * rejuv_scale * k;
+            if icon(p, images, art::TEAM_REJUV, c, 40.0 * rejuv_scale * k, color) {
+                continue;
+            }
             p.add(Shape::convex_polygon(
                 vec![
                     c + vec2(0.0, -s),
@@ -885,9 +1005,15 @@ mod tests {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 300.0))),
                 ..Default::default()
             };
+            let (_dir, mut state) = crate::state::testutil::state();
             let mut output = ctx.run_ui(input, |ui| {
                 let rect = Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 130.0));
-                bar(ui.painter(), rect, style, preview);
+                crate::hud_art::with(ui.ctx(), &mut state, |_, images| {
+                    assert!(
+                        !bar(ui.painter(), rect, style, preview, images),
+                        "no game, no pictures"
+                    );
+                });
             });
             output.textures_delta.clear();
             output.shapes.len()

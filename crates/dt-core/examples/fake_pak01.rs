@@ -7,7 +7,8 @@
 //! on, the HUD and health stylesheets (the HUD stylesheet standing in for every stylesheet),
 //! and a vector icon for UI image overrides (a Panorama container laid out as DeadTune reads
 //! it, not a copy of the game's file), plus a few dozen generated stand-in images (shapes and
-//! gradients in the game's folders, and one undecodable file) for the UI images page.
+//! gradients in the game's folders, and one undecodable file) for the UI images page, and one
+//! at every path the HUD previews draw (`hud::art`).
 //!
 //! cargo run -p dt-core --example fake_pak01 -- <out pak01_dir.vpk>
 
@@ -17,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use dt_core::addons::{native_blur, native_particles, native_scope, native_sinner};
 use dt_core::hud::apples_tunnels::MINIMAP_LAYOUT;
+use dt_core::hud::art;
 use dt_core::hud::crc32::crc32;
 use dt_core::hud::elements::HUD_STYLE;
 use dt_core::hud::health_style::{HEALTH_CONTAINER_STYLE, HEALTH_STYLE};
@@ -114,7 +116,7 @@ fn vector_icon(svg: &str) -> Vec<u8> {
     .to_bytes()
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Shape {
     Ring,
     Disc,
@@ -122,6 +124,8 @@ enum Shape {
     Square,
     Bar,
     Portrait,
+    Map,
+    Frame,
 }
 
 /// A generated stand-in picture: `shape` in `rgb` on transparency, softly edged.
@@ -145,6 +149,23 @@ fn picture(width: u32, height: u32, shape: Shape, rgb: [u8; 3]) -> RgbaImage {
                     let body = (u * u * 0.6 + (v - 0.95).powi(2)).sqrt();
                     let figure = head < 0.38 || body < 0.62;
                     (1.0, if figure { 1.0 } else { 0.35 + 0.2 * (1.0 - v) })
+                }
+                Shape::Frame => {
+                    let notch = v < -0.9 && u.abs() < 0.08;
+                    (
+                        edge(0.05 - (r - 0.93).abs()).max(if notch { 1.0 } else { 0.0 }),
+                        0.8 + 0.2 * v,
+                    )
+                }
+                Shape::Map => {
+                    let lane = [-0.62f32, -0.2, 0.2, 0.62]
+                        .iter()
+                        .any(|x| (u - x * (1.0 - 0.25 * v.abs())).abs() < 0.035);
+                    let mid = (r - 0.16).abs() < 0.03 || v.abs() < 0.02 && u.abs() < 0.9;
+                    (
+                        edge(0.97 - r),
+                        if lane || mid { 1.0 } else { 0.42 + 0.1 * u * v },
+                    )
                 }
             };
             let c = |ch: u8| (f32::from(ch) * shade).min(255.0) as u8;
@@ -268,6 +289,75 @@ fn stand_in_images(template: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, Box<dyn
     Ok(out)
 }
 
+/// A stand-in at every path the HUD previews draw (`hud::art`), sized like the game's CSS
+/// box and coloured from the path, so the previews show their image mode without the game.
+fn preview_stand_ins(template: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, Box<dyn Error>> {
+    let mut out = BTreeMap::new();
+    for a in art::all() {
+        let seed = dt_core::hud::crc32::crc32(a.path.as_bytes()).to_le_bytes();
+        let rgb = [seed[0] | 0x50, seed[1] | 0x50, seed[2] | 0x50];
+        if a.path.ends_with(".vsvg_c") {
+            let [w, h] = a.size;
+            let fill = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
+            let (wf, hf) = (f32::from(w), f32::from(h));
+            let short = wf.min(hf);
+            let frame = a.path.contains("healthbar") || a.path.contains("backer");
+            let dot = if frame {
+                String::new()
+            } else {
+                format!(
+                    r#"<circle cx="{}" cy="{}" r="{}" fill="{fill}"/>"#,
+                    wf / 2.0,
+                    hf / 2.0,
+                    short * 0.15
+                )
+            };
+            let svg = format!(
+                r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}"><rect x="{x}" y="{y}" width="{iw}" height="{ih}" rx="{r}" fill="none" stroke="{fill}" stroke-width="{sw}"/>{dot}</svg>"##,
+                x = wf * 0.1,
+                y = hf * 0.1,
+                iw = wf * 0.8,
+                ih = hf * 0.8,
+                r = short * 0.25,
+                sw = short * 0.1,
+            );
+            out.insert(a.path.to_string(), vector_icon(&svg));
+            continue;
+        }
+        let shape = if a.path.contains("/minimap/base/") {
+            Shape::Map
+        } else if a.path.contains("_vertical_") {
+            Shape::Portrait
+        } else if a.path.contains("compass_frame") {
+            Shape::Frame
+        } else if a.path.contains("boss_health") {
+            Shape::Ring
+        } else if a.path.contains("_mm_") || a.path.contains("marker") {
+            Shape::Disc
+        } else if a.path.contains("healthbar") {
+            Shape::Square
+        } else {
+            Shape::Diamond
+        };
+        let rgb = match shape {
+            Shape::Map => [96, 118, 104],
+            Shape::Frame => [150, 156, 170],
+            Shape::Ring => [236, 232, 225],
+            _ => rgb,
+        };
+        let [w, h] = a.size.map(u32::from);
+        let big = matches!(shape, Shape::Map | Shape::Frame);
+        let k = (if big { 512 } else { 64 }) as f32 / w.max(h) as f32;
+        let k = k.max(1.0);
+        let (w, h) = ((w as f32 * k) as u32, (h as f32 * k) as u32);
+        out.insert(
+            a.path.to_string(),
+            encode::replace(template, &picture(w, h, shape, rgb), Fit::Own)?,
+        );
+    }
+    Ok(out)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let out = std::env::args()
         .nth(1)
@@ -317,6 +407,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     ]);
     let mut files = files;
     files.extend(stand_in_images(&pak89.read(native_scope::TEXTURE)?)?);
+    files.extend(preview_stand_ins(&pak89.read(native_scope::TEXTURE)?)?);
     files.insert(VECTOR_ICON.to_string(), vector_icon(VECTOR_SVG));
     for style in [HUD_STYLE, HEALTH_STYLE, HEALTH_CONTAINER_STYLE] {
         files.insert(

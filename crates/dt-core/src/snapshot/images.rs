@@ -4,6 +4,7 @@
 //! optional zip. File names come from `export_names`, the same names a snapshot's `text/`
 //! folder uses (`decode::Kind::text_path`).
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::BufWriter;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -39,9 +40,74 @@ pub enum ImageSource {
         root: PathBuf,
         label: String,
     },
+    /// Decoded pictures under their game paths: a "Save all images" export or a snapshot's
+    /// `text/`. `names` is the export manifest's game path -> files, when it has one.
+    Decoded {
+        root: PathBuf,
+        names: BTreeMap<String, Vec<String>>,
+        label: String,
+    },
+    /// Several sources asked in turn; the first that has an image wins.
+    Chain(Vec<ImageSource>),
+}
+
+/// Where a game image was found: its compiled file, or a decoded PNG or SVG on disk.
+pub enum Found {
+    Compiled(Vec<u8>),
+    Decoded(PathBuf),
 }
 
 impl ImageSource {
+    /// A decoded-image folder, reading file names from its `manifest.json` when it has one
+    /// and from `export_names` otherwise.
+    pub fn decoded(root: &Path) -> ImageSource {
+        let names = ImagesManifest::load(root)
+            .map(|m| {
+                m.images
+                    .into_iter()
+                    .filter(|i| !i.files.is_empty())
+                    .map(|i| (i.path, i.files))
+                    .collect()
+            })
+            .unwrap_or_default();
+        ImageSource::Decoded {
+            root: root.to_path_buf(),
+            names,
+            label: root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// The image at `game_path`, compiled or decoded, from the first source that has it.
+    pub fn find(&self, game_path: &str) -> Result<Found, String> {
+        match self {
+            ImageSource::Chain(sources) => {
+                let mut last = Err("no image source".to_string());
+                for source in sources {
+                    last = source.find(game_path);
+                    if last.is_ok() {
+                        break;
+                    }
+                }
+                last
+            }
+            ImageSource::Decoded { root, names, .. } => names
+                .get(game_path)
+                .cloned()
+                .unwrap_or_else(|| export_names(game_path))
+                .iter()
+                .map(|f| root.join(f))
+                .find(|f| f.is_file())
+                .map(Found::Decoded)
+                .ok_or_else(|| "not in the image folder".to_string()),
+            ImageSource::Game(_) | ImageSource::Folder { .. } => {
+                self.read(game_path).map(Found::Compiled)
+            }
+        }
+    }
+
     pub fn game(paths: &GamePaths) -> Result<ImageSource, SnapshotError> {
         let pak = paths.citadel_dir.join(GAME_PAK);
         if !pak.is_file() {
@@ -68,6 +134,12 @@ impl ImageSource {
             ImageSource::Folder { root, .. } => {
                 std::fs::read(root.join(path)).map_err(|e| e.to_string())
             }
+            ImageSource::Decoded { .. } => Err("this folder holds decoded pictures only".into()),
+            ImageSource::Chain(sources) => sources
+                .iter()
+                .map(|s| s.read(path))
+                .find(Result::is_ok)
+                .unwrap_or_else(|| Err("no source has this file".into())),
         }
     }
 
@@ -76,6 +148,10 @@ impl ImageSource {
         match self {
             ImageSource::Game(_) => "From your game files".into(),
             ImageSource::Folder { label, .. } => format!("Previewing snapshot {label}"),
+            ImageSource::Decoded { label, .. } => format!("Previewing images from {label}"),
+            ImageSource::Chain(sources) => sources
+                .first()
+                .map_or_else(|| "No image source".into(), ImageSource::describe),
         }
     }
 
@@ -94,6 +170,28 @@ impl ImageSource {
                 walk(root, &root.join(IMAGES_ROOT), &mut out);
                 out
             }
+            ImageSource::Decoded { root, .. } => {
+                let mut files = Vec::new();
+                walk(root, &root.join(IMAGES_ROOT), &mut files);
+                let vectors: BTreeSet<&str> = files
+                    .iter()
+                    .filter_map(|f| f.strip_suffix(".svg"))
+                    .collect();
+                files
+                    .iter()
+                    .filter_map(|f| match f.strip_suffix(".png") {
+                        Some(stem) if !vectors.contains(stem) => Some(format!("{stem}.vtex_c")),
+                        Some(_) => None,
+                        None => f.strip_suffix(".svg").map(|stem| format!("{stem}.vsvg_c")),
+                    })
+                    .collect()
+            }
+            ImageSource::Chain(sources) => sources
+                .iter()
+                .flat_map(ImageSource::paths)
+                .collect::<BTreeSet<String>>()
+                .into_iter()
+                .collect(),
         }
     }
 
@@ -117,6 +215,10 @@ impl ImageSource {
                 .and_then(|p| Manifest::load(p).ok())
                 .or_else(|| Manifest::load(root).ok())
                 .and_then(|m| m.buildid),
+            ImageSource::Decoded { root, .. } => {
+                ImagesManifest::load(root).ok().and_then(|m| m.buildid)
+            }
+            ImageSource::Chain(sources) => sources.iter().find_map(|s| s.buildid(paths)),
         }
     }
 }
@@ -468,6 +570,8 @@ pub fn export_all(
         source: match source {
             ImageSource::Game(_) => "game".into(),
             ImageSource::Folder { label, .. } => format!("snapshot {label}"),
+            ImageSource::Decoded { label, .. } => format!("images {label}"),
+            ImageSource::Chain(_) => "several".into(),
         },
         folder,
         exported_at: now,
@@ -595,6 +699,78 @@ mod tests {
             zip_path(Path::new("/x/ui-images-1-2026-10-05")),
             Path::new("/x/ui-images-1-2026-10-05.zip")
         );
+    }
+
+    fn found_file(source: &ImageSource, path: &str) -> PathBuf {
+        match source.find(path) {
+            Ok(Found::Decoded(file)) => file,
+            Ok(Found::Compiled(_)) => panic!("{path} came compiled"),
+            Err(e) => panic!("{path}: {e}"),
+        }
+    }
+
+    #[test]
+    fn a_decoded_folder_and_a_chain_find_images_by_game_path() {
+        let (tmp, paths) = fake_install(&vpk::write(&pak_files()), "4242");
+        let export = tmp.path().join("export");
+        let write = |rel: &str| {
+            let file = export.join(rel);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, b"x").unwrap();
+        };
+        write("panorama/images/minimap/gold_psd.png");
+        write("panorama/images/hud/top_bar/icon_ultimate.svg");
+        write("panorama/images/hud/top_bar/icon_ultimate.png");
+        let decoded = ImageSource::decoded(&export);
+        assert!(found_file(&decoded, TEXTURE).ends_with("minimap/gold_psd.png"));
+        assert!(
+            found_file(&decoded, ICON).ends_with("icon_ultimate.svg"),
+            "the SVG before its drawn PNG"
+        );
+        assert!(decoded.find(ITEM).is_err());
+        assert!(decoded.read(TEXTURE).is_err(), "no compiled files here");
+        let listed: Vec<String> = decoded.images().into_iter().map(|(p, _)| p).collect();
+        assert_eq!(listed, [ICON, TEXTURE]);
+
+        let chain = ImageSource::Chain(vec![decoded, ImageSource::game(&paths).unwrap()]);
+        assert!(found_file(&chain, TEXTURE).starts_with(&export));
+        assert!(matches!(chain.find(ITEM), Ok(Found::Compiled(b)) if b == COLOR));
+        assert!(chain.find("panorama/images/nope_psd.vtex_c").is_err());
+        assert_eq!(chain.describe(), "Previewing images from export");
+        assert_eq!(chain.buildid(&paths).as_deref(), Some("4242"));
+
+        write("renamed/gold.png");
+        let manifest = ImagesManifest {
+            format: MANIFEST_FORMAT,
+            buildid: Some("77".into()),
+            deadtune: "0".into(),
+            source: "game".into(),
+            folder: None,
+            exported_at: Utc::now(),
+            total: 1,
+            exported: 1,
+            failed: 0,
+            images: vec![ExportedImage {
+                path: TEXTURE.into(),
+                kind: ImageKind::Texture,
+                css_url: css_url(TEXTURE),
+                width: None,
+                height: None,
+                format: None,
+                size: None,
+                sha256: None,
+                files: vec!["renamed/gold.png".into()],
+                error: None,
+            }],
+        };
+        let json = serde_json::to_string(&manifest).unwrap();
+        std::fs::write(export.join(MANIFEST_JSON), json).unwrap();
+        let named = ImageSource::decoded(&export);
+        assert!(
+            found_file(&named, TEXTURE).ends_with("renamed/gold.png"),
+            "the manifest's names win over the naming rule"
+        );
+        assert_eq!(named.buildid(&paths).as_deref(), Some("77"));
     }
 
     #[test]

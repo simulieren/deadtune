@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use dt_core::hud::icons::{self, IMAGES_ROOT, IconError, IconOverride, Target};
 use dt_core::snapshot::ImageInfo;
+use dt_core::snapshot::images::Found;
 use dt_core::texture::adjust::{self, Adjust};
 use dt_core::texture::encode::Fit;
 use dt_core::texture::{self, RgbaImage, png, svg};
@@ -233,70 +234,78 @@ fn vector_facts(svg_text: &str) -> Result<Facts, String> {
 /// Decodes `picture` with its longer side at most its `side` (vector images exactly that).
 pub fn render(source: &ImageSource, picture: &Picture) -> Result<Rendered, String> {
     match picture {
-        Picture::Game { path, side } => render_one(source, path, None, &[], *side),
-        Picture::Mine { file, side } => render_one(source, "", Some(file), &[], *side),
+        Picture::Game { path, side } => render_game(source, path, &[], *side),
+        Picture::Mine { file, side } => render_file(file, &[], *side),
         Picture::Edited {
-            path,
-            file,
+            file: Some(file),
             adjust,
             side,
-        } => render_one(source, path, file.as_deref(), adjust, *side),
+            ..
+        } => render_file(file, adjust, *side),
+        Picture::Edited {
+            path,
+            file: None,
+            adjust,
+            side,
+        } => render_game(source, path, adjust, *side),
     }
 }
 
-/// `file` when there is one, else the game's image at `path`, with `adjust` applied; the
-/// facts are the source's.
-fn render_one(
+/// The game's image at `path` with `list` applied.
+fn render_game(
     source: &ImageSource,
     path: &str,
-    file: Option<&Path>,
     list: &[Adjust],
     side: u32,
 ) -> Result<Rendered, String> {
-    let vector = |text: &str| -> Result<Rendered, String> {
-        let facts = vector_facts(text)?;
-        let image = svg::rasterize(&svg::adjust(text, list), side).map_err(|e| e.to_string())?;
-        Ok(Rendered { image, facts })
-    };
-    let raster = |mut image: RgbaImage, facts: Facts| {
-        adjust::apply_all(&mut image, list);
-        Rendered { image, facts }
-    };
-    match file {
-        Some(file) => {
-            let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
-            if file.extension().is_some_and(|e| e == "svg") {
-                let text = String::from_utf8(bytes).map_err(|_| "your SVG is not UTF-8")?;
-                vector(&text)
-            } else {
-                let full = png::read(&bytes).map_err(|e| e.to_string())?;
-                let facts = Facts {
-                    width: full.width,
-                    height: full.height,
-                    format: "PNG".into(),
-                };
-                let full = raster(full, facts);
-                Ok(Rendered {
-                    image: full.image.fit(side),
-                    facts: full.facts,
-                })
-            }
-        }
-        None => {
-            let bytes = source.read(path)?;
-            if path.ends_with(".vsvg_c") {
-                vector(&svg::svg_text(&bytes).map_err(|e| e.to_string())?)
-            } else {
-                let info = ImageInfo::of(&bytes).ok_or("not a texture DeadTune can read")?;
-                let image = texture::thumbnail(&bytes, side).map_err(|e| e.to_string())?;
-                let facts = Facts {
+    match source.find(path)? {
+        Found::Decoded(file) => render_file(&file, list, side),
+        Found::Compiled(bytes) if path.ends_with(".vsvg_c") => render_svg(
+            &svg::svg_text(&bytes).map_err(|e| e.to_string())?,
+            list,
+            side,
+        ),
+        Found::Compiled(bytes) => {
+            let info = ImageInfo::of(&bytes).ok_or("not a texture DeadTune can read")?;
+            let mut image = texture::thumbnail(&bytes, side).map_err(|e| e.to_string())?;
+            adjust::apply_all(&mut image, list);
+            Ok(Rendered {
+                image,
+                facts: Facts {
                     width: info.width.into(),
                     height: info.height.into(),
                     format: info.format,
-                };
-                Ok(raster(image, facts))
-            }
+                },
+            })
         }
+    }
+}
+
+fn render_svg(text: &str, list: &[Adjust], side: u32) -> Result<Rendered, String> {
+    let facts = vector_facts(text)?;
+    let image = svg::rasterize(&svg::adjust(text, list), side).map_err(|e| e.to_string())?;
+    Ok(Rendered { image, facts })
+}
+
+/// A PNG or SVG file with `list` applied, decoded with its longer side at most `side` (an
+/// SVG exactly that).
+fn render_file(file: &Path, list: &[Adjust], side: u32) -> Result<Rendered, String> {
+    let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
+    if file.extension().is_some_and(|e| e == "svg") {
+        let text = String::from_utf8(bytes).map_err(|_| "the SVG is not UTF-8")?;
+        render_svg(&text, list, side)
+    } else {
+        let mut full = png::read(&bytes).map_err(|e| e.to_string())?;
+        let facts = Facts {
+            width: full.width,
+            height: full.height,
+            format: "PNG".into(),
+        };
+        adjust::apply_all(&mut full, list);
+        Ok(Rendered {
+            image: full.fit(side),
+            facts,
+        })
     }
 }
 

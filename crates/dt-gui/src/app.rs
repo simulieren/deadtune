@@ -201,6 +201,13 @@ impl App {
                 }
                 self.startup_profile(&mut state);
                 images_levers(&mut state);
+                // `DEADTUNE_PREVIEW_IMAGES=<folder>` draws the HUD previews from a "Save all
+                // images" folder first; `DEADTUNE_PREVIEW_SHAPES=1` draws only their shapes.
+                state.hud_art.from = std::env::var_os("DEADTUNE_PREVIEW_IMAGES")
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from);
+                state.hud_art.shapes_only =
+                    std::env::var_os("DEADTUNE_PREVIEW_SHAPES").is_some_and(|v| v == "1");
                 if let Ok(name) = std::env::var("DEADTUNE_MINIMAP_PRESET") {
                     let preset = MinimapPreset::ALL.into_iter().find(|p| {
                         p.label()
@@ -487,9 +494,9 @@ impl App {
                 state.inject_trial_started(fake_paks(list));
             }
         }
-        // Hold the capture while the UI images page is still decoding what it shows.
+        // Hold the capture while the UI images page or a HUD preview is still decoding.
         let decoding = matches!(&self.screen, Screen::Main(state)
-            if state.images.thumbs.as_ref().is_some_and(|t| t.busy()));
+            if state.images.thumbs.as_ref().is_some_and(|t| t.busy()) || state.hud_art.busy());
         if job.frames == 19 && decoding && job.waited < 600 {
             job.frames -= 1;
             job.waited += 1;

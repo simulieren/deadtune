@@ -649,7 +649,13 @@ pub(crate) mod tests {
         adjust(&mut icons, RASTER, tint(100)).unwrap();
         adjust(&mut icons, RASTER, Adjust::Opacity { percent: 50 }).unwrap();
         adjust(&mut icons, VECTOR, Adjust::Invert).unwrap();
-        let (files, problems) = build(&game(), &icons, dir.path());
+        let white = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M0 0h24v24z\" fill=\"#ffffff\"/></svg>";
+        let game = VpkDir::in_memory(vpk::write(&BTreeMap::from([
+            (RASTER.to_string(), game_bgra()),
+            (VECTOR.to_string(), compiled(white)),
+        ])))
+        .unwrap();
+        let (files, problems) = build(&game, &icons, dir.path());
         assert_eq!(problems, []);
         let v = Vtex::parse(&files[RASTER]).unwrap();
         assert_eq!((v.width, v.height, v.format.0), (4, 2, 28));
@@ -657,8 +663,7 @@ pub(crate) mod tests {
         assert_eq!(px[0], [0, 0, 255, 128], "white tinted red at half alpha");
         assert_eq!(px[2], [0, 0, 0, 0], "transparent stays transparent");
         let text = svg::svg_text(&files[VECTOR]).unwrap();
-        assert_ne!(text, GAME_SVG, "the icon's colours were inverted");
-        assert!(svg::validate(&text).is_ok());
+        assert_eq!(text, white.replace("#ffffff", "#000000"), "inverted");
     }
 
     #[test]

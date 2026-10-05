@@ -25,6 +25,9 @@ use crate::theme::{
 };
 use crate::update::{RailClick, Tone};
 
+/// Same wording as the README.
+pub(crate) const NOT_AFFILIATED: &str = "DeadTune is not affiliated with or endorsed by Valve. Deadlock is a trademark of Valve Corporation.";
+
 fn big_button(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
     ui.add_enabled(
         enabled,
@@ -1870,7 +1873,7 @@ fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     });
     ui.add_space(10.0);
     ui.label(
-        RichText::new("DeadTune is free software (GPL-3.0). Presets by their authors, credited in Advanced view > Settings. Inter font under the SIL OFL 1.1, Hack font under the MIT licence.")
+        RichText::new(format!("DeadTune is free software (GPL-3.0). Presets by their authors, credited in Advanced view > Settings. Inter font under the SIL OFL 1.1, Hack font under the MIT licence. {NOT_AFFILIATED}"))
             .small()
             .color(WEAK),
     );

@@ -375,13 +375,14 @@ fn footer(ui: &mut Ui, state: &AppState) {
             authors.dedup();
             ui.label(
                 RichText::new(format!(
-                    "DeadTune {} · GPL-3.0 · Presets by {} · Inter (OFL-1.1) and Hack (MIT) fonts",
+                    "DeadTune {} · GPL-3.0 · Presets by {} · Inter (OFL-1.1) and Hack (MIT) fonts · Not affiliated with Valve",
                     env!("CARGO_PKG_VERSION"),
                     authors.join(", ")
                 ))
                 .size(10.5)
                 .color(WEAK.gamma_multiply(0.7)),
-            );
+            )
+            .on_hover_text(crate::simple::NOT_AFFILIATED);
         });
     });
 }

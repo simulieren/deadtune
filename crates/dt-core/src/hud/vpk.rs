@@ -151,7 +151,9 @@ impl VpkDir {
                         path.push_str(dir);
                         path.push('/');
                     }
-                    path.push_str(name);
+                    if name != BLANK {
+                        path.push_str(name);
+                    }
                     if ext != BLANK {
                         path.push('.');
                         path.push_str(ext);
@@ -300,6 +302,7 @@ fn tree_bytes(entries: &BTreeMap<String, VpkEntry>) -> Vec<u8> {
             Some((n, e)) if !e.is_empty() => (n, e),
             _ => (file, BLANK),
         };
+        let name = if name.is_empty() { BLANK } else { name };
         tree.entry(ext)
             .or_default()
             .entry(dir)
@@ -494,6 +497,21 @@ mod tests {
         m.insert("noext".to_string(), b"no extension".to_vec());
         m.insert("empty.bin".to_string(), Vec::new());
         m
+    }
+
+    /// An empty string ends a tree list, so a file with nothing before its dot needs the
+    /// same " " placeholder as an empty directory or extension.
+    #[test]
+    fn dot_files_round_trip() {
+        let files = BTreeMap::from([
+            (".DS_Store".to_string(), b"a".to_vec()),
+            ("dir/.hidden".to_string(), b"b".to_vec()),
+            ("dir/after.txt".to_string(), b"c".to_vec()),
+        ]);
+        let pak = VpkDir::in_memory(write(&files)).unwrap();
+        for (path, data) in &files {
+            assert_eq!(&pak.read(path).unwrap(), data, "{path}");
+        }
     }
 
     #[test]

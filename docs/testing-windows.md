@@ -144,6 +144,19 @@ Every option here is a CSS rule appended to the game's own `citadel_hud_top_bar.
 - [ ] **T-7 Purchase popups**: with the shop closed, when a hero on either team buys an item, its name pops under that hero's portrait for 10 s (at most three per hero), bordered weapon orange, vitality green or spirit purple. If popups never appear, note whether the shop's Recent purchases list shows the buys: the script maps them to portraits through the hero image's `heroid`.
 - [ ] **T-8 Vanilla removes**: preset "Vanilla", Apply: `pak77_dir.vpk` is gone (when nothing else on the HUD or Minimap pages is set) and the game is stock.
 - [ ] **T-9 After an update**: the Top bar settings survive a game update through the usual "Deadlock updated" re-apply, and `addons verify` is `ok` again.
+
+### 7b2. Minimap page, "Apples & tunnels" card (research/hud/apples-tunnels/NOTES.md)
+
+The dots rebuild `hud_minimap.vxml_c` as a text layout with two includes and add `panorama/scripts/deadtune/apples_tunnels.vjs_c` and `panorama/styles/deadtune/apples_tunnels.vcss_c`. "Clear tunnel switching" alone only appends CSS to the game's `hud_minimap.vcss_c`. Positions are for game build 25712201 (dl_midtown 6722).
+
+- [ ] **A-1 Layout loads**: turn on "Apple spots", Apply, launch through DeadTune (guard on). The game reaches the main menu; in a match the minimap shows as usual, `console.log` has `DeadTune minimap: 36 apple spots, 0 tunnel entrances` and no `FATAL` or line naming `hud_minimap`. `tools\deadtune-cli.exe addons verify` prints `ok`.
+- [ ] **A-2 Apple dots in the right places**: in the hideout or a sandbox, walk to two or three apple spawns you know (and wait for a live apple to spawn): each green dot sits on the spot, before an apple appears and after it is eaten, in surface and tunnel view, for any hero. Zoom the minimap in and out (scoreboard open too): dots stay on their spots. Note any dot that is off and by how much.
+- [ ] **A-3 Tunnel entrances only for the four heroes**: turn on "Tunnel entrances", Apply. As Rem, Mo & Krill, Rat King and Calico (both forms), purple dots appear on entrances within about 11 % of the map width of you and vanish a little further away without flickering at the edge. As any other hero (try two), no purple dot ever appears. Inside the rat tunnels they hide; leaving brings them back. If no dots appear for an eligible hero, note the hero name the top bar shows in your client language.
+- [ ] **A-4 Options take**: dot size 3 and 12 px, a different colour for each kind, radius 5 % and 25 %; each looks as set after Apply and relaunch.
+- [ ] **A-5 Clear tunnel switching**: only this switch on, Apply. Entering the rat tunnels: the surface map fades to a faint outline over about 0.2 s and the tunnel layer is brighter; leaving restores the surface. Mid-tunnel (underground) view looks stock.
+- [ ] **A-6 Nothing else breaks**: with all three on, hero, ping, objective and camp markers, the zoomed minimap, hover tooltips and minimap clicks behave as before. Then turn on the Top bar extras (spawn timers, purchases) as well: both work together, `addons verify` is `ok`, and `console.log` shows both scripts load.
+- [ ] **A-7 Vanilla removes**: Reset all on the card (nothing else set), Apply: `pak77_dir.vpk` is gone and the minimap is stock.
+
 ### 7c. Health bar page (experimental)
 
 - [ ] Pick **Big number**, Apply, start a match or the hideout: the health number is clearly bigger and not cut off, max health ("/ 700") is easy to read, the green backer is gone.

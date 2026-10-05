@@ -595,6 +595,7 @@ pub struct AppState {
     pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
     pub checks: Option<Vec<Check>>,
+    pub checks_at: Option<std::time::SystemTime>,
     /// Doctor runs off the UI thread: on Windows it shells out to PowerShell for RAM info.
     checks_rx: Option<Receiver<Vec<Check>>>,
     pub update: Updater,
@@ -697,6 +698,7 @@ impl AppState {
             last_texture_build: None,
             undo_cursor: None,
             checks: None,
+            checks_at: None,
             checks_rx: None,
             update: Updater::default(),
             #[cfg(feature = "remote")]
@@ -757,7 +759,12 @@ impl AppState {
         // The addon and HUD records live in the store root, not the data dir.
         let (paths, data_dir) = (self.paths.clone(), self.store.root.clone());
         std::thread::spawn(move || {
-            let _ = tx.send(dt_core::doctor::run(Some(&paths), &data_dir));
+            let mut checks = dt_core::doctor::run(Some(&paths), &data_dir);
+            // Screenshot lever: Windows checks on sample facts, for working on a Mac.
+            if std::env::var_os("DEADTUNE_FAKE_WINDOWS").is_some_and(|v| v == "1") {
+                checks.extend(crate::checks_view::sample_windows_checks());
+            }
+            let _ = tx.send(checks);
         });
         self.checks_rx = Some(rx);
     }
@@ -781,6 +788,7 @@ impl AppState {
         match rx.try_recv() {
             Ok(checks) => {
                 self.checks = Some(checks);
+                self.checks_at = Some(std::time::SystemTime::now());
                 self.checks_rx = None;
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {}

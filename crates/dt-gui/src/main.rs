@@ -5,6 +5,7 @@ mod advanced;
 mod app;
 mod bench;
 mod chart;
+mod checks_view;
 mod compact;
 mod friendly;
 mod hud_view;

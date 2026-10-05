@@ -44,9 +44,18 @@ pub enum ScaleProp {
     PreTransform { origin: &'static str },
 }
 
+/// Where a vanilla box's numbers come from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Measured {
+    /// The element's visible pixels in the reference screenshot the GUI ships
+    /// (`crates/dt-gui/assets/vanilla_hud.jpg`, a 16:9 game capture at default HUD
+    /// settings), so the preview can cut the element out of it.
+    Screenshot,
+    /// Vanilla CSS, because the element is empty or collapsed in the screenshot.
+    Css,
+}
+
 /// Vanilla placement at the 1920x1080 reference resolution, for the preview canvas.
-/// Measured from vanilla screenshots (research/configs/OptimizationLock/clean gameinfo.gi/
-/// screenshots, 1600x900 scaled x1.2) where the element is visible, else from vanilla CSS.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VanillaBox {
     pub h: HAlign,
@@ -58,6 +67,7 @@ pub struct VanillaBox {
     pub dy: f32,
     /// Vanilla CSS collapses it until a game state shows it.
     pub collapsed: bool,
+    pub from: Measured,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -85,13 +95,14 @@ pub static ELEMENTS: &[ElementSpec] = &[
         vanilla: VanillaBox {
             h: HAlign::Center,
             v: VAlign::Top,
-            width: 1260.0,
-            height: 115.0,
+            width: 1250.0,
+            height: 145.0,
             dx: 0.0,
             dy: 0.0,
             collapsed: false,
+            from: Measured::Screenshot,
         },
-        notes: "Hero portraits, souls, clock. Layout lives on the CitadelHudTopBar rule in citadel_hud_top_bar.vcss_c (full height, fit-children width); the box is the 1260px #TeamsContainer strip, 115px tall as measured in a vanilla screenshot (bars plus soul counters). Hidden during death replay and in the hideout.",
+        notes: "Hero portraits, souls, clock. Layout lives on the CitadelHudTopBar rule in citadel_hud_top_bar.vcss_c (full height, fit-children width); the box is the visible strip in the reference screenshot, portraits down to the spawn and eye icons under them (1250x145). Hidden during death replay and in the hideout.",
     },
     ElementSpec {
         id: ElementId::Minimap,
@@ -104,13 +115,14 @@ pub static ELEMENTS: &[ElementSpec] = &[
         vanilla: VanillaBox {
             h: HAlign::Right,
             v: VAlign::Bottom,
-            width: 380.0,
-            height: 380.0,
-            dx: -29.0,
-            dy: -46.0,
+            width: 370.0,
+            height: 392.0,
+            dx: -38.0,
+            dy: -48.0,
             collapsed: false,
+            from: Measured::Screenshot,
         },
-        notes: "Measured in a vanilla screenshot: the visible map is about 380px across, 29px from the right and 46px from the bottom (the #minimap_persp panel itself is 440x520 including perspective room). Scales from the bottom-right corner. Sits inside .clamp_width, so on 21:9 it hugs the 1920px clamp, not the screen edge. Vanilla transitions pre-transform-scale2d (hideout uses 0.9), so state rules like .InHideout override the scale.",
+        notes: "The box is the visible map in the reference screenshot, 370x392 with the base markers that stick out top and bottom, 38px from the right and 48px from the bottom (the #minimap_persp panel itself is 440x520 including perspective room). Scales from the bottom-right corner. Sits inside .clamp_width, so on 21:9 it hugs the 1920px clamp, not the screen edge. Vanilla transitions pre-transform-scale2d (hideout uses 0.9), so state rules like .InHideout override the scale.",
     },
     ElementSpec {
         id: ElementId::HealthAndAmmo,
@@ -121,13 +133,14 @@ pub static ELEMENTS: &[ElementSpec] = &[
         vanilla: VanillaBox {
             h: HAlign::Center,
             v: VAlign::Bottom,
-            width: 120.0,
-            height: 260.0,
-            dx: -480.0,
-            dy: -150.0,
+            width: 170.0,
+            height: 265.0,
+            dx: -457.0,
+            dy: -155.0,
             collapsed: false,
+            from: Measured::Screenshot,
         },
-        notes: "The box is the visible health bar as measured in a vanilla screenshot (left of the hero, about 480px left of centre). The panel itself is 250x380 at ui-scale 120%, centred between margin-left 300px and margin-right 1290px, so moving it moves the bar. 21:9 and 16:10 rules change the margins.",
+        notes: "The box is the tilted health gauge in the reference screenshot (170x265, its centre 457px left of the screen centre). The panel itself is 250x380 at ui-scale 120%, centred between margin-left 300px and margin-right 1290px, so moving it moves the gauge. 21:9 and 16:10 rules change the margins.",
     },
     ElementSpec {
         id: ElementId::AbilitySlots,
@@ -138,13 +151,14 @@ pub static ELEMENTS: &[ElementSpec] = &[
         vanilla: VanillaBox {
             h: HAlign::Center,
             v: VAlign::Bottom,
-            width: 340.0,
-            height: 102.0,
-            dx: 0.0,
-            dy: -7.0,
+            width: 348.0,
+            height: 106.0,
+            dx: 2.0,
+            dy: -14.0,
             collapsed: false,
+            from: Measured::Screenshot,
         },
-        notes: "Measured in a vanilla screenshot: the four ability icons with key labels span about 340x102, centred, 7px above the bottom. The base rule collapses it, but .viewing_as_player shows it, so it is visible in normal play. Shrinks to 75% while the shop is open.",
+        notes: "The four ability icons with their key labels and the stamina pips above them, 348x106 in the reference screenshot, 14px above the bottom. The base rule collapses it, but .viewing_as_player shows it, so it is visible in normal play. Shrinks to 75% while the shop is open.",
     },
     ElementSpec {
         id: ElementId::ItemSlots,
@@ -160,6 +174,7 @@ pub static ELEMENTS: &[ElementSpec] = &[
             dx: 300.0,
             dy: 0.0,
             collapsed: false,
+            from: Measured::Css,
         },
         notes: "Active items 1 to 4. Right-aligned with margin-right 100px inside #AbilitiesContainer (1140px wide, centred), so it ends 330px right of screen centre; the 340px width is an estimate (fit-children).",
     },
@@ -177,6 +192,7 @@ pub static ELEMENTS: &[ElementSpec] = &[
             dx: 0.0,
             dy: -322.0,
             collapsed: true,
+            from: Measured::Css,
         },
         notes: "Collapsed in vanilla; Shown reveals it (what QoL Lite does). 600x60 at ui-scale 130%, top-aligned with a 20px margin inside #AbilitiesContainer, whose top is 420px above the screen bottom. Collapsed again while the shop is open.",
     },
@@ -189,13 +205,14 @@ pub static ELEMENTS: &[ElementSpec] = &[
         vanilla: VanillaBox {
             h: HAlign::Left,
             v: VAlign::Bottom,
-            width: 420.0,
-            height: 170.0,
-            dx: 24.0,
-            dy: -24.0,
+            width: 430.0,
+            height: 290.0,
+            dx: 22.0,
+            dy: -20.0,
             collapsed: false,
+            from: Measured::Screenshot,
         },
-        notes: "Souls, item value and the purchased item grid in the lower left, measured in a vanilla screenshot at about 420x170, 24px in from the edges. The container itself is full screen. Hidden while editing builds and in spectator mode.",
+        notes: "Weapon, vitality and spirit totals, level, souls and the purchased item grid in the lower left, 430x290 and 22px in from the left in the reference screenshot. The container itself is full screen. Hidden while editing builds and in spectator mode.",
     },
     ElementSpec {
         id: ElementId::AmmoCounter,
@@ -206,13 +223,14 @@ pub static ELEMENTS: &[ElementSpec] = &[
         vanilla: VanillaBox {
             h: HAlign::Center,
             v: VAlign::Center,
-            width: 60.0,
-            height: 30.0,
+            width: 100.0,
+            height: 60.0,
             dx: 0.0,
-            dy: 80.0,
+            dy: 62.0,
             collapsed: false,
+            from: Measured::Screenshot,
         },
-        notes: "Next to the crosshair (the clip count sits about 80px below centre in a vanilla screenshot). Defined in ability_hud_elements/element_gun.xml, not in hud.xml; whether a hud.vcss_c rule reaches it is unverified, it may need element_gun.vcss_c.",
+        notes: "The reload arc and clip count under the crosshair, 100x60 and centred 62px below the screen centre in the reference screenshot. Defined in ability_hud_elements/element_gun.xml, not in hud.xml; whether a hud.vcss_c rule reaches it is unverified, it may need element_gun.vcss_c.",
     },
     ElementSpec {
         id: ElementId::KillFeed,
@@ -228,6 +246,7 @@ pub static ELEMENTS: &[ElementSpec] = &[
             dx: 0.0,
             dy: 200.0,
             collapsed: false,
+            from: Measured::Css,
         },
         notes: "HudDataFeed root is full screen; the box is #EventFeed (1000px wide, 200px from the top, from hud_data_feed.vcss_c) with an estimated height. Hidden during death replay.",
     },
@@ -245,6 +264,7 @@ pub static ELEMENTS: &[ElementSpec] = &[
             dx: 0.0,
             dy: -200.0,
             collapsed: false,
+            from: Measured::Css,
         },
         notes: "350px wide (chat.vcss_c), centred, 200px above the bottom per vanilla hud.css. Only visible while typing or for a few seconds after a message; not seen in sandbox screenshots, so position is from CSS only.",
     },

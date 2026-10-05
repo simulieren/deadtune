@@ -176,6 +176,17 @@ impl App {
                         .find(|s| s.label.to_lowercase().starts_with(&name.to_lowercase()))
                         .map(|s| s.id);
                 }
+                // `DEADTUNE_HUD_BACKDROP=off` hides the layout preview's game screenshot,
+                // `=40` draws it at 40% opacity.
+                match std::env::var("DEADTUNE_HUD_BACKDROP").as_deref() {
+                    Ok("off") => state.ui.hud_backdrop.shown = false,
+                    Ok(pct) => {
+                        if let Ok(pct) = pct.parse::<f32>() {
+                            state.ui.hud_backdrop.opacity = (pct / 100.0).clamp(0.1, 1.0);
+                        }
+                    }
+                    Err(_) => {}
+                }
                 // `DEADTUNE_HUD_PAGE=colors` opens the Minimap colours page in either view,
                 // `DEADTUNE_HUD_PAGE=top` the Top bar page, `DEADTUNE_HUD_PAGE=ingame` the
                 // In-game settings page;
@@ -200,6 +211,7 @@ impl App {
                     _ => {}
                 }
                 self.startup_profile(&mut state);
+                hud_edit_lever(&mut state);
                 images_levers(&mut state);
                 // `DEADTUNE_PREVIEW_IMAGES=<folder>` draws the HUD previews from a "Save all
                 // images" folder first; `DEADTUNE_PREVIEW_SHAPES=1` draws only their shapes.
@@ -545,6 +557,32 @@ fn find_section(name: &str) -> Option<Section> {
         .into_iter()
         .find(starts)
         .or_else(|| Section::ALL.into_iter().find(word))
+}
+
+/// Screenshot lever: `DEADTUNE_HUD_EDIT=minimap:-300:-200:150,top:0:40:100` moves (x, y in
+/// 1080p px) and sizes (percent) the HUD elements whose labels start with each name.
+fn hud_edit_lever(state: &mut AppState) {
+    let Ok(list) = std::env::var("DEADTUNE_HUD_EDIT") else {
+        return;
+    };
+    for entry in list.split(',') {
+        let mut parts = entry.split(':');
+        let name = parts.next().unwrap_or_default().to_lowercase();
+        let mut numbers = parts.map(|n| n.trim().parse::<i32>().unwrap_or_default());
+        let Some(spec) = dt_core::hud::elements::ELEMENTS
+            .iter()
+            .find(|s| !name.is_empty() && s.label.to_lowercase().starts_with(&name))
+        else {
+            continue;
+        };
+        let mut edit = state.hud_edit(spec.id);
+        edit.offset_x = numbers.next().unwrap_or(edit.offset_x);
+        edit.offset_y = numbers.next().unwrap_or(edit.offset_y);
+        if let Some(pct) = numbers.next() {
+            edit.scale_pct = pct.clamp(25, 300) as u16;
+        }
+        state.set_hud_element(spec.id, edit);
+    }
 }
 
 /// Screenshot levers for the UI images page: `DEADTUNE_IMAGES_FROM=<snapshot folder>`

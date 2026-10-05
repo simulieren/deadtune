@@ -1,4 +1,5 @@
-//! HUD layout page: a 16:9 monitor you place HUD pieces on (the minimap, top bar and health
+//! HUD layout page: a 16:9 monitor you place HUD pieces on, over a game screenshot at
+//! default settings (`game_shot`) or, with that off, as tiles (the minimap, top bar and health
 //! bar drawn from the game's images when they load), an inspector for the selected piece,
 //! layout presets and an element list. Edits live in the profile and go out with the
 //! normal Apply.
@@ -14,11 +15,12 @@ use eframe::egui::epaint::Mesh;
 use eframe::egui::text::{Galley, LayoutJob, TextWrapping};
 use eframe::egui::{
     self, Align, Color32, CornerRadius, CursorIcon, FontId, Id, Key, Layout, Margin, Painter, Pos2,
-    Rect, RichText, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
+    Rect, RichText, Sense, Shape, Stroke, StrokeKind, TextureHandle, Ui, Vec2, pos2, vec2,
 };
 
+use crate::game_shot;
 use crate::hud_art::Images;
-use crate::state::{AppState, HudPage, HudPreset};
+use crate::state::{AppState, Backdrop, HudPage, HudPreset};
 use crate::theme::{self, ACCENT, BORDER, CARD, CARD_HOVER, RAIL, TEXT, WARN, WEAK};
 
 const INSPECTOR_WIDTH: f32 = 250.0;
@@ -36,6 +38,7 @@ enum Action {
     Set(ElementId, ElementEdit),
     Preset(HudPreset),
     ResetAll,
+    Backdrop(Backdrop),
 }
 
 /// Where a drag began, kept in egui's temp memory for the drag's duration. A move has
@@ -179,6 +182,7 @@ pub fn layout_page(ui: &mut Ui, state: &mut AppState) {
                 ui.vertical(|ui| {
                     ui.set_width(left);
                     canvas(ui, state, images, width, &mut actions);
+                    backdrop_row(ui, state, &mut actions);
                     ui.add_space(4.0);
                     element_list(ui, state, &mut actions);
                 });
@@ -191,6 +195,7 @@ pub fn layout_page(ui: &mut Ui, state: &mut AppState) {
         } else {
             let width = monitor_width(ui, ui.available_width());
             canvas(ui, state, images, width, &mut actions);
+            backdrop_row(ui, state, &mut actions);
             ui.add_space(4.0);
             element_list(ui, state, &mut actions);
             ui.add_space(8.0);
@@ -204,6 +209,7 @@ pub fn layout_page(ui: &mut Ui, state: &mut AppState) {
             Action::Set(id, edit) => state.set_hud_element(id, edit),
             Action::Preset(p) => state.apply_hud_preset(p),
             Action::ResetAll => state.apply_hud_preset(HudPreset::Vanilla),
+            Action::Backdrop(b) => state.ui.hud_backdrop = b,
         }
     }
 }
@@ -256,7 +262,7 @@ fn monitor_height(width: f32) -> f32 {
 
 /// As wide as `max`, unless that would push the element list under it off screen.
 fn monitor_width(ui: &Ui, max: f32) -> f32 {
-    let room = (ui.clip_rect().bottom() - ui.cursor().top() - 40.0).max(180.0);
+    let room = (ui.clip_rect().bottom() - ui.cursor().top() - 66.0).max(180.0);
     max.min((room - 2.0 * BEZEL) * 16.0 / 9.0 + 2.0 * BEZEL)
 }
 
@@ -291,6 +297,25 @@ fn canvas(
     }
     let k = screen.height() / 1080.0;
     let items = layout::preview(&state.profile.hud, [screen.width(), screen.height()]);
+    let backdrop = state.ui.hud_backdrop;
+    let shot = if backdrop.shown {
+        game_shot::texture(ui.ctx())
+    } else {
+        None
+    };
+    if let Some(texture) = &shot {
+        let tint = Color32::WHITE.gamma_multiply(backdrop.opacity);
+        game_shot::paint(&painter, texture, [0.0, 0.0, 1.0, 1.0], screen, tint);
+        for item in &items {
+            if let Some(crop) = layout::reference_crop(item.id)
+                && state.hud_edit(item.id) != ElementEdit::default()
+            {
+                let spot = crop_rect(screen, crop);
+                let shade = Color32::from_black_alpha((220.0 * backdrop.opacity) as u8);
+                painter.rect_filled(spot, CornerRadius::same(3), shade);
+            }
+        }
+    }
     let selected = state.ui.hud_selected;
     let drag_key = ui.id().with("hud_drag");
     let mut guides = Vec::new();
@@ -318,7 +343,28 @@ fn canvas(
         } else {
             Look::Plain
         };
-        tile(ui, &painter, images, screen, rect, spec, item, look);
+        match (&shot, layout::reference_crop(item.id)) {
+            (Some(texture), Some(crop)) => {
+                let shot = Shot {
+                    texture,
+                    crop,
+                    opacity: backdrop.opacity,
+                    edited: state.hud_edit(item.id) != ElementEdit::default(),
+                };
+                shot_tile(ui, &painter, screen, rect, spec, item, look, shot);
+            }
+            _ => tile(
+                ui,
+                &painter,
+                images,
+                screen,
+                rect,
+                spec,
+                item,
+                look,
+                shot.is_some(),
+            ),
+        }
         if response.clicked() || response.drag_started() {
             actions.push(Action::Select(Some(item.id)));
         }
@@ -522,6 +568,7 @@ fn tile(
     spec: &ElementSpec,
     item: &PreviewRect,
     look: Look,
+    over_shot: bool,
 ) {
     let selected = look == Look::Selected;
     let hovered = look == Look::Hovered;
@@ -541,6 +588,8 @@ fn tile(
     if item.visible {
         let fill = if selected {
             ACCENT.gamma_multiply(0.12 + 0.12 * item.opacity)
+        } else if over_shot {
+            Color32::from_black_alpha((60.0 + 60.0 * item.opacity) as u8)
         } else {
             TEXT.gamma_multiply(0.07 + 0.11 * item.opacity)
         };
@@ -585,6 +634,90 @@ fn tile(
         Some(galley) => p.galley(inner.left_top(), galley, color),
         None => label_beside(ui, p, screen, r, spec.label, color),
     }
+}
+
+/// An element the game screenshot shows, drawn as its own crop of the screenshot.
+struct Shot<'a> {
+    texture: &'a TextureHandle,
+    crop: [f32; 4],
+    opacity: f32,
+    edited: bool,
+}
+
+fn crop_rect(screen: Rect, [x, y, w, h]: [f32; 4]) -> Rect {
+    Rect::from_min_size(
+        screen.min + vec2(x * screen.width(), y * screen.height()),
+        vec2(w * screen.width(), h * screen.height()),
+    )
+}
+
+/// Over the screenshot the element is its own pixels: untouched it is already in the
+/// backdrop, so only the outline is drawn; edited, its crop moves and scales with it while
+/// its vanilla spot is shaded.
+#[allow(clippy::too_many_arguments)]
+fn shot_tile(
+    ui: &Ui,
+    p: &Painter,
+    screen: Rect,
+    r: Rect,
+    spec: &ElementSpec,
+    item: &PreviewRect,
+    look: Look,
+    shot: Shot,
+) {
+    let radius = CornerRadius::same(3);
+    if !item.visible {
+        let color = if look == Look::Selected { ACCENT } else { WEAK };
+        let path = [
+            r.left_top(),
+            r.right_top(),
+            r.right_bottom(),
+            r.left_bottom(),
+            r.left_top(),
+        ];
+        p.extend(Shape::dashed_line(&path, Stroke::new(1.0, color), 4.0, 3.0));
+        shot_label(ui, p, screen, r, spec.label, color);
+        return;
+    }
+    if shot.edited {
+        let under = Color32::from_black_alpha((255.0 * shot.opacity) as u8);
+        p.rect_filled(r, CornerRadius::ZERO, under);
+        let tint = Color32::WHITE.gamma_multiply(shot.opacity * item.opacity);
+        game_shot::paint(p, shot.texture, shot.crop, r, tint);
+    }
+    let stroke = match look {
+        Look::Selected => Stroke::new(1.5, ACCENT),
+        Look::Hovered => Stroke::new(1.0, TEXT.gamma_multiply(0.9)),
+        Look::Plain => Stroke::new(1.0, TEXT.gamma_multiply(0.45)),
+    };
+    p.rect_stroke(r, radius, stroke, StrokeKind::Outside);
+    if look != Look::Plain {
+        let color = if look == Look::Selected { ACCENT } else { TEXT };
+        shot_label(ui, p, screen, r, spec.label, color);
+    }
+}
+
+/// The label on a dark chip at the box's top-left corner, or above it when the box
+/// touches the top of the screen, so it reads over the screenshot.
+fn shot_label(ui: &Ui, p: &Painter, screen: Rect, r: Rect, text: &str, color: Color32) {
+    let galley = ui
+        .ctx()
+        .fonts_mut(|f| f.layout_no_wrap(text.to_string(), FontId::proportional(10.0), color));
+    let pad = vec2(4.0, 1.0);
+    let size = galley.size() + pad * 2.0;
+    let mut min = pos2(r.left(), r.top() - size.y - 2.0);
+    if min.y < screen.top() {
+        min.y = r.bottom() + 2.0;
+    }
+    if min.y + size.y > screen.bottom() {
+        min.y = r.top() + 2.0;
+    }
+    min.x = min
+        .x
+        .clamp(screen.left(), (screen.right() - size.x).max(screen.left()));
+    let chip = Rect::from_min_size(min, size);
+    p.rect_filled(chip, CornerRadius::same(3), Color32::from_black_alpha(200));
+    p.galley(min + pad, galley, color);
 }
 
 /// The label at 11, 10 or 9 px, wrapped onto as many rows as `inner` is tall with
@@ -782,6 +915,28 @@ fn glyph(p: &Painter, r: Rect, id: ElementId, ink: Color32) {
     }
 }
 
+fn backdrop_row(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
+    let mut backdrop = state.ui.hud_backdrop;
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut backdrop.shown, "Game screenshot")
+            .on_hover_text(
+                "A real match at the game's default HUD settings, so you see where each \
+                 piece sits and what your changes move",
+            );
+        ui.add_enabled_ui(backdrop.shown, |ui| {
+            ui.label(RichText::new("Opacity").small().color(WEAK));
+            ui.add(
+                egui::Slider::new(&mut backdrop.opacity, 0.1..=1.0)
+                    .show_value(false)
+                    .clamping(egui::SliderClamping::Always),
+            );
+        });
+    });
+    if backdrop != state.ui.hud_backdrop {
+        actions.push(Action::Backdrop(backdrop));
+    }
+}
+
 fn element_list(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
     let items = layout::preview(&state.profile.hud, [1920.0, 1080.0]);
     ui.horizontal_wrapped(|ui| {
@@ -934,7 +1089,7 @@ fn inspector(ui: &mut Ui, state: &AppState, min_height: f32, actions: &mut Vec<A
             percent_slider(ui, &mut next.opacity_pct, 0..=100);
             ui.add_space(2.0);
             caption(ui, "Position");
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(position_text(&next)).size(12.5));
                 if (next.offset_x, next.offset_y) != (0, 0) && small_button(ui, "Reset position") {
                     next.offset_x = 0;
@@ -1119,6 +1274,7 @@ mod tests {
                     Action::Set(id, edit) => state.set_hud_element(id, edit),
                     Action::Preset(p) => state.apply_hud_preset(p),
                     Action::ResetAll => state.apply_hud_preset(HudPreset::Vanilla),
+                    Action::Backdrop(b) => state.ui.hud_backdrop = b,
                 }
             }
         });

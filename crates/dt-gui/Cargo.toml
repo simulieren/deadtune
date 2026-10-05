@@ -25,6 +25,10 @@ toml.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 eframe = { version = "0.36.2", default-features = false, features = ["glow", "links", "x11", "wayland"] }
 tiny_http = { version = "0.12", optional = true }
+# Decodes the HUD reference screenshot (assets/vanilla_hud.jpg). Measured on the Windows
+# release exe: decoder about 105 KB, a 1280x720 JPEG 100 KB; the same picture as a
+# 960x540 128-colour PNG through the already linked png crate is 196 KB and visibly worse.
+zune-jpeg = { version = "0.5", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile.workspace = true

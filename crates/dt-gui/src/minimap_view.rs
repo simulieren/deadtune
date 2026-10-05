@@ -494,6 +494,12 @@ fn preview_card(ui: &mut Ui, state: &AppState, images: &mut Images) {
                 "A mock-up of the colours above. Top is the enemy base."
             },
         );
+        ui.add_space(6.0);
+        crate::game_shot::in_game(
+            ui,
+            dt_core::hud::elements::ElementId::Minimap,
+            Vec2::splat(PREVIEW),
+        );
     });
 }
 

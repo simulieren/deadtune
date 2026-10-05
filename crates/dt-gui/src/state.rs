@@ -399,6 +399,7 @@ pub struct UiState {
     pub overrides_path: String,
     pub new_profile_name: String,
     pub hud_selected: Option<ElementId>,
+    pub hud_backdrop: Backdrop,
     pub hud_page: HudPage,
     pub section: Section,
     /// The simple-view row whose help the side panel explains: hovered or last edited.
@@ -425,6 +426,23 @@ pub struct UiState {
     pub snapshot_compare: (usize, usize),
     /// The snapshot whose Delete button was pressed once and waits for a second press.
     pub snapshot_delete_armed: Option<PathBuf>,
+}
+
+/// The HUD layout preview's game screenshot behind the element boxes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Backdrop {
+    pub shown: bool,
+    /// 0 to 1.
+    pub opacity: f32,
+}
+
+impl Default for Backdrop {
+    fn default() -> Backdrop {
+        Backdrop {
+            shown: true,
+            opacity: 0.85,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

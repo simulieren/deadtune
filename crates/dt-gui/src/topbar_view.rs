@@ -161,6 +161,12 @@ fn mock_card(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut V
                 "A mock-up with stand-in heroes. The game draws the real portraits, names and numbers."
             },
         );
+        ui.add_space(6.0);
+        crate::game_shot::in_game(
+            ui,
+            dt_core::hud::elements::ElementId::TopBar,
+            vec2(width, height * 0.6),
+        );
     });
 }
 

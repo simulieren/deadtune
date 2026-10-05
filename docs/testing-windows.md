@@ -130,6 +130,7 @@ How it works now: DeadTune writes `cfg\deadtune_boot.cfg` (binds F8, sets the pr
 - [ ] **H0-3**: with QoL Lite or QOL Lock installed too, which addon wins? Check setup should warn about the conflict.
 - [ ] **H0-5, H0-6**: crosshair convars live from console; which state shows `#hud_signature`.
 - [ ] **H0-9**: screenshot the vanilla HUD at 1920x1080 and compare with the HUD tab's preview boxes.
+- [ ] **H0-10 Preview against the game**: with the HUD layout at Vanilla, the HUD page shows "Game screenshot" on (Simon's capture, `crates/dt-gui/assets/vanilla_hud.jpg`) and every outline sits on its piece: top bar, minimap, health gauge, ability icons, the lower-left stats and items, the ammo arc. Now take your own 16:9 screenshot in a match at default HUD settings and open it next to DeadTune at the same size: the outlines should land on the same pixels of your screenshot. Then move the minimap 300px left and to 150% size, Apply, play: the minimap in game should match where the preview drew it (its old spot is shaded in the preview). Note any piece that is off and by how many pixels at 1080p; those numbers go into `dt_core::hud::elements::ELEMENTS`.
 
 ### 7b. Top bar page (research/hud/top-bar/NOTES.md)
 

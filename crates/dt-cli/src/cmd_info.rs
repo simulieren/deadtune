@@ -127,7 +127,7 @@ pub fn doctor(env: &Env, args: &Args) -> CliResult {
             "{}",
             doctor::report(
                 paths.as_ref(),
-                &env.data_dir,
+                &env.records(),
                 env!("CARGO_PKG_VERSION"),
                 &launch.args
             )
@@ -139,7 +139,7 @@ pub fn doctor(env: &Env, args: &Args) -> CliResult {
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS
     );
-    let checks = doctor::run(paths.as_ref(), &env.data_dir);
+    let checks = doctor::run(paths.as_ref(), &env.records());
     for c in &checks {
         let tag = match c.status {
             CheckStatus::Pass => "PASS",

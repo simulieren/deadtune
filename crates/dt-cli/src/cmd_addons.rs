@@ -21,7 +21,7 @@ fn source_status(env: &Env, id: AddonId) -> String {
     match addons::info(id).source {
         Source::Generated => "nothing to download".to_string(),
         Source::Upstream { url, .. } => {
-            match sources::cached(&sources::cache_dir(&env.data_dir), id) {
+            match sources::cached(&sources::cache_dir(&env.records()), id) {
                 Ok(Some(_)) => "downloaded".to_string(),
                 Ok(None) => format!("needs download: {url}"),
                 Err(e) => format!("cache unreadable: {e}"),
@@ -39,7 +39,7 @@ pub fn list(env: &Env, args: &Args) -> CliResult {
     let states = env
         .paths()
         .ok()
-        .and_then(|paths| install::installed_state(&paths, &env.data_dir).ok())
+        .and_then(|paths| install::installed_state(&paths, &env.records()).ok())
         .unwrap_or_default();
     for a in addons::all() {
         let enabled = match &profile {
@@ -140,7 +140,7 @@ pub fn disable(_: &Env, args: &Args) -> CliResult {
 
 pub fn import(env: &Env, args: &Args) -> CliResult {
     let [file] = args.positionals("<file or folder>")?;
-    let ids = sources::import(&sources::cache_dir(&env.data_dir), Path::new(file))?;
+    let ids = sources::import(&sources::cache_dir(&env.records()), Path::new(file))?;
     for id in ids {
         println!("imported {} ({})", addons::info(id).name, id.key());
     }
@@ -155,7 +155,7 @@ pub fn fetch(env: &Env, args: &Args) -> CliResult {
     } else {
         vec![parse_id(which)?]
     };
-    let cache = sources::cache_dir(&env.data_dir);
+    let cache = sources::cache_dir(&env.records());
     for id in ids {
         if !matches!(addons::info(id).source, Source::Upstream { .. }) {
             continue;
@@ -183,7 +183,7 @@ pub fn build(env: &Env, args: &Args) -> CliResult {
     let profile = env::load_profile(&args.path("profile")?)?;
     let paths = env.paths()?;
     let mut last = 0;
-    let stats = install::build_textures(&paths, &profile.addons, &env.data_dir, &mut |p| {
+    let stats = install::build_textures(&paths, &profile.addons, &env.records(), &mut |p| {
         if p.done * 20 / p.total.max(1) != last {
             last = p.done * 20 / p.total.max(1);
             println!("{}/{} {}", p.done, p.total, p.current);
@@ -201,7 +201,7 @@ pub fn build(env: &Env, args: &Args) -> CliResult {
 pub fn verify(env: &Env, args: &Args) -> CliResult {
     args.positionals::<0>("no positional arguments")?;
     let paths = env.paths()?;
-    let reports = addons::verify::verify_installed(&paths, &env.data_dir);
+    let reports = addons::verify::verify_installed(&paths, &env.records());
     if reports.is_empty() {
         println!("no DeadTune paks installed");
         return Ok(());
@@ -233,12 +233,12 @@ pub fn guard(env: &Env, args: &Args) -> CliResult {
 
 /// The launch guard's line per pak, the HUD included, for `addons guard` and `status`.
 pub fn guard_lines(env: &Env, paths: &GamePaths) -> Vec<String> {
-    let guard = match Guard::load(&env.data_dir) {
+    let guard = match Guard::load(&env.records()) {
         Ok(g) => g,
         Err(e) => return vec![format!("launch guard: unreadable: {e}")],
     };
     let mut lines: Vec<String> = guard
-        .report(&guard::installed_paks(paths, &env.data_dir))
+        .report(&guard::installed_paks(paths, &env.records()))
         .into_iter()
         .map(|l| format!("launch guard: {l}"))
         .collect();
@@ -256,7 +256,7 @@ pub fn guard_lines(env: &Env, paths: &GamePaths) -> Vec<String> {
 
 /// One-line addon facts for `status` and `doctor`.
 pub fn report_lines(env: &Env, paths: &GamePaths) -> Vec<String> {
-    let states = match install::installed_state(paths, &env.data_dir) {
+    let states = match install::installed_state(paths, &env.records()) {
         Ok(s) => s,
         Err(e) => return vec![format!("addons: unreadable state: {e}")],
     };

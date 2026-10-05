@@ -227,6 +227,12 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     result
 }
 
+/// Where the backup store and the addon, HUD, guard and practice records live inside the
+/// data dir. The GUI and the CLI must agree on it or each misses what the other wrote.
+pub fn records_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("backups")
+}
+
 /// Per-user data dir for DeadTune (backups, profiles, bench history).
 pub fn data_dir() -> PathBuf {
     let env_dir = |name: &str| {

@@ -131,7 +131,7 @@ pub fn icon(env: &Env, args: &Args) -> CliResult {
                 println!(
                     "{path}  {}  {}",
                     icon_kind(entry),
-                    entry.stored_at(&env.data_dir).display()
+                    entry.stored_at(&env.records()).display()
                 );
             }
             return Ok(());
@@ -144,7 +144,7 @@ pub fn icon(env: &Env, args: &Args) -> CliResult {
                 Some(text) => Fit::parse(text).ok_or_else(|| usage("--fit is original or own"))?,
             };
             let bytes = std::fs::read(image).map_err(|e| fail(format!("{image}: {e}")))?;
-            let entry = icons::set(&mut layout.icons, &env.data_dir, game_path, &bytes, fit)?;
+            let entry = icons::set(&mut layout.icons, &env.records(), game_path, &bytes, fit)?;
             println!("{game_path}: {} set. {ship}", icon_kind(&entry));
         }
         Some("reset") => {

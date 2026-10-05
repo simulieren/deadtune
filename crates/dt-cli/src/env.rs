@@ -39,7 +39,11 @@ impl Env {
     }
 
     pub fn store(&self) -> Result<BackupStore, CliError> {
-        Ok(BackupStore::open(&self.data_dir)?)
+        Ok(BackupStore::open(self.records())?)
+    }
+
+    pub fn records(&self) -> PathBuf {
+        backup::records_dir(&self.data_dir)
     }
 
     pub fn bench_dir(&self) -> PathBuf {

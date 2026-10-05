@@ -747,7 +747,7 @@ pub fn parse_bool(value: &str) -> bool {
 impl AppState {
     pub fn open(paths: GamePaths, data_dir: PathBuf, settings: Settings) -> io::Result<AppState> {
         let live = LiveFiles::read(&paths)?;
-        let store = BackupStore::open(data_dir.join("backups"))?;
+        let store = BackupStore::open(dt_core::backup::records_dir(&data_dir))?;
         let dir = profiles::dir(&data_dir);
         let presets_dir = preset::cache_dir(&data_dir);
         let (profile, saved) = match settings

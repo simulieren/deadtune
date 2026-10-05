@@ -10,6 +10,7 @@ use std::path::Path;
 use super::install::read_record;
 use super::{AddonId, Kind, info, native_scope, native_sinner};
 use crate::hud::crc32::crc32;
+use crate::hud::inject;
 use crate::hud::install::{ADDON_FILE as HUD_ADDON_FILE, GAME_PAK, addons_dir};
 use crate::hud::resource::{self, Resource};
 use crate::hud::vpk::VpkDir;
@@ -24,6 +25,9 @@ pub enum Check {
     /// A compiled stylesheet generated from this one: same RED2, SrMa, image table and
     /// source CRC, only the text differs.
     StyleFrom(Vec<u8>),
+    /// A layout rebuilt as text from this compiled one: every line of the original's XML
+    /// is still there, in order.
+    LayoutFrom(Vec<u8>),
     /// This texture with every level but the largest dropped and `NO_LOD` set.
     TopMipOf(Vec<u8>),
     /// This model with its LOD arrays pinned to the full-detail mesh, every other block
@@ -136,6 +140,8 @@ fn style_facts(data: &[u8]) -> Result<String, String> {
 fn check_content(path: &str, data: &[u8], expect: &Expect) -> Result<(), String> {
     match path.rsplit_once('.').map_or("", |(_, ext)| ext) {
         "vcss_c" => check_style(data)?,
+        "vxml_c" => check_text_layout(data)?,
+        "vjs_c" => check_script(data)?,
         "vtex_c" => check_texture(data)?,
         "vpcf_c" => {
             if let Some(stub) = &expect.particle_stub
@@ -151,6 +157,7 @@ fn check_content(path: &str, data: &[u8], expect: &Expect) -> Result<(), String>
         Some(Check::Bytes(want)) if data == want => Ok(()),
         Some(Check::Bytes(_)) => Err("not the game's current file".into()),
         Some(Check::StyleFrom(original)) => style_from(data, original),
+        Some(Check::LayoutFrom(original)) => layout_from(data, original),
         Some(Check::TopMipOf(original)) => top_mip_of(data, original),
         Some(Check::PinnedLodsOf(original)) => pinned_lods_of(data, original),
         Some(Check::ResampledFrom(original)) => resampled_from(data, original),
@@ -166,6 +173,47 @@ fn check_style(data: &[u8]) -> Result<(), String> {
     let again = resource::with_style_text(&res, text).map_err(|e| e.to_string())?;
     if again != res {
         return Err("DATA image table does not survive a rewrite".into());
+    }
+    Ok(())
+}
+
+/// A layout we wrote is text behind a prefix that is the text's own CRC.
+fn check_text_layout(data: &[u8]) -> Result<(), String> {
+    let res = Resource::parse(data).map_err(|e| e.to_string())?;
+    if res.to_bytes() != data {
+        return Err("does not serialise back to the same bytes".into());
+    }
+    if res.block(b"LaCo").is_some() {
+        return Ok(());
+    }
+    let text = resource::style_text(&res).map_err(|e| e.to_string())?;
+    if resource::source_crc(&res).map_err(|e| e.to_string())? != 0 {
+        return Err("DATA prefix is not the crc32 of the layout text".into());
+    }
+    if !text.trim_start().starts_with("<!--") && !text.trim_start().starts_with("<root>") {
+        return Err("layout text does not start with <root>".into());
+    }
+    Ok(())
+}
+
+fn check_script(data: &[u8]) -> Result<(), String> {
+    let res = Resource::parse(data).map_err(|e| e.to_string())?;
+    if res.type_version < 4 {
+        return Err(format!(
+            "script version {} keeps no plain text",
+            res.type_version
+        ));
+    }
+    let block = res.block(b"DATA").ok_or("no DATA block")?;
+    std::str::from_utf8(&block.data).map_err(|_| "script is not UTF-8".to_string())?;
+    Ok(())
+}
+
+fn layout_from(data: &[u8], original: &[u8]) -> Result<(), String> {
+    let ours = inject::layout_text(data).map_err(|e| e.to_string())?;
+    let theirs = inject::layout_text(original).map_err(|e| format!("game's original: {e}"))?;
+    if !inject::extends(&ours, &theirs) {
+        return Err("does not contain every line of the game's layout".into());
     }
     Ok(())
 }
@@ -315,14 +363,23 @@ pub fn expect_for(id: AddonId, paths: &GamePaths) -> Expect {
     }
 }
 
-/// The HUD pak patches whichever stylesheets the layout touches; each must come from the
-/// game's file at the same path.
+/// The HUD pak patches whichever stylesheets and layouts the layout touches; each must
+/// come from the game's file at the same path. Our own files under `deadtune/` have no
+/// game original and get the content checks only.
 pub fn expect_for_hud(paths: &GamePaths, pak: &VpkDir) -> Expect {
     let checks = pak
         .entries
         .keys()
-        .filter(|p| p.ends_with(".vcss_c"))
-        .filter_map(|p| game_file(paths, p).map(|b| (p.clone(), Check::StyleFrom(b))))
+        .filter_map(|p| {
+            let check = if p.ends_with(".vcss_c") {
+                Check::StyleFrom
+            } else if p.ends_with(".vxml_c") {
+                Check::LayoutFrom
+            } else {
+                return None;
+            };
+            game_file(paths, p).map(|b| (p.clone(), check(b)))
+        })
         .collect();
     Expect {
         particle_stub: None,

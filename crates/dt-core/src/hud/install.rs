@@ -5,7 +5,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::layout::{self, HudLayout, StylePatch};
+use super::inject::{self, SCRIPTS_DIR, STYLES_DIR};
+use super::layout::{self, HudLayout, HudPatch};
 use super::vpk::{self, VpkDir};
 use super::{resource, searchpaths};
 use crate::backup::{atomic_write, sha256_hex};
@@ -35,7 +36,7 @@ pub enum HudAction {
 pub struct HudPlan {
     pub addon_path: PathBuf,
     pub action: HudAction,
-    pub patch: StylePatch,
+    pub patch: HudPatch,
     pub conflicts: Vec<Conflict>,
     /// gameinfo.gi lacks `Game citadel/addons`; run `searchpaths::ensure_addons`.
     pub needs_search_path: bool,
@@ -68,6 +69,10 @@ pub enum HudError {
     Vpk(#[from] super::vpk::VpkError),
     #[error(transparent)]
     Resource(#[from] super::resource::ResourceError),
+    #[error("{0}: {1}")]
+    Inject(String, super::inject::InjectError),
+    #[error("{0} is not a script or stylesheet of ours")]
+    OwnFile(String),
     #[error(transparent)]
     Layout(#[from] super::layout::LayoutError),
     #[error(transparent)]
@@ -94,7 +99,7 @@ pub fn plan(paths: &GamePaths, layout: &HudLayout, state_dir: &Path) -> Result<H
 /// `plan` after compilation. An empty patch plans removal of our addon.
 pub fn plan_patch(
     paths: &GamePaths,
-    patch: StylePatch,
+    patch: HudPatch,
     state_dir: &Path,
 ) -> Result<HudPlan, HudError> {
     let addon_path = addons_dir(paths).join(ADDON_FILE);
@@ -213,23 +218,46 @@ pub fn installed_state(paths: &GamePaths, state_dir: &Path) -> Result<InstalledS
     }
 }
 
-/// Builds the addon bytes from the game pak and a patch. Exposed for tests and the
-/// example binary.
-pub fn build_addon(game_pak: &VpkDir, patch: &StylePatch) -> Result<Vec<u8>, HudError> {
+/// Builds the addon bytes from the game pak and a patch: the game's stylesheets with our
+/// CSS appended, the game's layouts rebuilt as text with our includes, and our own
+/// scripts and stylesheets. Exposed for tests and the example binary.
+pub fn build_addon(game_pak: &VpkDir, patch: &HudPatch) -> Result<Vec<u8>, HudError> {
     let mut files = BTreeMap::new();
-    for (path, css) in patch.files.iter().filter(|(_, css)| !css.is_empty()) {
+    for (path, css) in patch.styles.iter().filter(|(_, css)| !css.is_empty()) {
         let compiled = game_pak.read(path)?;
         files.insert(path.clone(), resource::append_style(&compiled, css)?);
+    }
+    for (path, edit) in &patch.layouts {
+        let compiled = game_pak.read(path)?;
+        let includes: Vec<&str> = edit
+            .style_includes
+            .iter()
+            .chain(&edit.script_includes)
+            .map(String::as_str)
+            .collect();
+        let note = format!(
+            "Rebuilt by DeadTune from the game's own {path}; adds {}",
+            includes.join(", ")
+        );
+        let built = inject::patched_layout(&compiled, edit, &[], &note)
+            .map_err(|e| HudError::Inject(path.clone(), e))?;
+        files.insert(path.clone(), built);
+    }
+    for (path, text) in &patch.own_files {
+        let built = if path.starts_with(SCRIPTS_DIR) && path.ends_with(".vjs_c") {
+            inject::script_resource(text)
+        } else if path.starts_with(STYLES_DIR) && path.ends_with(".vcss_c") {
+            inject::style_resource(text)
+        } else {
+            return Err(HudError::OwnFile(path.clone()));
+        };
+        files.insert(path.clone(), built);
     }
     Ok(vpk::write(&files))
 }
 
-fn patched_paths(patch: &StylePatch) -> impl Iterator<Item = &str> {
-    patch
-        .files
-        .iter()
-        .filter(|(_, css)| !css.is_empty())
-        .map(|(path, _)| path.as_str())
+fn patched_paths(patch: &HudPatch) -> impl Iterator<Item = &str> {
+    patch.paths()
 }
 
 /// A file at our path is ours if it matches our record, or is byte-identical to what
@@ -250,7 +278,7 @@ fn ensure_owned(
 
 /// Other addons that also ship a style file we patch. Unreadable archives are skipped:
 /// the scan is advisory and must not block an install.
-fn conflicts(addons: &Path, patch: &StylePatch) -> Vec<Conflict> {
+fn conflicts(addons: &Path, patch: &HudPatch) -> Vec<Conflict> {
     let Ok(dir) = std::fs::read_dir(addons) else {
         return Vec::new();
     };

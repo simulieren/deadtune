@@ -2837,7 +2837,7 @@ mod tests {
             state.apply_minimap_preset(Some(preset));
             assert_eq!(state.minimap_preset(), Some(preset));
             let patch = dt_core::hud::layout::compile(&state.profile.hud).unwrap();
-            let css = &patch.files[minimap_colors::MINIMAP_STYLE];
+            let css = &patch.styles[minimap_colors::MINIMAP_STYLE];
             assert!(css.contains(".player.enemy #BackgroundImage"), "{css}");
             assert!(
                 !state
@@ -2911,7 +2911,7 @@ mod tests {
         );
         let patch = dt_core::hud::layout::compile(&state.profile.hud).unwrap();
         assert!(
-            patch.files[minimap_colors::MINIMAP_STYLE]
+            patch.styles[minimap_colors::MINIMAP_STYLE]
                 .contains("player.enemy{pre-transform-scale2d:1.5;}")
         );
 

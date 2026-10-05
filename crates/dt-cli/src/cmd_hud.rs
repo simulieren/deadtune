@@ -80,8 +80,20 @@ pub fn status(env: &Env, args: &Args) -> CliResult {
     }
     if let Some(path) = args.value("layout") {
         let patch = layout::compile(&load_layout(Path::new(path))?)?;
-        for (file, css) in patch.files.iter().filter(|(_, css)| !css.is_empty()) {
+        for (file, css) in patch.styles.iter().filter(|(_, css)| !css.is_empty()) {
             println!("layout patches {file}: {css}");
+        }
+        for (file, edit) in &patch.layouts {
+            let includes: Vec<&str> = edit
+                .style_includes
+                .iter()
+                .chain(&edit.script_includes)
+                .map(String::as_str)
+                .collect();
+            println!("layout rebuilds {file} with {}", includes.join(", "));
+        }
+        for (file, text) in &patch.own_files {
+            println!("layout adds {file} ({} bytes)", text.len());
         }
         if patch.is_empty() {
             println!("layout is vanilla: applying it removes the addon");

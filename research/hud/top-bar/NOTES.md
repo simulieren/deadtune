@@ -188,56 +188,78 @@ the texture file [U]. The top bar layout references no textures, so its table is
 
 ## 3. Generic API in dt-core (for the minimap follow-up)
 
-Module `hud::inject` (name final once merged; check `hud/mod.rs`). Everything builds from the
-installed game's own `pak01_dir.vpk` at apply time, so a game update rebuilds it.
+Modules `hud::kv3` (reader) and `hud::inject` (the edit), as merged. Everything builds from
+the installed game's own `pak01_dir.vpk` at apply time, so a game update rebuilds it.
 
 ```rust
-/// Our own files live under these prefixes; nothing of the game's is ever at these paths.
-pub const SCRIPTS_DIR: &str = "panorama/scripts/deadtune/";
-pub const STYLES_DIR: &str = "panorama/styles/deadtune/";
+// hud::inject
+pub const SCRIPTS_DIR: &str = "panorama/scripts/deadtune/";   // our scripts
+pub const STYLES_DIR: &str = "panorama/styles/deadtune/";     // our stylesheets
 
-/// Where to put something in a layout, by the `id` attribute of an existing panel.
-pub enum Anchor { AppendTo(String), Before(String), After(String) }
-
-/// One layout's edit. Includes are `s2r://` paths of files in `HudPatch::own_files`
-/// (or the game's). Panels are XML snippets; most features create panels from script instead.
+pub struct Element { tag, attrs, children, text }              // a layout node; Element::new("Panel").attr("id", "X").child(..)
+pub enum Anchor { AppendTo(String), Before(String), After(String) }   // by an existing panel's id
 #[derive(Default)]
 pub struct LayoutEdit {
-    pub style_includes: Vec<String>,
-    pub script_includes: Vec<String>,
-    pub panels: Vec<(Anchor, String)>,
+    pub style_includes: Vec<String>,                            // "s2r://panorama/styles/deadtune/x.vcss_c"
+    pub script_includes: Vec<String>,                           // "s2r://panorama/scripts/deadtune/x.vjs_c"
+    pub panels: Vec<(Anchor, Element)>,                         // static panels; scripts may $.CreatePanel instead
 }
+pub struct ImageEntry { name, width, height, crc }              // the plaintext layout's image table
 
+pub fn tree(compiled: &[u8]) -> Result<Element, InjectError>;   // the game's LaCo decoded
+pub fn layout_text(compiled: &[u8]) -> Result<String, InjectError>;   // compiled or plaintext -> XML text
+pub fn apply(root: &mut Element, edit: &LayoutEdit) -> Result<(), InjectError>;   // idempotent
+pub fn to_xml(root: &Element, note: &str) -> String;           // Source 2 Viewer's format, tabs, &apos; escapes
+pub fn patched_layout(compiled: &[u8], edit: &LayoutEdit, images: &[ImageEntry], note: &str) -> Result<Vec<u8>, InjectError>;
+pub fn layout_resource(xml: &str, images: &[ImageEntry]) -> Vec<u8>;   // DATA-only .vxml_c, prefix crc32(text)
+pub fn style_resource(css: &str) -> Vec<u8>;                   // DATA-only .vcss_c, prefix crc32(text)
+pub fn script_resource(js: &str) -> Vec<u8>;                   // DATA-only .vjs_c, type 4, bare text
+pub fn extends(ours: &str, original: &str) -> bool;            // every original line present, in order
+
+// hud::layout
 pub struct HudPatch {
-    /// Minified CSS appended to the game's compiled stylesheet at this path (existing path).
-    pub styles: BTreeMap<String, String>,
-    /// The game's layouts to rebuild as text with these additions.
-    pub layouts: BTreeMap<String, LayoutEdit>,
-    /// Our own plaintext files: `.vjs_c` under SCRIPTS_DIR, `.vcss_c` under STYLES_DIR.
-    pub own_files: BTreeMap<String, String>,
+    pub styles: BTreeMap<String, String>,        // CSS appended to the game's stylesheet at this path
+    pub layouts: BTreeMap<String, LayoutEdit>,   // the game's layouts rebuilt as text with these additions
+    pub own_files: BTreeMap<String, String>,     // our plaintext files by path (SCRIPTS_DIR, STYLES_DIR)
 }
-
-/// The game's compiled layout -> its XML text (KV3 LaCo decoded, or the text it already holds).
-pub fn layout_text(compiled: &[u8]) -> Result<String, InjectError>;
-/// `layout_text` plus the edit, as a plaintext `.vxml_c` resource.
-pub fn patched_layout(compiled: &[u8], edit: &LayoutEdit, images: &[ImageEntry]) -> Result<Vec<u8>, InjectError>;
-/// Plaintext `.vjs_c` (type 4) and `.vcss_c` (type 3, prefix crc32(text)).
-pub fn script_resource(js: &str) -> Vec<u8>;
-pub fn style_resource(css: &str) -> Vec<u8>;
 ```
 
-`install::build_addon` turns a `HudPatch` into the VPK: each `styles` entry is
-`resource::append_style(game file, css)`; each `layouts` entry is `patched_layout(game file, edit)`;
-each `own_files` entry is `script_resource` or `style_resource` by extension.
-`addons::verify` checks a rebuilt layout by regenerating it from the game's file (the text must
-contain every line of the decompiled original in order) and own files by their prefix CRC.
+`install::build_addon` turns a `HudPatch` into the VPK: `styles` through
+`resource::append_style`, `layouts` through `patched_layout` with an empty image table and a
+note naming the source and the includes, `own_files` through `script_resource` or
+`style_resource` by prefix and extension. `addons::verify` checks a rebuilt layout against the
+game's file (`Check::LayoutFrom`: `extends` on the two texts, prefix is the text's CRC) and our
+own files by their prefix CRC and type. `hud::topbar` is the first consumer: `TopBarStyle::compile`
+returns the CSS, the `LayoutEdit` and the two own files; `layout::compile` merges them into the
+`HudPatch`. Source 2 Viewer decompiles the built pak's four files without complaint and the
+rebuilt layout reads back as the vanilla tree plus the two includes [V].
 
 Minimap follow-up, concretely: `layouts["panorama/layout/hud_minimap.vxml_c"]` with
 `style_includes = ["s2r://panorama/styles/deadtune/minimap_x.vcss_c"]`,
 `script_includes = ["s2r://panorama/scripts/deadtune/minimap_x.vjs_c"]`, and the two files in
-`own_files`. The minimap layout references five `.vtex` images; pass their table (sizes from
-`texture::vtex::Vtex`, CRC per section 2) or, first, try an empty table and let the Windows
-checklist decide [U].
+`own_files`. Fixture: `crates/dt-core/tests/fixtures/hud/hud_minimap_vanilla.vxml_c`. The
+minimap layout references five `.vtex` images; FesamAyt's mod lists them in the image table
+(sizes from `texture::vtex::Vtex`, CRC probably the VPK entry CRC of each `.vtex_c`), while the
+top bar ships an empty table. Start with an empty table and let the Windows checklist decide [U].
+Panels created at runtime: `$.CreatePanel("Panel", parent, id)` from the script, as both top bar
+mods and ours do; `Game.GetGameTime()` may not exist, so read the `#GameTime` label as a fallback.
+
+## 3b. What DeadTune built from this (2026-10-05)
+
+- `hud::topbar::TopBarStyle` in the profile's `[hud.top_bar]` table: `missing_opacity_pct`,
+  `missing_desaturate`, `missing_darken`, `dead`, `portrait_scale_pct`, `portrait_gap_px`,
+  `ally_color`, `enemy_color`, `clock`, `soul_lead`, `rejuv_charges`, `hide_kill_counts`,
+  `hide_player_souls`, `show_levels`, `spawn_timers`, `urn_lead`, `purchases`. Vanilla stores
+  nothing and emits nothing. Presets: Vanilla, Fight readability (NA-45), Clean, High contrast,
+  Top Bar Plus style (bonclide, NA-45), Minimal (Stovven).
+- The script (`crates/dt-core/src/hud/assets/top_bar.js`, ours) reads only the game clock, the
+  two team soul labels, the game's midboss timer and charge classes, and the shop's recent
+  purchases; the stylesheet (`assets/top_bar.css`) uses no game `@define` names.
+- GUI: "Top bar" section and HUD tab page with the painted mock; CLI: `profile show` reports
+  the table, `hud status --layout` lists the rebuilt layout and added files,
+  `examples/hud_top_bar.sample.toml` for `hud_build`.
+- Not built: a player rank display (section 1.3, no such feature or data source exists), the
+  hideout testing menu and pause overlay restyles, the purchase icon table.
 
 ## 4. What to prove on Windows
 

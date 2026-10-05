@@ -111,7 +111,7 @@ How it works now: DeadTune writes `cfg\deadtune_boot.cfg` (binds F8, sets the pr
 - [ ] Mini window: opens from the sidebar's "Mini window", stays on top of a borderless-windowed game, and Expand returns to the main window.
 
 ### 4. Ranked
-- [ ] **P0-3**: with modified ConVars, can you queue matchmaking? With Ranked-safe mode on? With only the HUD addon installed (**H0-4**)?
+- [ ] **P0-3**: with modified ConVars, can you queue matchmaking? With Ranked-safe mode on? With only the HUD addon installed (**H0-4**)? With the top bar Extras on (a rebuilt layout and a script)?
 
 ### 5. Restart loop
 - [ ] Apply + relaunch (Advanced): closes `deadlock.exe`, starts it through Steam, the countdown runs and "restart pending" clears.
@@ -129,6 +129,20 @@ How it works now: DeadTune writes `cfg\deadtune_boot.cfg` (binds F8, sets the pr
 - [ ] **H0-3**: with QoL Lite or QOL Lock installed too, which addon wins? Check setup should warn about the conflict.
 - [ ] **H0-5, H0-6**: crosshair convars live from console; which state shows `#hud_signature`.
 - [ ] **H0-9**: screenshot the vanilla HUD at 1920x1080 and compare with the HUD tab's preview boxes.
+
+### 7b. Top bar page (research/hud/top-bar/NOTES.md)
+
+Every option here is a CSS rule appended to the game's own `citadel_hud_top_bar.vcss_c`; the three Extras also rebuild `citadel_hud_top_bar.vxml_c` as a text layout and add `panorama/scripts/deadtune/top_bar.vjs_c` and `panorama/styles/deadtune/top_bar.vcss_c`. `tools\hud_build.exe <game> tools\hud_top_bar.sample.toml --install` builds the same pak without the GUI.
+
+- [ ] **T-1 Stylesheet loads**: Top bar page, preset "Fight readability", Apply, launch into a sandbox or a match. The top bar looks stock while every enemy is visible. `tools\deadtune-cli.exe addons verify` prints `ok` for `pak77_dir.vpk`.
+- [ ] **T-2 Dimming follows vision**: in a match, an enemy whose health bar disappears (out of your team's vision) fades to 20 %; it comes back when seen again. Allies, the dead and you never fade. Then "Desaturate" and "Darken": grey and darkened portraits instead.
+- [ ] **T-3 Presentation options**: one at a time, Apply, relaunch: dead hero look (grey, dark, faded), portrait size 85 % and gap 6 px (the bar stays centred), ally and enemy colours (health bars and souls tags change, nothing else), clock, soul lead and rejuvenator rows Compact then Hidden, "Hide kill rows" (the scoreboard loses the team kills and AP rows), "Hide souls tags", "Always show levels". Note anything the game overrides (a rule that does not take).
+- [ ] **T-4 Layout loads**: turn on "Spawn timers", Apply, launch through DeadTune (guard on). The game must reach the main menu and a match must show the top bar; `console.log` has no `FATAL` and no line naming `citadel_hud_top_bar`. If the bar is missing or the start fails, the text layout is refused: copy the console lines and note it, the KV3 route in NOTES.md section 2 is the fallback.
+- [ ] **T-5 Spawn timers**: two chips under the clock. The powerup chip counts down from 5:00 and reaches 0:00 exactly when the bridge buffs spawn; the rejuvenator chip shows the game's own midboss timer text once it has been killed, "UP" when it is up, and a first-spawn countdown before that. Both turn amber in the last 30 s. Hidden in the hideout and in street brawl.
+- [ ] **T-6 Urn soul lead**: a chip between the two team soul totals showing the percentage gap, green at or above +15 % (+10 % after minute 15), red at or below the negative threshold, "--" before the totals exist.
+- [ ] **T-7 Purchase popups**: with the shop closed, when a hero on either team buys an item, its name pops under that hero's portrait for 10 s (at most three per hero), bordered weapon orange, vitality green or spirit purple. If popups never appear, note whether the shop's Recent purchases list shows the buys: the script maps them to portraits through the hero image's `heroid`.
+- [ ] **T-8 Vanilla removes**: preset "Vanilla", Apply: `pak77_dir.vpk` is gone (when nothing else on the HUD or Minimap pages is set) and the game is stock.
+- [ ] **T-9 After an update**: the Top bar settings survive a game update through the usual "Deadlock updated" re-apply, and `addons verify` is `ok` again.
 
 ### 8. Benchmark
 - [ ] **P0-7**: capture 3 identical 60 s runs with PresentMon, import each in Advanced > Bench. Variance under 3%? Note which CSV columns your PresentMon version writes (`MsBetweenPresents` or `FrameTime`).

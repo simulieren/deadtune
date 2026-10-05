@@ -73,6 +73,9 @@ CSS emitted per edit: `transform:translateX(..px) translateY(..px)`, `ui-scale` 
 | `elements` | the element table |
 | `layout` | `HudLayout`, validation, `compile`, `preview` rects |
 | `minimap_colors` | Experimental. Minimap icon colour table, rules go to `hud_minimap.vcss_c` (research/hud/minimap-icon-colors.md) |
+| `topbar` | Experimental. `TopBarStyle`: out-of-vision dimming, dead look, portrait size, team colours, clock and score treatments, plus the spawn timers, urn soul lead and purchase popups script (research/hud/top-bar/NOTES.md) |
+| `kv3` | binary KeyValues3 reader (v4, v5, LZ4) for the `LaCo` block of compiled layouts |
+| `inject` | decodes a game layout, adds our style and script includes and panels at anchors, writes it back as a text `.vxml_c`; plaintext `.vjs_c` and `.vcss_c` for our own files under `panorama/{scripts,styles}/deadtune/` |
 | `searchpaths` | ensure `Game citadel/addons` in gameinfo SearchPaths (pure text) |
 | `install` | plan/execute/uninstall of `addons/pak77_dir.vpk`, install record, conflict scan |
 | `convars` | embedded `catalog/hud.toml` |
@@ -109,6 +112,7 @@ Use `cargo run -p dt-core --example hud_build -- <game root> <layout.toml>` to p
 8. Minimap scale: vanilla animates `pre-transform-scale2d` (`.InHideout` sets 0.9). Check that our value holds in matches. State rules with higher specificity (`.InHideout`, `.deathReplayActive`, `.gDetailView`) will win over ours by design.
 9. The preview boxes for the top bar, ability, item, ammo, kill feed and chat panels are estimates (`notes` in `hud::elements`). Take a screenshot with the HUD in vanilla and correct the table rows.
 10. Experimental minimap colours: run `hud_build` with `examples/hud_minimap_colors.sample.toml` and work through the tests in research/hud/minimap-icon-colors.md section 7.
+11. Top bar: does the game load a text `citadel_hud_top_bar.vxml_c` rebuilt from its own compiled one (a shipped minimap mod says yes), and do the appended `citadel_hud_top_bar.vcss_c` rules follow `.HealthVisible`? docs/testing-windows.md section 7b, `examples/hud_top_bar.sample.toml`.
 
 ### Phase H1: core (this branch)
 
@@ -125,5 +129,6 @@ Canvas editor plus ConVar list, as in 2.4.
 ### Phase H4: later
 
 - Per-aspect-ratio rules (`.AspectRatio16x10`, `.AspectRatio4x3` hooks).
-- More elements (top bar sub-parts, souls counter, damage report) as table rows.
+- More elements (souls counter, damage report) as table rows.
+- Minimap extras through `hud::inject` the way the top bar's are built (research/hud/top-bar/NOTES.md section 3).
 - Import a QoL Lite/Lock CSS stub as a starting layout.

@@ -162,7 +162,9 @@ The dots rebuild `hud_minimap.vxml_c` as a text layout with two includes and add
 
 - [ ] Pick **Big number**, Apply, start a match or the hideout: the health number is clearly bigger and not cut off, max health ("/ 700") is easy to read, the green backer is gone.
 - [ ] Take damage to between half and a third of your health: the number turns orange; below that it is red as in vanilla, and the bar and HUD no longer shake.
-- [ ] **Hide health regen** hides the small regen number; **Reset** brings the game's health bar back after Apply.
+- [ ] Turn **Regen number** off: the small regen number goes; **Reset** brings the game's health bar back after Apply.
+- [ ] **Bar styles**: one at a time, pick each style card, Apply and look in the hideout: **Upright** (ruler without the lean), **Slim**, **Wedge** (the game's narrow wedge mask and border), **Blade**, **Horizontal**, **Pill**, **Terminal**, **Minimal** and **Number only**. For each, screenshot it at full health and after taking damage, and note: whether the bar fills from the bottom (or from the left when horizontal), whether the shape and colour match the preview, whether the number sits somewhere readable or overlaps the bar, and whether anything is cut off. The horizontal styles turn the whole bar container; note where the number ends up relative to the bar.
+- [ ] **Inspector**: change **Font** to Block, Sans and Mono (the number's typeface changes), **Max health** to Hidden, **Outline** off and **Ticks** off on a straight bar, and a custom **Fill** colour; Apply after each and note any that do nothing in game.
 - [ ] Try a hero with an extra bar (Rat King armour, a shield item) and note anything that overlaps.
 - [ ] With bytenode's Minimal Healthbar or budhud mod installed alongside, System check lists it under "Other HUD mods".
 

@@ -12,6 +12,7 @@ mod file_pick;
 mod friendly;
 mod game_files_view;
 mod game_shot;
+mod health_art;
 mod health_view;
 mod hud_art;
 mod hud_view;

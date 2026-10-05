@@ -1,29 +1,36 @@
-//! Health bar page: style presets, the controls behind them and a preview of the health
-//! number at full, hurt and low health, drawn from the game's bar, frame and backer when
-//! they load. Edits go out with the HUD addon on Apply.
+//! Health bar page: a gallery of ready-made bar styles, the game's bar and yours side by
+//! side at any health, and an inspector with every setting behind the styles. Drawing is
+//! `crate::health_art`; edits go out with the HUD addon on Apply.
 
-use dt_core::hud::art;
-use dt_core::hud::health_style::{HealthPreset, HealthStyle, NUMBER_SCALE_RANGE};
-use eframe::egui::epaint::TextShape;
+use dt_core::hud::health_style::{
+    BarAngle, BarShape, HealthPreset, HealthStyle, LENGTH_RANGE, NumberFont, PresetGroup,
+    THICKNESS_RANGE,
+};
+use dt_core::texture::adjust::Rgb;
+use eframe::egui::color_picker::color_edit_button_srgb;
 use eframe::egui::{
-    self, Align, Align2, Color32, CornerRadius, FontId, Layout, Painter, Pos2, Rect, RichText,
-    Sense, Stroke, Ui, emath::Rot2, pos2, vec2,
+    self, Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Margin, Rect, RichText, Sense,
+    Stroke, StrokeKind, Ui, pos2, vec2,
 };
 
-use crate::hud_art::{self, Images, Place};
-use crate::minimap_view::{marked, percent_slider};
+use crate::health_art::draw_health;
+use crate::hud_art::Images;
+use crate::icons::{self, Icon};
 use crate::state::AppState;
-use crate::theme::{self, ACCENT, RAIL, WARN, WEAK};
+use crate::theme::{self, ACCENT, BORDER, CARD, CARD_HOVER, ON_ACCENT, RAIL, TEXT, WARN, WEAK};
 use crate::widgets;
 
-/// Vanilla's number colours: off-white, and `#FF5656` at low health.
-const HEALTHY: Color32 = Color32::from_rgb(0xFF, 0xEF, 0xD7);
-const LOW: Color32 = Color32::from_rgb(0xFF, 0x56, 0x56);
-const HURT: Color32 = Color32::from_rgb(0xFF, 0xB3, 0x47);
-/// `vivaciousGreen`, the backer's wash, and the frame's `#142304`.
-const BACKER: Color32 = Color32::from_rgb(0x2E, 0x6B, 0x3A);
-const FRAME: Color32 = Color32::from_rgb(0x14, 0x23, 0x04);
-const PREVIEW_WIDTH: f32 = 300.0;
+const INSPECTOR: f32 = 360.0;
+const CARD_SIZE: egui::Vec2 = vec2(148.0, 156.0);
+const NUMBER_SIZES: [u16; 5] = [80, 100, 130, 160, 200];
+const SWATCHES: [(&str, Rgb); 6] = [
+    ("Paper white", Rgb([0xFF, 0xEF, 0xD7])),
+    ("White", Rgb::WHITE),
+    ("Green", Rgb([0x5F, 0xCB, 0x8C])),
+    ("Amber", Rgb([0xF0, 0xB3, 0x41])),
+    ("Cyan", Rgb([0x2D, 0xDB, 0xF1])),
+    ("Violet", Rgb([0xA7, 0x8B, 0xFA])),
+];
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
@@ -31,23 +38,27 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     let mut style = state.profile.hud.health.clone();
     let ctx = ui.ctx().clone();
     crate::hud_art::with(&ctx, state, |_, images| {
-        if ui.available_width() >= 760.0 {
+        header(ui, &mut style);
+        ui.add_space(8.0);
+        gallery(ui, &mut style, images);
+        ui.add_space(14.0);
+        if ui.available_width() >= 900.0 {
             ui.horizontal_top(|ui| {
-                let gap = 12.0;
-                let left = ui.available_width() - PREVIEW_WIDTH - gap;
+                let left = ui.available_width() - INSPECTOR - 14.0;
                 ui.vertical(|ui| {
                     ui.set_width(left);
-                    controls(ui, &mut style);
+                    compare(ui, &style, images);
                 });
-                ui.add_space(gap - ui.spacing().item_spacing.x);
+                ui.add_space(14.0 - ui.spacing().item_spacing.x);
                 ui.vertical(|ui| {
-                    ui.set_width(PREVIEW_WIDTH);
-                    preview(ui, &style, images);
+                    ui.set_width(INSPECTOR);
+                    inspector(ui, &mut style);
                 });
             });
         } else {
-            preview(ui, &style, images);
-            controls(ui, &mut style);
+            compare(ui, &style, images);
+            ui.add_space(12.0);
+            inspector(ui, &mut style);
         }
     });
     credits(ui);
@@ -56,450 +67,414 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     }
 }
 
-fn controls(ui: &mut Ui, style: &mut HealthStyle) {
-    widgets::card(ui, |ui| {
-        ui.horizontal(|ui| {
-            widgets::caption(ui, "Style");
-            widgets::badge(ui, "Experimental, untested in game", WARN);
-        });
-        widgets::hint(
-            ui,
-            "Goes into the HUD addon on Apply, next to your HUD layout.",
+fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    egui::Frame::new()
+        .fill(CARD)
+        .stroke(Stroke::new(1.0, BORDER))
+        .corner_radius(CornerRadius::same(theme::RADIUS))
+        .inner_margin(Margin::same(16))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        })
+        .inner
+}
+
+fn header(ui: &mut Ui, style: &mut HealthStyle) {
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new("Bar style")
+                .size(15.0)
+                .family(theme::semibold())
+                .color(TEXT),
         );
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            let current = style.preset();
-            for preset in HealthPreset::ALL {
-                if ui
-                    .selectable_label(current == Some(preset), preset.label())
-                    .on_hover_text(preset.blurb())
-                    .clicked()
-                {
-                    *style = preset.style();
-                }
-            }
-            ui.add_space(6.0);
+        widgets::badge(ui, "Experimental, untested in game", WARN);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let n = style.changed_count();
-            ui.label(
-                RichText::new(format!("Changed: {n}"))
-                    .small()
-                    .color(if n > 0 { ACCENT } else { WEAK }),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui
-                    .add_enabled(n > 0, egui::Button::new("Reset health bar"))
+            if n > 0
+                && widgets::reset_pill(ui)
                     .on_hover_text("Back to the game's own health bar")
                     .clicked()
-                {
-                    *style = HealthStyle::default();
+            {
+                *style = HealthStyle::default();
+            }
+            let text = match style.preset() {
+                Some(p) => p.label().to_string(),
+                None => format!("Custom · {n} {}", if n == 1 { "change" } else { "changes" }),
+            };
+            ui.label(
+                RichText::new(text)
+                    .size(12.5)
+                    .color(if n > 0 { ACCENT } else { WEAK }),
+            );
+        });
+    });
+}
+
+/// Every ready-made style as a card with its look at hurt health, filtered by group.
+fn gallery(ui: &mut Ui, style: &mut HealthStyle, images: &mut Images) {
+    let id = Id::new("health_gallery_group");
+    let mut group: Option<usize> = ui.data_mut(|d| *d.get_temp_mut_or(id, None));
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        if widgets::chip(ui, "All", ACCENT, Some(group.is_none())).clicked() {
+            group = None;
+        }
+        for (i, g) in PresetGroup::ALL.into_iter().enumerate() {
+            if widgets::chip(ui, g.label(), ACCENT, Some(group == Some(i))).clicked() {
+                group = if group == Some(i) { None } else { Some(i) };
+            }
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(id, group));
+    ui.add_space(8.0);
+    let current = style.preset();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
+        for preset in HealthPreset::ALL {
+            if group.is_some_and(|g| PresetGroup::ALL[g] != preset.group()) {
+                continue;
+            }
+            if style_card(ui, images, preset, current == Some(preset)).clicked() {
+                *style = preset.style();
+            }
+        }
+    });
+}
+
+fn style_card(
+    ui: &mut Ui,
+    images: &mut Images,
+    preset: HealthPreset,
+    selected: bool,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(CARD_SIZE, Sense::click());
+    let painter = ui.painter();
+    painter.rect(
+        rect,
+        CornerRadius::same(10),
+        if response.hovered() { CARD_HOVER } else { CARD },
+        Stroke::new(
+            if selected { 2.0 } else { 1.0 },
+            if selected { ACCENT } else { BORDER },
+        ),
+        StrokeKind::Inside,
+    );
+    let stage = Rect::from_min_size(rect.min + vec2(7.0, 7.0), vec2(rect.width() - 14.0, 112.0));
+    backdrop(ui, stage);
+    let painter = ui.painter();
+    draw_health(painter, images, &preset.style(), stage.shrink(6.0), 0.55);
+    painter.text(
+        pos2(rect.left() + 11.0, stage.bottom() + 9.0),
+        Align2::LEFT_TOP,
+        preset.label(),
+        FontId::new(12.5, theme::semibold()),
+        if selected { ACCENT } else { TEXT },
+    );
+    if selected {
+        let c = pos2(rect.right() - 17.0, rect.top() + 17.0);
+        painter.circle_filled(c, 8.0, ACCENT);
+        icons::paint(
+            painter,
+            Rect::from_center_size(c, vec2(11.0, 11.0)),
+            Icon::Check,
+            ON_ACCENT,
+        );
+    }
+    response
+        .on_hover_text(preset.blurb())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// A dimmed patch of the in-game screenshot (the wooden door right of the crosshair, clear of
+/// any HUD) behind a preview, so dark outlines read the way they do over the game.
+fn backdrop(ui: &Ui, rect: Rect) {
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, CornerRadius::same(8), RAIL);
+    let Some(texture) = crate::game_shot::texture(ui.ctx()) else {
+        return;
+    };
+    let h = 0.38;
+    let w = (rect.aspect_ratio() * h * 720.0 / 1280.0).min(0.3);
+    let crop = [0.70 - w / 2.0, 0.22, w, h];
+    crate::game_shot::paint(&painter, &texture, crop, rect, Color32::from_gray(105));
+}
+
+/// The game's bar and yours at one health level, with the level to scrub.
+fn compare(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
+    card(ui, |ui| {
+        let id = Id::new("health_scrub");
+        let start = std::env::var("DEADTUNE_HEALTH_LEVEL")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(55);
+        let mut pct: i32 = ui.data_mut(|d| *d.get_temp_mut_or(id, start));
+        let fill = pct as f32 / 100.0;
+        let gap = 10.0;
+        let w = (ui.available_width() - gap) / 2.0;
+        let height = (w * 1.05).clamp(240.0, 340.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for (label, look, yours) in [
+                ("Game's", HealthStyle::default(), false),
+                ("Yours", style.clone(), true),
+            ] {
+                ui.vertical(|ui| {
+                    ui.set_width(w);
+                    ui.label(
+                        RichText::new(label)
+                            .size(12.0)
+                            .family(theme::semibold())
+                            .color(if yours { ACCENT } else { WEAK }),
+                    );
+                    let (rect, _) = ui.allocate_exact_size(vec2(w, height), Sense::hover());
+                    backdrop(ui, rect);
+                    ui.painter().rect(
+                        rect,
+                        CornerRadius::same(8),
+                        Color32::TRANSPARENT,
+                        Stroke::new(
+                            1.0,
+                            if yours {
+                                ACCENT.gamma_multiply(0.5)
+                            } else {
+                                BORDER
+                            },
+                        ),
+                        StrokeKind::Inside,
+                    );
+                    draw_health(ui.painter(), images, &look, rect.shrink(20.0), fill);
+                });
+            }
+        });
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Health").size(12.0).color(WEAK));
+            for (label, value) in [("Full", 100), ("Hurt", 55), ("Low", 20)] {
+                if widgets::chip(ui, label, ACCENT, Some(pct == value)).clicked() {
+                    pct = value;
                 }
+            }
+            ui.spacing_mut().slider_width = (ui.available_width() - 70.0).max(80.0);
+            ui.add(egui::Slider::new(&mut pct, 5..=100).suffix("%"));
+        });
+        ui.data_mut(|d| d.insert_temp(id, pct));
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("A sketch of the settings, drawn from your game's own bar parts.")
+                .size(11.0)
+                .color(WEAK),
+        );
+    });
+    ui.add_space(10.0);
+    crate::game_shot::in_game(
+        ui,
+        dt_core::hud::elements::ElementId::HealthAndAmmo,
+        vec2(ui.available_width().min(320.0), 150.0),
+    );
+}
+
+/// One inspector line: a label (with its help on hover) and its control on the right.
+fn row(ui: &mut Ui, label: &str, help: &str, control: impl FnOnce(&mut Ui)) {
+    ui.horizontal(|ui| {
+        ui.set_min_height(26.0);
+        ui.label(RichText::new(label).size(12.5).color(TEXT))
+            .on_hover_text(help);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.push_id(label, control);
+        });
+    });
+    ui.add_space(2.0);
+}
+
+fn switch(ui: &mut Ui, value: &mut bool) {
+    if widgets::switch(ui, *value).clicked() {
+        *value = !*value;
+    }
+}
+
+fn pick<T: Copy + PartialEq>(ui: &mut Ui, value: &mut T, all: &[T], label: fn(T) -> &'static str) {
+    let labels: Vec<&str> = all.iter().map(|v| label(*v)).collect();
+    let current = all.iter().position(|v| v == value).unwrap_or(usize::MAX);
+    if let Some(i) = widgets::segmented(ui, &labels, current) {
+        *value = all[i];
+    }
+}
+
+fn section(ui: &mut Ui, title: &str) {
+    ui.add_space(10.0);
+    widgets::caption(ui, title);
+    ui.add_space(2.0);
+}
+
+fn inspector(ui: &mut Ui, style: &mut HealthStyle) {
+    card(ui, |ui| {
+        widgets::caption(ui, "Bar");
+        ui.add_space(2.0);
+        row(ui, "Shape", "The bar's outline", |ui| {
+            pick(ui, &mut style.shape, &BarShape::ALL, BarShape::label)
+        });
+        let has_bar = style.shape != BarShape::Hidden;
+        ui.add_enabled_ui(has_bar, |ui| {
+            row(
+                ui,
+                "Angle",
+                "Which way the bar stands; it fills from its bottom or left end",
+                |ui| pick(ui, &mut style.angle, &BarAngle::ALL, BarAngle::label),
+            );
+            row(ui, "Thickness", "How wide the bar is across", |ui| {
+                percent(ui, &mut style.thickness_pct, THICKNESS_RANGE)
+            });
+            row(ui, "Length", "How long the bar is", |ui| {
+                percent(ui, &mut style.length_pct, LENGTH_RANGE)
+            });
+            row(
+                ui,
+                "Fill",
+                "The game's paper texture, or one flat colour",
+                |ui| fill_row(ui, &mut style.fill),
+            );
+            row(ui, "Ticks", "A mark every 250 health", |ui| {
+                switch(ui, &mut style.ticks)
+            });
+            row(ui, "Outline", "The dark green frame round the bar", |ui| {
+                switch(ui, &mut style.frame)
             });
         });
-    });
-    widgets::section(ui, "Health number", |ui| {
-        if let Some(v) = percent_slider(
+        section(ui, "Number");
+        let mut shown = !style.hide_number;
+        row(
             ui,
-            "Size",
-            style.number_scale_pct,
-            NUMBER_SCALE_RANGE,
-            10,
-            ui.available_width().min(420.0),
-        ) {
-            style.number_scale_pct = v;
-        }
-        toggle(
-            ui,
-            &mut style.color_by_health,
-            "Colour by health",
-            "Turns orange when you're hurt. The game already turns it red when you're low.",
+            "Show the number",
+            "Your current health as a number",
+            |ui| switch(ui, &mut shown),
         );
-        toggle(
-            ui,
-            &mut style.clear_max_health,
-            "Easy-to-read max health",
-            "The game shows your max health at 20% opacity; this makes it clear.",
-        );
-    });
-    widgets::section(ui, "Bar", |ui| {
-        toggle(
-            ui,
-            &mut style.hide_backer,
-            "Hide the green backer",
-            "The shape behind the health number.",
-        );
-        toggle(
-            ui,
-            &mut style.no_shake,
-            "No shaking at low health",
-            "Stops the health bar and HUD from shaking and pulsing when you're hurt.",
-        );
-        toggle(
-            ui,
-            &mut style.hide_regen,
-            "Hide health regen",
-            "The small regeneration number beside the bar.",
-        );
-    });
-}
-
-fn toggle(ui: &mut Ui, value: &mut bool, label: &str, help: &str) {
-    ui.horizontal(|ui| {
-        if widgets::switch(ui, *value).clicked() {
-            *value = !*value;
-        }
-        ui.vertical(|ui| {
-            ui.label(marked(label, *value));
-            ui.label(RichText::new(help).size(11.0).color(WEAK));
+        style.hide_number = !shown;
+        ui.add_enabled_ui(shown, |ui| {
+            row(ui, "Size", "How big the number reads", |ui| {
+                let labels: Vec<String> = NUMBER_SIZES.iter().map(|s| format!("{s}%")).collect();
+                let refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+                let current = NUMBER_SIZES
+                    .iter()
+                    .position(|s| *s == style.number_scale_pct)
+                    .unwrap_or(usize::MAX);
+                if let Some(i) = widgets::segmented(ui, &refs, current) {
+                    style.number_scale_pct = NUMBER_SIZES[i];
+                }
+            });
+            row(
+                ui,
+                "Font",
+                "Typefaces from the game's own interface",
+                |ui| pick(ui, &mut style.font, &NumberFont::ALL, NumberFont::label),
+            );
+            row(
+                ui,
+                "Colour by health",
+                "Orange when hurt; the game already turns it red when low. A coloured bar follows.",
+                |ui| switch(ui, &mut style.color_by_health),
+            );
+            row(ui, "Max health", "The \"/ 4557\" under the number", |ui| {
+                let current = match (style.hide_max, style.clear_max_health) {
+                    (true, _) => 2,
+                    (false, true) => 1,
+                    (false, false) => 0,
+                };
+                if let Some(i) = widgets::segmented(ui, &["Faint", "Clear", "Hidden"], current) {
+                    style.hide_max = i == 2;
+                    style.clear_max_health = i == 1;
+                }
+            });
+            let mut backer = !style.hide_backer;
+            row(
+                ui,
+                "Green backer",
+                "The dark green shape behind the number",
+                |ui| switch(ui, &mut backer),
+            );
+            style.hide_backer = !backer;
         });
-    });
-    ui.add_space(4.0);
-}
-
-/// `#health_bar`, 66x212.
-const BAR: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(66.0, 212.0));
-/// `#health_bar_frame`, 68x220, from the bar's top-left less 1 px.
-const FRAME_RECT: Rect = Rect::from_min_max(pos2(-1.0, -1.0), pos2(67.0, 219.0));
-
-const fn on_mask(x: f32, y: f32) -> Pos2 {
-    pos2(x * 66.0 / 99.0, y * 212.0 / 330.0)
-}
-
-const fn on_frame(x: f32, y: f32) -> Pos2 {
-    pos2(x * 68.0 / 105.0 - 1.0, y * 220.0 / 340.0 - 1.0)
-}
-
-/// `healthbar_backer_mask` (a 99x330 drawing): the ruler, wide at the top, straight on
-/// the left, slanting in on the right.
-const RULER: [Pos2; 4] = [
-    on_mask(1.29, 0.95),
-    on_mask(98.8, 0.27),
-    on_mask(25.7, 329.5),
-    on_mask(0.82, 324.1),
-];
-/// `healthbar_frame_with_regen` (a 105x340 drawing): its outline, and its hole cut into
-/// two convex parts at the regen shelf's bottom, for drawing the frame without the picture.
-const FRAME_OUTLINE: [Pos2; 4] = [
-    on_frame(0.0, 0.81),
-    on_frame(104.96, 0.0),
-    on_frame(31.18, 339.19),
-    on_frame(0.34, 332.49),
-];
-const FRAME_HOLE: [[Pos2; 4]; 2] = [
-    [
-        on_frame(17.79, 35.0),
-        on_frame(90.9, 35.0),
-        on_frame(28.82, 331.19),
-        on_frame(7.15, 327.11),
-    ],
-    [
-        on_frame(83.19, 7.61),
-        on_frame(97.01, 6.1),
-        on_frame(90.9, 35.0),
-        on_frame(69.5, 35.0),
-    ],
-];
-/// `.bars_container { transform: rotateZ(-20deg) }`.
-const BAR_TILT: f32 = -20.0;
-/// The number block leans about 10 degrees in the in-game screenshot.
-const NUMBER_TILT: f32 = -10.0;
-/// The block's extent around the bar's top-left (game px, on screen after the tilts) at
-/// 100% number size; a bigger number reaches further left over the bar.
-const BLOCK: Rect = Rect::from_min_max(pos2(-2.0, -25.0), pos2(146.0, 207.0));
-const MAX_HEALTH: u32 = 4557;
-const BODY: Color32 = Color32::from_rgba_unmultiplied_const(0x33, 0x33, 0x33, 0xEA);
-/// `healthbar_fill_texture_png`'s average colour, for the fill without the picture.
-const PAPER: Color32 = Color32::from_rgb(0xDF, 0xD1, 0xBC);
-const OFF_BLACK: Color32 = Color32::from_rgb(0x10, 0x13, 0x0D);
-const FRAME_LOW: Color32 = Color32::from_rgb(0xCC, 0x34, 0x0A);
-
-/// The x range of convex `shape` on the line `y`, if the line crosses it.
-fn span(shape: &[Pos2], y: f32) -> Option<(f32, f32)> {
-    let mut range: Option<(f32, f32)> = None;
-    for (i, &a) in shape.iter().enumerate() {
-        let b = shape[(i + 1) % shape.len()];
-        if (a.y - y) * (b.y - y) > 0.0 || a.y == b.y {
-            continue;
-        }
-        let x = a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y);
-        range = Some(range.map_or((x, x), |(l, r)| (l.min(x), r.max(x))));
-    }
-    range
-}
-
-/// `#healthLines` as the screenshot shows them: a tick every 250 health up from the
-/// bottom, full width every 1000 and 30% wide between. Heights are fractions of the bar.
-fn ticks(max: u32) -> Vec<(f32, bool)> {
-    (250..max)
-        .step_by(250)
-        .map(|hp| (hp as f32 / max as f32, hp % 1000 == 0))
-        .collect()
-}
-
-fn corners(rect: Rect) -> [Pos2; 4] {
-    [
-        rect.left_top(),
-        rect.right_top(),
-        rect.right_bottom(),
-        rect.left_bottom(),
-    ]
-}
-
-/// Text put on screen by `place`, its `align` point at the upright `anchor`, ringed with
-/// an offBlack `outline` (screen px, none at 0) the way the game's number is.
-#[allow(clippy::too_many_arguments)]
-fn placed_text(
-    p: &Painter,
-    place: Place,
-    anchor: Pos2,
-    align: Align2,
-    text: &str,
-    font: FontId,
-    color: Color32,
-    outline: f32,
-) {
-    let galley = p.layout_no_wrap(text.to_owned(), font, color);
-    let corner = place.at(align.anchor_size(anchor, galley.size() / place.scale).min);
-    if outline > 0.0 {
-        for step in 0..8 {
-            let offset =
-                Rot2::from_angle(step as f32 * std::f32::consts::FRAC_PI_4) * vec2(outline, 0.0);
-            p.add(
-                TextShape::new(corner + offset, galley.clone(), OFF_BLACK)
-                    .with_override_text_color(OFF_BLACK)
-                    .with_angle(place.angle),
-            );
-        }
-    }
-    p.add(TextShape::new(corner, galley, color).with_angle(place.angle));
-}
-
-/// The health block at three health levels with the style applied: the game's bar parts
-/// where they load, painted shapes where they don't.
-fn preview(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
-    widgets::card(ui, |ui| {
-        widgets::caption(ui, "Preview");
-        let height = 190.0;
-        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
-        let painter = ui.painter();
-        painter.rect_filled(rect, CornerRadius::same(6), RAIL);
-        let states: [(&str, f32, Color32, bool); 3] = [
-            ("Full", 1.0, HEALTHY, false),
-            (
-                "Hurt",
-                0.55,
-                if style.color_by_health { HURT } else { HEALTHY },
-                false,
-            ),
-            ("Low", 0.2, LOW, true),
-        ];
-        let column = rect.width() / 3.0;
-        let area = Rect::from_min_max(rect.min + vec2(0.0, 6.0), rect.max - vec2(0.0, 24.0));
-        let number_scale = f32::from(style.number_scale_pct) / 100.0;
-        let mut block = BLOCK;
-        block.min.x = block.min.x.min(116.0 - 82.0 * number_scale);
-        let scale = (column * 0.94 / block.width()).min(area.height() / block.height());
-        let mut real = false;
-        for (i, (label, fill, color, low)) in states.into_iter().enumerate() {
-            let x = rect.left() + column * (i as f32 + 0.5);
-            let upright = Place {
-                origin: pos2(x, area.center().y) - block.center().to_vec2() * scale,
-                scale,
-                angle: 0.0,
-            };
-            let bar = upright.turned(BAR_TILT);
-            let (fill_tint, paper) = if low {
-                (LOW, LOW)
-            } else {
-                (Color32::WHITE, PAPER)
-            };
-            let frame_tint = if low { FRAME_LOW } else { FRAME };
-            let framed = images
-                .get(art::HEALTH_FRAME, FRAME_RECT.height() * scale)
-                .is_some();
-            let shown: &[[Pos2; 4]] = if framed {
-                std::slice::from_ref(&RULER)
-            } else {
-                painter.add(bar.polygon(&FRAME_OUTLINE, frame_tint));
-                &FRAME_HOLE
-            };
-            let top = BAR.bottom() - BAR.height() * fill;
-            for part in shown {
-                painter.add(bar.polygon(part, BODY));
-                let level = hud_art::cut_top(part, top);
-                if images.paint_placed(painter, art::HEALTH_FILL, bar, BAR, &level, fill_tint) {
-                    real = true;
-                } else if level.len() >= 3 {
-                    painter.add(bar.polygon(&level, paper));
-                }
-            }
-            let tick = Stroke::new(3.0 * scale, OFF_BLACK.gamma_multiply(0.7));
-            for (height, large) in ticks(MAX_HEALTH) {
-                let y = BAR.bottom() - BAR.height() * height;
-                let reach = BAR.left() + BAR.width() * if large { 1.0 } else { 0.3 };
-                for part in shown {
-                    if let Some((left, right)) = span(part, y)
-                        && right.min(reach) > left
-                    {
-                        let ends = [bar.at(pos2(left, y)), bar.at(pos2(right.min(reach), y))];
-                        painter.line_segment(ends, tick);
-                    }
-                }
-            }
-            if framed {
-                images.paint_placed(
-                    painter,
-                    art::HEALTH_FRAME,
-                    bar,
-                    FRAME_RECT,
-                    &corners(FRAME_RECT),
-                    frame_tint,
-                );
-            }
-            if !style.hide_regen {
-                let arrows = Rect::from_center_size(pos2(13.0, 9.5), vec2(7.0, 8.0));
-                let arrows_tint = HEALTHY.gamma_multiply(0.3);
-                images.paint_placed(
-                    painter,
-                    art::REGEN,
-                    bar,
-                    arrows,
-                    &corners(arrows),
-                    arrows_tint,
-                );
-                placed_text(
-                    painter,
-                    bar,
-                    pos2(19.0, 9.0),
-                    Align2::LEFT_CENTER,
-                    "14.8",
-                    FontId::new(10.0 * scale, theme::semibold()),
-                    HEALTHY,
-                    0.0,
-                );
-            }
-            let shake = if low && !style.no_shake { 1.5 } else { 0.0 };
-            let number = Place {
-                origin: upright.origin + vec2(shake, 0.0),
-                ..upright
-            }
-            .turned(NUMBER_TILT);
-            if !style.hide_backer {
-                let backer = Rect::from_min_size(pos2(52.0, 36.0), vec2(78.0, 62.4));
-                let drawn = images.paint_placed(
-                    painter,
-                    art::HEALTH_BACKER,
-                    number,
-                    backer,
-                    &corners(backer),
-                    BACKER,
-                );
-                if !drawn {
-                    let at = |x: f32, y: f32| {
-                        pos2(
-                            backer.left() + backer.width() * x / 260.0,
-                            backer.top() + backer.height() * y / 208.0,
-                        )
-                    };
-                    let shape = [
-                        at(13.6, 98.0),
-                        at(239.1, 13.6),
-                        at(259.1, 166.0),
-                        at(3.6, 195.0),
-                    ];
-                    painter.add(number.polygon(&shape, BACKER));
-                }
-            }
-            let digits = if low { 36.0 } else { 32.0 };
-            let size = digits * scale * number_scale;
-            placed_text(
-                painter,
-                number,
-                pos2(116.0, 63.0),
-                Align2::RIGHT_CENTER,
-                &((fill * MAX_HEALTH as f32) as u32).to_string(),
-                FontId::new(size, theme::semibold()),
-                color,
-                (1.2 * scale).max(1.0),
-            );
-            placed_text(
-                painter,
-                number.turned(-3.0),
-                pos2(113.0, 82.0),
-                Align2::RIGHT_CENTER,
-                &format!("/ {MAX_HEALTH}"),
-                FontId::new(14.0 * scale, theme::semibold()),
-                HEALTHY.gamma_multiply(if style.clear_max_health { 0.85 } else { 0.2 }),
-                0.0,
-            );
-            painter.text(
-                pos2(x, rect.bottom() - 12.0),
-                Align2::CENTER_CENTER,
-                label,
-                FontId::proportional(11.0),
-                WEAK,
-            );
-        }
-        widgets::hint(
+        section(ui, "Motion and extras");
+        row(
             ui,
-            if real {
-                "Your game's health bar parts with the settings above."
+            "No shaking",
+            "Stops the health bar and HUD from shaking and pulsing when you're hurt",
+            |ui| switch(ui, &mut style.no_shake),
+        );
+        let mut regen = !style.hide_regen;
+        row(
+            ui,
+            "Regen number",
+            "The small health regeneration beside the bar",
+            |ui| switch(ui, &mut regen),
+        );
+        style.hide_regen = !regen;
+    });
+}
+
+fn percent(ui: &mut Ui, value: &mut u16, range: std::ops::RangeInclusive<u16>) {
+    ui.spacing_mut().slider_width = 150.0;
+    ui.add(egui::Slider::new(value, range).suffix("%").step_by(5.0));
+}
+
+fn fill_row(ui: &mut Ui, fill: &mut Option<Rgb>) {
+    ui.spacing_mut().item_spacing.x = 4.0;
+    let mut rgb = fill.unwrap_or(SWATCHES[0].1).0;
+    let before = rgb;
+    ui.spacing_mut().interact_size = vec2(26.0, 20.0);
+    color_edit_button_srgb(ui, &mut rgb).on_hover_text("Any colour");
+    if rgb != before {
+        *fill = Some(Rgb(rgb));
+    }
+    for (name, color) in SWATCHES.iter().rev() {
+        if swatch(ui, *color, *fill == Some(*color))
+            .on_hover_text(*name)
+            .clicked()
+        {
+            *fill = Some(*color);
+        }
+    }
+    if ui
+        .selectable_label(fill.is_none(), RichText::new("Paper").size(12.0))
+        .on_hover_text("The game's paper texture")
+        .clicked()
+    {
+        *fill = None;
+    }
+}
+
+fn swatch(ui: &mut Ui, color: Rgb, on: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
+    let [r, g, b] = color.0;
+    ui.painter().rect(
+        rect.shrink(1.0),
+        CornerRadius::same(4),
+        Color32::from_rgb(r, g, b),
+        Stroke::new(
+            if on { 2.0 } else { 1.0 },
+            if on {
+                ACCENT
+            } else if response.hovered() {
+                TEXT
             } else {
-                "A sketch of the settings above, not the game's own art."
+                BORDER
             },
-        );
-        ui.add_space(6.0);
-        crate::game_shot::in_game(
-            ui,
-            dt_core::hud::elements::ElementId::HealthAndAmmo,
-            vec2(ui.available_width(), 160.0),
-        );
-    });
+        ),
+        StrokeKind::Outside,
+    );
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn credits(ui: &mut Ui) {
-    ui.add_space(4.0);
+pub(crate) fn credits(ui: &mut Ui) {
+    ui.add_space(12.0);
     ui.label(
         RichText::new(
             "Ideas from bytenode's Minimal Healthbar Redux (original concept by Gerimboca) and \
-             budhud-style Alternate Health Bar (idea by .Kaiz). DeadTune writes its own rules \
-             from your game files. A health percentage, a smooth colour fade and a horizontal \
-             bar come later.",
+             budhud-style Alternate Health Bar (idea by .Kaiz). The wedge uses the game's own \
+             bar mask. DeadTune writes its own rules from your game files. A health percentage \
+             and a smooth colour fade come later.",
         )
         .size(11.5)
         .color(WEAK),
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn span_reads_the_ruler_width_at_a_height() {
-        let (left, right) = span(&RULER, 106.0).unwrap();
-        assert!((left - 0.7).abs() < 0.2, "{left}");
-        assert!((right - 41.5).abs() < 0.5, "{right}");
-        assert_eq!(span(&RULER, -5.0), None);
-        assert_eq!(span(&RULER, 230.0), None);
-    }
-
-    #[test]
-    fn ticks_every_250_and_full_width_every_1000() {
-        let ticks = ticks(4557);
-        assert_eq!(ticks.len(), 18);
-        let large: Vec<f32> = ticks.iter().filter(|t| t.1).map(|t| t.0).collect();
-        assert_eq!(large.len(), 4);
-        assert!((large[0] - 1000.0 / 4557.0).abs() < 1e-6);
-        assert!(ticks.iter().all(|t| t.0 > 0.0 && t.0 < 1.0));
-    }
-
-    #[test]
-    fn the_frame_hole_parts_sit_inside_the_frame() {
-        for part in FRAME_HOLE {
-            for at in part {
-                let (left, right) = span(&FRAME_OUTLINE, at.y).unwrap();
-                assert!(at.x >= left && at.x <= right, "{at:?}");
-            }
-        }
-    }
 }

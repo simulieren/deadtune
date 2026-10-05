@@ -213,6 +213,18 @@ impl App {
                 self.startup_profile(&mut state);
                 hud_edit_lever(&mut state);
                 images_levers(&mut state);
+                // Screenshot lever: `DEADTUNE_HEALTH_PRESET=pill` opens the Health bar page on
+                // that style (its name in lower case, spaces dropped).
+                if let Ok(name) = std::env::var("DEADTUNE_HEALTH_PRESET") {
+                    use dt_core::hud::health_style::HealthPreset;
+                    match HealthPreset::ALL
+                        .into_iter()
+                        .find(|p| p.label().to_lowercase().replace(' ', "") == name)
+                    {
+                        Some(preset) => state.set_health_style(preset.style()),
+                        None => eprintln!("DEADTUNE_HEALTH_PRESET: no style {name}"),
+                    }
+                }
                 // `DEADTUNE_PREVIEW_IMAGES=<folder>` draws the HUD previews from a "Save all
                 // images" folder first; `DEADTUNE_PREVIEW_SHAPES=1` draws only their shapes.
                 state.hud_art.from = std::env::var_os("DEADTUNE_PREVIEW_IMAGES")

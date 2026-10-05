@@ -59,9 +59,9 @@ DeadTune turns that into an app:
 
 <img src="docs/images/minimap.png" alt="Minimap page: enemy colour, marker sizes, map opacity, apples and tunnels, per-icon colours" width="900">
 
-- **Health bar page** (experimental): Vanilla, Clean and Big number presets, health number size, orange when hurt, easy-to-read max health, no shaking at low health, with a preview at full, hurt and low health (ideas from bytenode's health bar mods, after Gerimboca and .Kaiz).
+- **Health bar page** (experimental): twelve bar styles in four groups. Game look: Vanilla, Clean, Big number, Upright. Vertical: Slim, Wedge, Blade. Horizontal: Horizontal, Pill, Terminal. Minimal and type: Minimal, Number only. An inspector sets the bar's shape (ruler, straight, rounded, the game's wedge, none), angle (tilted, upright, horizontal), thickness, length, fill colour, ticks and outline, and the number's size, font, colour by health and max health. You can compare the game's bar and yours at any health level over a patch of the game (ideas from bytenode's health bar mods, after Gerimboca and .Kaiz).
 
-<img src="docs/images/health.png" alt="Health bar page: Big number preset, size slider, colour by health and a preview at three health levels" width="900">
+<img src="docs/images/health.png" alt="Health bar page: twelve bar style cards, the game's bar and a horizontal green bar side by side, and the bar and number inspector" width="900">
 
 - **UI images page**: browse all of the game's interface images (about 2,700) by folder, then drag a PNG or SVG onto the page to replace one. Your picture is sized to the game's slot. Choose Fit, Fill or Stretch, or drag and zoom it into place, and see it next to the original. Recolour images one at a time or in bulk (tint, colorize, hue, brightness, swap a vector icon's colours) with undo. Pick several tiles to export or recolour them together. **Export › My changes** saves every changed image as one zip. Drop that zip, or any folder of images named like the game's, back on the page to import it as a collection after a preview.
 

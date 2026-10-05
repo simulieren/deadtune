@@ -108,6 +108,18 @@ pub fn dependencies() -> Vec<(Feature, Vec<&'static str>)> {
     deps
 }
 
+/// "1.2 MB", "340 KB", "12 bytes".
+pub fn human_bytes(bytes: u64) -> String {
+    const MB: f64 = 1024.0 * 1024.0;
+    if bytes >= 1 << 20 {
+        format!("{:.1} MB", bytes as f64 / MB)
+    } else if bytes >= 1 << 10 {
+        format!("{} KB", bytes / 1024)
+    } else {
+        format!("{bytes} bytes")
+    }
+}
+
 /// The features that read `path`, in table order.
 pub fn features_of(path: &str) -> Vec<Feature> {
     dependencies()
@@ -160,5 +172,12 @@ mod tests {
             Feature::Addon(AddonId::BlurDisabler).label(),
             "UI blur disabler"
         );
+    }
+
+    #[test]
+    fn human_sizes() {
+        assert_eq!(human_bytes(12), "12 bytes");
+        assert_eq!(human_bytes(340 * 1024 + 7), "340 KB");
+        assert_eq!(human_bytes(1_258_291), "1.2 MB");
     }
 }

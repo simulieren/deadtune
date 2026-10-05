@@ -4,7 +4,7 @@ use crate::args::{Args, CliResult};
 use crate::env::Env;
 use crate::{
     cmd_addons, cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_info, cmd_presets, cmd_profile,
-    cmd_update,
+    cmd_snapshot, cmd_update,
 };
 
 pub struct Command {
@@ -306,6 +306,30 @@ pub const COMMANDS: &[Command] = &[
         values: &["profile"],
         switches: &[],
         run: cmd_addons::build,
+    },
+    Command {
+        name: "snapshot take",
+        usage: "snapshot take [--categories hud,settings,menu,panorama,deadtune,config] [--no-decode] [--size-cap <MB>|none]",
+        summary: "copy the game's interface and settings files into the data folder, decoded, with a manifest",
+        values: &["categories", "size-cap"],
+        switches: &["no-decode"],
+        run: cmd_snapshot::take,
+    },
+    Command {
+        name: "snapshot list",
+        usage: "snapshot list",
+        summary: "list game file snapshots, newest first",
+        values: &[],
+        switches: &[],
+        run: cmd_snapshot::list,
+    },
+    Command {
+        name: "snapshot diff",
+        usage: "snapshot diff <old> <new> [--full]",
+        summary: "compare two snapshots (names, build ids, latest, previous); the report goes into the newer one",
+        values: &[],
+        switches: &["full"],
+        run: cmd_snapshot::diff,
     },
     Command {
         name: "self-update",

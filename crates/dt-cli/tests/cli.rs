@@ -611,3 +611,64 @@ fn watch_reports_overwrites_and_game_updates() {
         "watch flags the HUD addon as stale after an update"
     );
 }
+
+#[test]
+fn snapshot_take_list_and_diff() {
+    let fake = Fake::new();
+    let out = fake.ok(&["snapshot", "list"]);
+    assert!(out.contains("No snapshots yet"), "{out}");
+    let out = fake.ok(&["snapshot", "take", "--categories", "hud,config"]);
+    assert!(
+        out.contains("(build 20261004): 4 files, 4 written"),
+        "{out}"
+    );
+    let again = fake.ok(&["snapshot", "take", "--categories", "hud,config"]);
+    assert!(again.contains("0 written, 4 already there"), "{again}");
+    let bad = fake.expect(&["snapshot", "take", "--categories", "nope"], 2);
+    assert!(bad.contains("unknown category"), "{bad}");
+
+    let style = fs::read(repo(
+        "crates/dt-core/tests/fixtures/hud/hud_abilities_small.vcss_c",
+    ))
+    .unwrap();
+    let files = BTreeMap::from([("panorama/styles/hud.vcss_c".to_string(), style)]);
+    fs::write(
+        fake.game.join("game/citadel/pak01_dir.vpk"),
+        dt_core::hud::vpk::write(&files),
+    )
+    .unwrap();
+    fs::write(
+        fake.tmp.path().join("steamapps/appmanifest_1422450.acf"),
+        "\"AppState\"\n{\n\t\"buildid\"\t\t\"20261005\"\n}\n",
+    )
+    .unwrap();
+    let out = fake.ok(&["snapshot", "take", "--no-decode", "--size-cap", "none"]);
+    assert!(out.contains("(build 20261005)"), "{out}");
+    let list = fake.ok(&["snapshot", "list"]);
+    let lines: Vec<&str> = list.lines().collect();
+    assert_eq!(lines.len(), 2, "{list}");
+    assert!(lines[0].starts_with("20261005-") && lines[1].starts_with("20261004-"));
+
+    let diff = fake.ok(&["snapshot", "diff", "previous", "latest"]);
+    assert!(
+        diff.starts_with("Build 20261004 to 20261005: 1 changed"),
+        "{diff}"
+    );
+    assert!(diff.contains("HUD layout (changed): panorama/styles/hud.vcss_c"));
+    assert!(diff.contains("Report: "));
+    let full = fake.ok(&["snapshot", "diff", "20261004", "20261005", "--full"]);
+    assert!(full.contains("## DeadTune impact"), "{full}");
+    assert!(
+        !full.contains("```diff"),
+        "the second snapshot was not decoded, so there is no text diff"
+    );
+    let list = fake.ok(&["snapshot", "list"]);
+    assert!(
+        list.contains("report: diff-20261004-to-20261005.md"),
+        "{list}"
+    );
+    assert!(
+        fake.expect(&["snapshot", "diff", "latest", "7"], 1)
+            .contains("no snapshot named 7")
+    );
+}

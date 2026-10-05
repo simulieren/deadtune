@@ -14,7 +14,7 @@ use dt_core::hud::install::{ADDON_FILE, GAME_PAK, HudAction, addons_dir};
 use dt_core::hud::searchpaths::has_addons;
 use dt_core::hud::{ElementEdit, ElementId, HudLayout};
 use dt_core::locate::{GamePaths, from_game_root};
-use dt_core::preset::{self, PresetId};
+use dt_core::preset::{self, PresetId, remote};
 use dt_core::profile::{BaseRef, ConVarEdits, Profile};
 
 const VANILLA: &str =
@@ -31,6 +31,24 @@ const DENIED: &str = "citadel_player_outline_enemies";
 
 fn catalog() -> &'static Catalog {
     Catalog::embedded()
+}
+
+fn no_cache() -> &'static Path {
+    Path::new("no-such-presets-dir")
+}
+
+const SIDELOCK_STANDIN_ZIP: &[u8] = include_bytes!("fixtures/sidelock_standin/cfg.zip");
+
+/// A presets cache holding the synthetic SideLock stand-in, accepted as an upstream update
+/// (its sha256 is not the pinned one).
+fn sidelock_cache() -> tempfile::TempDir {
+    let presets = tempfile::tempdir().unwrap();
+    let r = preset::remote(PresetId::SideLock);
+    let dir = remote::dir(r, presets.path());
+    let status = remote::stage(r, &dir, SIDELOCK_STANDIN_ZIP).unwrap();
+    assert!(!status.ready() && status.pending.is_some());
+    remote::accept(&dir).unwrap();
+    presets
 }
 
 fn kaiz_profile() -> Profile {
@@ -120,7 +138,7 @@ impl Bridge for RecordingBridge {
 fn plan_for(install: &FakeInstall, profile: &Profile, ctx: ApplyContext) -> ApplyPlan {
     let live = read(&install.paths.gameinfo);
     let live_video = read_opt(&install.paths.video);
-    let base = resolve_base(profile).unwrap();
+    let base = resolve_base(profile, no_cache()).unwrap();
     let addons = addons_plan(&install.paths, &profile.addons, &install.store).unwrap();
     let tgt = target(
         &live,
@@ -145,18 +163,15 @@ fn plan_for(install: &FakeInstall, profile: &Profile, ctx: ApplyContext) -> Appl
 
 #[test]
 fn resolve_base_uses_pinned_preset_text_or_the_base_file() {
-    let pinned = resolve_base(&kaiz_profile()).unwrap();
-    assert_eq!(
-        pinned.gameinfo,
-        preset::info(PresetId::KaizMinspec).pinned_gameinfo
-    );
+    let pinned = resolve_base(&kaiz_profile(), no_cache()).unwrap();
+    assert_eq!(pinned.gameinfo, KAIZ);
     assert_eq!(pinned.video, None, "kaiz ships no video.txt");
 
     let potato = Profile {
         base: BaseRef::Preset(PresetId::OptilockPotato),
         ..kaiz_profile()
     };
-    assert!(resolve_base(&potato).unwrap().video.is_some());
+    assert!(resolve_base(&potato, no_cache()).unwrap().video.is_some());
 
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("mine.gi");
@@ -165,22 +180,90 @@ fn resolve_base_uses_pinned_preset_text_or_the_base_file() {
         base: BaseRef::File(file.clone()),
         ..kaiz_profile()
     };
-    assert_eq!(resolve_base(&from_file).unwrap().gameinfo, KAIZ);
+    assert_eq!(resolve_base(&from_file, no_cache()).unwrap().gameinfo, KAIZ);
 
     let missing = Profile {
         base: BaseRef::File(dir.path().join("nope.gi")),
         ..kaiz_profile()
     };
     assert!(matches!(
-        resolve_base(&missing),
+        resolve_base(&missing, no_cache()),
         Err(ApplyError::Base(path, _)) if path.ends_with("nope.gi")
     ));
+}
+
+fn sidelock_profile() -> Profile {
+    Profile {
+        base: BaseRef::Preset(PresetId::SideLock),
+        convars: ConVarEdits::default(),
+        ..kaiz_profile()
+    }
+}
+
+#[test]
+fn resolve_base_needs_a_downloaded_or_imported_remote_preset() {
+    let empty = tempfile::tempdir().unwrap();
+    let err = resolve_base(&sidelock_profile(), empty.path()).unwrap_err();
+    assert!(matches!(err, ApplyError::Remote(_)), "{err:?}");
+    assert_eq!(
+        err.to_string(),
+        "SideLock isn't downloaded yet. Download it or import cfg.zip or gameinfo.gi."
+    );
+
+    let presets = sidelock_cache();
+    let base = resolve_base(&sidelock_profile(), presets.path()).unwrap();
+    assert!(base.gameinfo.contains("citadel_damage_indicator_radius"));
+    assert_eq!(base.video, None, "remote presets bring no video.txt");
+}
+
+#[test]
+fn remote_preset_uses_only_its_convars_block_with_the_denylist_and_ignored_marks() {
+    let presets = sidelock_cache();
+    let profile = sidelock_profile();
+    let base = resolve_base(&profile, presets.path()).unwrap();
+    let tgt = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
+
+    assert_eq!(
+        outside_convars(&tgt.gameinfo),
+        outside_convars(VANILLA),
+        "its FileSystem, RenderSystem and SceneSystem edits are not applied"
+    );
+    assert!(!tgt.gameinfo.contains("VulkanUseSecondaryCommandBuffers"));
+    assert!(!tgt.gameinfo.contains("CSMCascadeResolution 0"));
+
+    assert_eq!(
+        tgt.denied,
+        [
+            "citadel_player_outline_fade_range_min",
+            "r_citadel_selection_outline2_alpha",
+            "r_citadel_selection_outline2_fade_pow",
+        ]
+    );
+    let effective = effective_values(&tgt.gameinfo).unwrap();
+    let stock = effective_values(VANILLA).unwrap();
+    for name in &tgt.denied {
+        assert_eq!(effective.get(name), stock.get(name), "{name} back to stock");
+    }
+    assert_eq!(effective["citadel_damage_indicator_radius"], "1");
+    assert_eq!(effective["r_ssao"], "false");
+
+    let install = fake_install(VANILLA, None);
+    let plan = plan(
+        &install.paths,
+        VANILLA,
+        None,
+        &tgt,
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap();
+    assert!(plan.ignored.contains(&"r_shadows".to_string()), "{plan:?}");
 }
 
 #[test]
 fn target_takes_base_block_plus_edits_and_keeps_live_outside_convars() {
     let profile = kaiz_profile();
-    let base = resolve_base(&profile).unwrap();
+    let base = resolve_base(&profile, no_cache()).unwrap();
     let tgt = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
 
     let effective = effective_values(&tgt.gameinfo).unwrap();
@@ -199,11 +282,13 @@ fn target_takes_base_block_plus_edits_and_keeps_live_outside_convars() {
         tgt.denied,
         [
             DENIED,
+            "citadel_trooper_outline_enabled",
             "citadel_use_pvs_for_players",
+            "cl_glow_brightness",
             "minimap_trooper_update_rate_hz",
             "r_citadel_npr_force_solid_outline",
         ],
-        "the profile edit plus the denylisted values kaiz sets"
+        "the profile edit plus the denylisted values kaiz sets, quoted names included"
     );
     let stock = effective_values(VANILLA).unwrap();
     for name in &tgt.denied {
@@ -234,7 +319,7 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
         video: BTreeMap::from([("setting.fps_max".to_string(), "60".to_string())]),
         ..kaiz_profile()
     };
-    let base = resolve_base(&profile).unwrap();
+    let base = resolve_base(&profile, no_cache()).unwrap();
     let tgt = target(
         VANILLA,
         Some(LIVE_VIDEO),
@@ -266,7 +351,7 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
         video: BTreeMap::from([("setting.fps_max".to_string(), "60".to_string())]),
         ..kaiz_profile()
     };
-    let base = resolve_base(&kaiz_video_edit).unwrap();
+    let base = resolve_base(&kaiz_video_edit, no_cache()).unwrap();
     let tgt = target(
         VANILLA,
         Some(LIVE_VIDEO),
@@ -288,9 +373,11 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
 #[test]
 fn plan_buckets_follow_catalog_apply_classes() {
     let install = fake_install(VANILLA, None);
-    let profile = kaiz_profile();
     let live_eff = effective_values(VANILLA).unwrap();
-    let base = resolve_base(&profile).unwrap();
+    let mut profile = kaiz_profile();
+    let stock = live_eff.keys().find(|n| !catalog().is_denied(n)).unwrap();
+    profile.convars.comment.push(stock.clone());
+    let base = resolve_base(&profile, no_cache()).unwrap();
     let target_eff = effective_values(
         &target(VANILLA, None, &base, &profile, catalog(), None, None)
             .unwrap()
@@ -367,7 +454,7 @@ fn plan_buckets_follow_catalog_apply_classes() {
             seen > 100,
             "kaiz changes many convars vs vanilla, saw {seen}"
         );
-        assert!(removed_count > 0, "kaiz comments out some stock convars");
+        assert!(removed_count > 0, "the profile comments out a stock convar");
         assert_eq!(
             live.len() + plan.queued_cheat.len() + plan.restart.len() + plan.ignored.len(),
             seen,
@@ -393,7 +480,7 @@ fn commenting_out_a_live_convar_pushes_its_catalog_default() {
         convars: ConVarEdits::default(),
         ..kaiz_profile()
     };
-    let base = resolve_base(&profile).unwrap();
+    let base = resolve_base(&profile, no_cache()).unwrap();
     let applied = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
     let install = fake_install(&applied.gameinfo, None);
 
@@ -588,7 +675,7 @@ fn ranked_safe_restores_stock_block_and_keeps_modified_search_paths() {
         1,
     );
     let profile = kaiz_profile();
-    let base = resolve_base(&profile).unwrap();
+    let base = resolve_base(&profile, no_cache()).unwrap();
     let tuned = target(&modded, None, &base, &profile, catalog(), None, None).unwrap();
     let install = fake_install(&tuned.gameinfo, None);
 
@@ -668,7 +755,7 @@ fn hud_profile() -> Profile {
 fn plan_with_hud(install: &FakeInstall, profile: &Profile) -> ApplyPlan {
     let live = read(&install.paths.gameinfo);
     let hud = hud_plan(&install.paths, &profile.hud, &install.store).unwrap();
-    let base = resolve_base(profile).unwrap();
+    let base = resolve_base(profile, no_cache()).unwrap();
     let tgt = target(&live, None, &base, profile, catalog(), hud, None).unwrap();
     plan(
         &install.paths,
@@ -823,13 +910,14 @@ fn enabled_addon_installs_its_pak_mounts_addons_then_ranked_safe_removes_it() {
 #[test]
 fn no_preset_writes_a_denylisted_value() {
     let stock = effective_values(VANILLA).unwrap();
+    let presets = sidelock_cache();
     for p in preset::all() {
         let profile = Profile {
             base: BaseRef::Preset(p.id),
             convars: ConVarEdits::default(),
             ..kaiz_profile()
         };
-        let base = resolve_base(&profile).unwrap();
+        let base = resolve_base(&profile, presets.path()).unwrap();
         let tgt = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
         for (name, value) in effective_values(&tgt.gameinfo).unwrap() {
             if catalog().is_denied(&name) {

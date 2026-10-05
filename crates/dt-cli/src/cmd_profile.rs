@@ -7,12 +7,13 @@ use dt_core::addons::AddonsConfig;
 use dt_core::catalog::Catalog;
 use dt_core::gi::Override;
 use dt_core::hud::HudLayout;
-use dt_core::profile::{self, ConVarEdits, Profile};
+use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 
 use crate::args::{Args, CliResult, fail};
-use crate::env;
+use crate::{cmd_presets, env};
 
 fn new_profile(
+    env: &env::Env,
     file: &Path,
     args: &Args,
     convars: ConVarEdits,
@@ -22,9 +23,13 @@ fn new_profile(
         .and_then(|s| s.to_str())
         .unwrap_or("profile")
         .to_string();
+    let base = env::parse_base(args.required("base")?)?;
+    if let BaseRef::Preset(id) = base {
+        cmd_presets::check_ready(env, id)?;
+    }
     Ok(Profile {
         name,
-        base: env::parse_base(args.required("base")?)?,
+        base,
         base_rev: None,
         convars,
         video: BTreeMap::new(),
@@ -39,10 +44,10 @@ fn save(file: &Path, profile: &Profile) -> CliResult {
     Ok(())
 }
 
-pub fn new(_: &env::Env, args: &Args) -> CliResult {
+pub fn new(env: &env::Env, args: &Args) -> CliResult {
     let [file] = args.positionals("<file>")?;
     let file = Path::new(file);
-    save(file, &new_profile(file, args, ConVarEdits::default())?)
+    save(file, &new_profile(env, file, args, ConVarEdits::default())?)
 }
 
 pub fn show(_: &env::Env, args: &Args) -> CliResult {
@@ -78,7 +83,7 @@ fn note(catalog: &Catalog, name: &str) -> String {
     }
 }
 
-pub fn import_overrides(_: &env::Env, args: &Args) -> CliResult {
+pub fn import_overrides(env: &env::Env, args: &Args) -> CliResult {
     let [overrides, file] = args.positionals("<overrides.gi> <file>")?;
     let parsed = profile::parse_overrides_gi(&env::read(Path::new(overrides))?)
         .map_err(|e| fail(format!("{overrides}: {e}")))?;
@@ -92,7 +97,7 @@ pub fn import_overrides(_: &env::Env, args: &Args) -> CliResult {
         }
     }
     let file = Path::new(file);
-    save(file, &new_profile(file, args, convars)?)
+    save(file, &new_profile(env, file, args, convars)?)
 }
 
 pub fn export_overrides(_: &env::Env, args: &Args) -> CliResult {

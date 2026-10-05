@@ -167,7 +167,20 @@ fn read_convars_agrees_with_the_catalog_csv() {
     let rows: Vec<csv::StringRecord> = reader.records().map(Result::unwrap).collect();
     for (column, preset_dir, min_rows) in columns {
         let col = headers.iter().position(|h| h == column).unwrap();
-        let entries = read_convars(&fixture(preset_dir)).unwrap();
+        let text = fixture(preset_dir);
+        let lines: Vec<&str> = text.lines().collect();
+        // The csv's preset columns were generated from unquoted `name value` lines only.
+        let entries: Vec<ConVarEntry> = read_convars(&text)
+            .unwrap()
+            .into_iter()
+            .filter(|e| {
+                !lines[e.line]
+                    .trim_start()
+                    .trim_start_matches("//")
+                    .trim_start()
+                    .starts_with('"')
+            })
+            .collect();
         let mut checked = 0;
         for row in &rows {
             let (name, cell) = (&row[0], &row[col]);
@@ -248,6 +261,38 @@ fn set_rewrites_the_value_in_place_and_keeps_padding_and_trailing_comment() {
         "CRLF input must stay pure CRLF"
     );
     assert_eq!(differing_lines(&crlf, &out.text).len(), 1);
+}
+
+#[test]
+fn quoted_names_are_convars_and_keep_their_quotes_when_rewritten() {
+    let text = "ConVars\n{\n\t\"r_ssao\" \"false\"\n\t\"fps_max\"\t\"400\" // cap\n\t\"voice_x\"\n\t{\n\t\t\"version\" \"2\"\n\t}\n\t\"bad name\" \"1\"\n}\n";
+    let values = effective_values(text).unwrap();
+    assert_eq!(
+        values,
+        BTreeMap::from([
+            ("fps_max".to_string(), "400".to_string()),
+            ("r_ssao".to_string(), "false".to_string()),
+        ]),
+        "nested blocks and names with spaces are not convars"
+    );
+    let out = apply_overrides(
+        text,
+        &overrides(&[("fps_max", set("240")), ("r_ssao", Override::Comment)]),
+    )
+    .unwrap();
+    assert_eq!(
+        differing_lines(text, &out.text),
+        vec![
+            ("\t\"r_ssao\" \"false\"", "\t// \"r_ssao\" \"false\""),
+            (
+                "\t\"fps_max\"\t\"400\" // cap",
+                "\t\"fps_max\"\t\"240\" // cap"
+            ),
+        ]
+    );
+    assert!(out.injected.is_empty());
+    let read = read_convars(&out.text).unwrap();
+    assert!(read.iter().any(|e| e.name == "r_ssao" && e.commented));
 }
 
 #[test]

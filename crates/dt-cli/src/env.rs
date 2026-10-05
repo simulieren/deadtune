@@ -162,7 +162,7 @@ pub fn profile_plan(
     let live = read(&paths.gameinfo)?;
     let live_video = read_opt(&paths.video)?;
     let catalog = Catalog::embedded();
-    let base = apply::resolve_base(profile)?;
+    let base = apply::resolve_base(profile, &preset::cache_dir(&env.data_dir))?;
     let hud = apply::hud_plan(paths, &profile.hud, &store)?;
     let addons = apply::addons_plan(paths, &profile.addons, &store)?;
     let target = apply::target(

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Instant, SystemTime};
 
@@ -30,7 +30,7 @@ use dt_core::hud::minimap_style::{
 };
 use dt_core::launch::{self, LaunchArgs};
 use dt_core::locate::GamePaths;
-use dt_core::preset::PresetId;
+use dt_core::preset::{self, PresetId, remote};
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 use dt_core::watch::{self, Change, Watcher};
 
@@ -65,8 +65,8 @@ pub struct Base {
 }
 
 impl Base {
-    fn resolve(profile: &Profile) -> Result<Base, String> {
-        let texts = apply::resolve_base(profile).map_err(|e| e.to_string())?;
+    fn resolve(profile: &Profile, presets_dir: &Path) -> Result<Base, String> {
+        let texts = apply::resolve_base(profile, presets_dir).map_err(|e| e.to_string())?;
         let values = gi::effective_values(&texts.gameinfo).map_err(|e| e.to_string())?;
         Ok(Base { texts, values })
     }
@@ -373,6 +373,10 @@ pub struct UiState {
     pub addon_expanded: Option<AddonId>,
     /// Path typed into the addons page's Import box.
     pub addon_import_path: String,
+    /// Path typed into a remote preset's Import box.
+    pub preset_import_path: String,
+    /// Screenshot lever: hold the "All presets" dropdown open.
+    pub open_presets: bool,
     /// The launch-guard banner's "Show details" fold.
     pub guard_details: bool,
     /// The Launch options window, opened from the Launch button's menu.
@@ -603,6 +607,32 @@ pub struct AppState {
     #[cfg(feature = "remote")]
     pub remote: Option<crate::remote::Remote>,
     watch: Option<(Watcher, Receiver<Vec<Change>>)>,
+    /// Cache state of every remote preset (SideLock), refreshed after each fetch, import,
+    /// accept or discard rather than hashed every frame.
+    pub remote_presets: BTreeMap<PresetId, RemoteView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteView {
+    pub status: remote::Status,
+    /// What a file waiting for review would change; empty when none is.
+    pub changes: Vec<remote::Change>,
+}
+
+fn remote_views(presets_dir: &Path) -> BTreeMap<PresetId, RemoteView> {
+    preset::all()
+        .iter()
+        .filter_map(|p| p.remote())
+        .map(|r| {
+            let dir = remote::dir(r, presets_dir);
+            let status = remote::status(r, &dir).unwrap_or(remote::Status {
+                active: None,
+                pending: None,
+            });
+            let changes = remote::pending_changes(&dir).unwrap_or_default();
+            (r.id, RemoteView { status, changes })
+        })
+        .collect()
 }
 
 /// Shown when the files changed between preview and Apply; the preview is already refreshed.
@@ -658,6 +688,7 @@ impl AppState {
         let live = LiveFiles::read(&paths)?;
         let store = BackupStore::open(data_dir.join("backups"))?;
         let dir = profiles::dir(&data_dir);
+        let presets_dir = preset::cache_dir(&data_dir);
         let (profile, saved) = match settings
             .last_profile
             .as_deref()
@@ -668,7 +699,7 @@ impl AppState {
         };
         let mut state = AppState {
             known_gameinfo_sha: sha256_hex(live.gameinfo.as_bytes()),
-            base: Base::resolve(&profile),
+            base: Base::resolve(&profile, &presets_dir),
             conlog: LogTail::for_game(&paths),
             conlog_polled: None,
             guard: Guard::load(&store.root).unwrap_or_default(),
@@ -704,6 +735,7 @@ impl AppState {
             #[cfg(feature = "remote")]
             remote: None,
             watch: None,
+            remote_presets: remote_views(&presets_dir),
         };
         if !state.settings.onboarded {
             state.welcome = Some(Welcome::PickStart { choice: None });
@@ -1028,7 +1060,7 @@ impl AppState {
 
     pub fn revert_all(&mut self) {
         self.profile = self.saved.clone().unwrap_or_else(default_profile);
-        self.base = Base::resolve(&self.profile);
+        self.base = Base::resolve(&self.profile, &self.presets_dir());
         self.refresh_preview();
     }
 
@@ -1129,10 +1161,53 @@ impl AppState {
         self.refresh_preview();
     }
 
+    /// Downloaded and imported remote presets.
+    pub fn presets_dir(&self) -> PathBuf {
+        preset::cache_dir(&self.data_dir)
+    }
+
     pub fn set_base(&mut self, base: BaseRef) {
         self.profile.base = base;
-        self.base = Base::resolve(&self.profile);
+        self.base = Base::resolve(&self.profile, &self.presets_dir());
         self.refresh_preview();
+    }
+
+    fn remote_dir(&self, id: PresetId) -> PathBuf {
+        remote::dir(preset::remote(id), &self.presets_dir())
+    }
+
+    /// Re-reads the remote preset caches, and the base if it is one of them.
+    fn remote_changed(&mut self) {
+        self.remote_presets = remote_views(&self.presets_dir());
+        self.set_base(self.profile.base.clone());
+    }
+
+    /// Takes a downloaded cfg.zip or gameinfo.gi; one that differs from the pinned file waits
+    /// in `remote_presets` for [`AppState::accept_remote`].
+    pub fn import_remote(&mut self, id: PresetId, path: &Path) -> Result<(), String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let result = remote::stage(preset::remote(id), &self.remote_dir(id), &bytes);
+        self.remote_changed();
+        result.map(drop).map_err(|e| e.to_string())
+    }
+
+    #[cfg(feature = "fetch")]
+    pub fn fetch_remote(&mut self, id: PresetId) -> Result<(), String> {
+        let result = remote::fetch(preset::remote(id), &self.remote_dir(id));
+        self.remote_changed();
+        result.map(drop).map_err(|e| e.to_string())
+    }
+
+    pub fn accept_remote(&mut self, id: PresetId) -> Result<(), String> {
+        let result = remote::accept(&self.remote_dir(id));
+        self.remote_changed();
+        result.map_err(|e| e.to_string())
+    }
+
+    pub fn discard_remote(&mut self, id: PresetId) -> Result<(), String> {
+        let result = remote::discard(&self.remote_dir(id));
+        self.remote_changed();
+        result.map_err(|e| e.to_string())
     }
 
     /// One click to the stock ConVars block and one click back, written immediately.
@@ -1940,7 +2015,7 @@ impl AppState {
             self.settings.last_profile = Some(profile.name.clone());
         }
         self.profile = profile;
-        self.base = Base::resolve(&self.profile);
+        self.base = Base::resolve(&self.profile, &self.presets_dir());
         self.settings.source = TargetSource::Profile;
         self.reload_bench();
         self.refresh_preview();
@@ -3042,13 +3117,67 @@ mod tests {
     }
 
     #[test]
+    fn sidelock_needs_an_import_and_a_review_before_it_becomes_the_base() {
+        let (dir, mut state) = state();
+        let view = |s: &AppState| s.remote_presets[&PresetId::SideLock].clone();
+        assert_eq!(view(&state).status.active, None);
+        state.set_base(BaseRef::Preset(PresetId::SideLock));
+        assert!(
+            state
+                .base
+                .as_ref()
+                .unwrap_err()
+                .contains("isn't downloaded yet")
+        );
+
+        let standin = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../dt-core/tests/fixtures/sidelock_standin/cfg.zip");
+        let copy = dir.path().join("cfg.zip");
+        std::fs::copy(standin, &copy).unwrap();
+        assert!(
+            state
+                .import_remote(PresetId::SideLock, &dir.path().join("nope.zip"))
+                .is_err()
+        );
+        state.import_remote(PresetId::SideLock, &copy).unwrap();
+        let pending = view(&state);
+        assert!(
+            pending.status.pending.is_some(),
+            "the stand-in is not the pinned file"
+        );
+        assert!(
+            pending
+                .changes
+                .iter()
+                .any(|c| c.name == "citadel_damage_indicator_radius")
+        );
+        assert!(state.base.is_err(), "nothing is used before it is accepted");
+
+        state.discard_remote(PresetId::SideLock).unwrap();
+        assert_eq!(view(&state).status.pending, None);
+        state.import_remote(PresetId::SideLock, &copy).unwrap();
+        state.accept_remote(PresetId::SideLock).unwrap();
+        assert_eq!(view(&state).status.active, Some(remote::Active::Accepted));
+        assert!(view(&state).changes.is_empty());
+        let base = state.base.as_ref().unwrap();
+        assert_eq!(base.values["citadel_damage_indicator_radius"], "1");
+        assert!(
+            plan(&state)
+                .denied
+                .contains(&"r_citadel_selection_outline2_alpha".to_string()),
+            "the denylist still applies to a remote preset"
+        );
+    }
+
+    #[test]
     fn changed_detection_follows_the_preset() {
         let (_dir, mut state) = state();
         assert_eq!(state.changed_count(["fps_max", RESTART]), 0);
         state.set_convar(LIVE, "144".into()).unwrap();
         assert!(state.is_changed(LIVE));
         assert_eq!(state.preset_value(LIVE).as_deref(), Some("400"));
-        state.set_base(BaseRef::Preset(PresetId::KaizMinspec));
+        // Not Kaiz: its quoted `"fps_max" "400"` near the end overrides its earlier 0.
+        state.set_base(BaseRef::Preset(PresetId::BootMaxfps));
         assert_eq!(state.preset_value(LIVE).as_deref(), Some("0"));
         assert!(state.is_changed(LIVE), "edits survive a preset switch");
         state.set_convar(LIVE, "0".into()).unwrap();

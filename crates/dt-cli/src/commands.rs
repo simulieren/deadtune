@@ -3,7 +3,8 @@
 use crate::args::{Args, CliResult};
 use crate::env::Env;
 use crate::{
-    cmd_addons, cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_info, cmd_profile, cmd_update,
+    cmd_addons, cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_info, cmd_presets, cmd_profile,
+    cmd_update,
 };
 
 pub struct Command {
@@ -45,10 +46,42 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "presets",
         usage: "presets",
-        summary: "list known presets and their authors",
+        summary: "list known presets, their authors, and where remote ones come from",
         values: &[],
         switches: &[],
-        run: cmd_info::presets,
+        run: cmd_presets::list,
+    },
+    Command {
+        name: "presets fetch",
+        usage: "presets fetch <preset>",
+        summary: "download a remote preset (SideLock) from GameBanana (fetch feature)",
+        values: &[],
+        switches: &[],
+        run: cmd_presets::fetch,
+    },
+    Command {
+        name: "presets import",
+        usage: "presets import <preset> <cfg.zip or gameinfo.gi>",
+        summary: "take a remote preset's downloaded file into DeadTune's cache",
+        values: &[],
+        switches: &[],
+        run: cmd_presets::import,
+    },
+    Command {
+        name: "presets accept",
+        usage: "presets accept <preset>",
+        summary: "use a remote preset file that differs from the one DeadTune checked",
+        values: &[],
+        switches: &[],
+        run: cmd_presets::accept,
+    },
+    Command {
+        name: "presets discard",
+        usage: "presets discard <preset>",
+        summary: "drop a remote preset file waiting for review",
+        values: &[],
+        switches: &[],
+        run: cmd_presets::discard,
     },
     Command {
         name: "catalog",

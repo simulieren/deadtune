@@ -193,6 +193,14 @@ impl App {
                 if let Ok(id) = std::env::var("DEADTUNE_ADDON_EXPAND") {
                     state.ui.addon_expanded = AddonId::parse(id.trim());
                 }
+                // `DEADTUNE_BASE=sidelock` picks that preset; `DEADTUNE_OPEN_PRESETS=1` opens
+                // the Overview's "All presets" dropdown.
+                if let Ok(key) = std::env::var("DEADTUNE_BASE")
+                    && let Some(info) = dt_core::preset::all().iter().find(|p| p.id.key() == key)
+                {
+                    state.set_base(dt_core::profile::BaseRef::Preset(info.id));
+                }
+                state.ui.open_presets = std::env::var_os("DEADTUNE_OPEN_PRESETS").is_some();
                 // `DEADTUNE_FAKE_TRIAL=failed:vindicta_scope,blur_disabler` shows the launch
                 // guard's failure banner, details open, for those addons (every one if none
                 // are listed) with a captured FATAL line.

@@ -1,4 +1,4 @@
-//! locate, status, presets, catalog, doctor
+//! locate, status, catalog, doctor
 
 use std::path::{Path, PathBuf};
 
@@ -6,7 +6,7 @@ use dt_core::backup::FileKind;
 use dt_core::catalog::Catalog;
 use dt_core::doctor::{self, CheckStatus};
 use dt_core::locate::{GamePaths, parse_buildid};
-use dt_core::{launch, power, preset, watch};
+use dt_core::{launch, power, watch};
 
 use crate::args::{Args, CliResult, fail};
 use crate::cmd_hud;
@@ -82,19 +82,6 @@ pub fn status(env: &Env, args: &Args) -> CliResult {
         println!("pending for profile {:?}:", profile.name);
         let plan = env::profile_plan(env, &paths, &profile, args.switch("sandbox"))?;
         env::print_plan(&plan, false);
-    }
-    Ok(())
-}
-
-pub fn presets(_: &Env, args: &Args) -> CliResult {
-    args.positionals::<0>("no positional arguments")?;
-    for p in preset::all() {
-        let video = if p.pinned_video.is_some() {
-            "  +video.txt"
-        } else {
-            ""
-        };
-        println!("{:<22} {:<28} by {}{video}", p.id.key(), p.label, p.author);
     }
     Ok(())
 }

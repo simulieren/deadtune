@@ -789,6 +789,9 @@ pub fn preset_blurb(id: PresetId) -> Option<&'static str> {
         PresetId::BootMaxfps => Some("Max FPS, looks worse."),
         PresetId::OptilockPotato => Some("Potato mode: max FPS for very old hardware."),
         PresetId::KaizExtremelow => Some("Absolute minimum: max FPS, looks rough."),
+        PresetId::SideLock => {
+            Some("Similar to OptiLock Potato. Its extra rendering tweaks are in Practice mode.")
+        }
         PresetId::SqookyTest => None,
     }
 }
@@ -799,7 +802,10 @@ pub fn human_error(raw: &str) -> String {
         return raw.into();
     }
     let lower = raw.to_lowercase();
-    if lower.contains("braces") || lower.contains("no convars block") {
+    if lower.contains("isn't downloaded yet") {
+        "This preset isn't downloaded yet. Download it, or import the cfg.zip from its mod page."
+            .into()
+    } else if lower.contains("braces") || lower.contains("no convars block") {
         "The game's config file looks damaged. Use \"Restore original game files\", then try again."
             .into()
     } else if lower.contains("permission")
@@ -1102,6 +1108,7 @@ mod tests {
         let errors = [
             "unbalanced braces near line 3",
             "Permission denied (os error 13)",
+            "SideLock isn't downloaded yet. Download it or import cfg.zip or gameinfo.gi.",
             "x",
         ]
         .map(human_error);

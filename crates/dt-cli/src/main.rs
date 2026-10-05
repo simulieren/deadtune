@@ -7,6 +7,7 @@ mod cmd_bench;
 mod cmd_game;
 mod cmd_hud;
 mod cmd_info;
+mod cmd_presets;
 mod cmd_profile;
 mod cmd_update;
 mod commands;

@@ -940,11 +940,18 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
                 for info in preset::all() {
                     ui.label(RichText::new(info.label).strong());
                     ui.label(RichText::new(format!("by {}", info.author)).color(WEAK));
-                    if info.id != PresetId::Vanilla {
-                        ui.label(RichText::new(info.upstream_gameinfo).small().color(WEAK));
-                    } else {
-                        ui.label("");
-                    }
+                    match info.remote() {
+                        Some(r) => ui.label(
+                            RichText::new(format!(
+                                "{} ({}; not bundled, downloaded on your PC)",
+                                r.page, r.licence
+                            ))
+                            .small()
+                            .color(WEAK),
+                        ),
+                        None if info.id == PresetId::Vanilla => ui.label(""),
+                        None => ui.label(RichText::new(info.source_url()).small().color(WEAK)),
+                    };
                     ui.end_row();
                 }
             });

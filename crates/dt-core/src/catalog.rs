@@ -174,8 +174,10 @@ fn entries_from_csv(csv: &str) -> Result<BTreeMap<String, CatalogEntry>, Catalog
     let default_col = col("engine_default")?;
     let desc_col = col("engine_description")?;
     let comment_col = col("preset_comment(first seen)")?;
+    // Remote presets have no column: their values may not be redistributed.
     let preset_cols = crate::preset::all()
         .iter()
+        .filter(|p| p.pinned().is_some())
         .map(|p| Ok((p.id, col(p.id.key())?)))
         .collect::<Result<Vec<_>, CatalogError>>()?;
 
@@ -512,7 +514,7 @@ mod tests {
 
     #[test]
     fn generate_emits_one_entry_per_csv_row() {
-        assert_eq!(generated("").entries.len(), 765);
+        assert_eq!(generated("").entries.len(), 772);
     }
 
     #[test]
@@ -541,7 +543,7 @@ mod tests {
         assert!(!c.is_gameinfo_ignored("not_a_convar"));
         assert_eq!(
             c.entries.values().filter(|e| e.gameinfo_ignored).count(),
-            34
+            37
         );
     }
 
@@ -687,12 +689,19 @@ mod tests {
             "citadel_player_outline_enemies",
             "citadel_unit_status_allies_see_thru_walls",
             "sv_force_transmit_players",
+            "citadel_player_outline_fade_range_min",
+            "citadel_player_outline_fade_range_max",
+            "r_citadel_selection_outline2_fade_pow",
         ] {
             assert!(c.is_denied(name), "{name} should be denylisted");
         }
         assert!(
             !c.is_denied("citadel_camera_hero_fov"),
             "FOV is a normal setting"
+        );
+        assert!(
+            !c.is_denied("citadel_damage_indicator_radius"),
+            "your own hit-direction marker shows nothing about other players"
         );
         let rated = c
             .entries
@@ -709,7 +718,7 @@ mod tests {
             include_str!("../../../catalog/catalog.toml") == fresh,
             "catalog/catalog.toml is stale; run `cargo run -p dt-core --example gen_catalog`"
         );
-        assert_eq!(Catalog::embedded().entries.len(), 765);
+        assert_eq!(Catalog::embedded().entries.len(), 772);
     }
 
     #[test]

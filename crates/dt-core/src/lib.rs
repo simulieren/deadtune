@@ -21,6 +21,7 @@ pub mod update;
 pub mod video;
 pub mod watch;
 pub mod winfps;
+pub mod zip;
 
 #[cfg(test)]
 mod version_policy {

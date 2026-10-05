@@ -1,6 +1,8 @@
 //! The default, plain-language screens: find the game, welcome flow, and the simple view
 //! (a left rail of sections, the selected section's settings as cards, an Apply bar).
 
+use std::path::PathBuf;
+
 use dt_core::bridge::ack::PushStatus;
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::catalog::{CatalogEntry, Impact, Kind};
@@ -190,7 +192,9 @@ fn pick_start(ui: &mut Ui, state: &mut AppState, choice: Option<StartChoice>) {
                 picked = Some(StartChoice::KeepCurrent);
             }
             next(ui);
-            for info in preset::all() {
+            // A remote preset needs a download (and maybe a review) before Apply can use it,
+            // so first-run cards stick to embedded ones.
+            for info in preset::all().iter().filter(|p| p.remote().is_none()) {
                 let Some(blurb) = friendly::preset_blurb(info.id) else {
                     continue;
                 };
@@ -257,6 +261,15 @@ enum Edit {
     Pin(&'static str),
     Advanced,
     Mini,
+    Remote(RemoteEdit),
+}
+
+enum RemoteEdit {
+    #[cfg(feature = "fetch")]
+    Fetch(PresetId),
+    Import(PresetId, PathBuf),
+    Accept(PresetId),
+    Discard(PresetId),
 }
 
 const RAIL_WIDTH: f32 = 224.0;
@@ -398,8 +411,35 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
             Edit::Pin(name) => state.toggle_pin(name),
             Edit::Advanced => state.settings.view = View::Advanced,
             Edit::Mini => crate::compact::enter(ui.ctx(), state),
+            Edit::Remote(edit) => run_remote_edit(state, edit),
         }
     }
+}
+
+fn run_remote_edit(state: &mut AppState, edit: RemoteEdit) {
+    let (id, result) = match edit {
+        #[cfg(feature = "fetch")]
+        RemoteEdit::Fetch(id) => (id, state.fetch_remote(id)),
+        RemoteEdit::Import(id, path) => {
+            let result = state.import_remote(id, &path);
+            if result.is_ok() {
+                state.ui.preset_import_path.clear();
+            }
+            (id, result)
+        }
+        RemoteEdit::Accept(id) => (id, state.accept_remote(id)),
+        RemoteEdit::Discard(id) => (id, state.discard_remote(id)),
+    };
+    let label = preset::info(id).label;
+    let view = &state.remote_presets[&id];
+    state.status = Some(match result {
+        Err(e) => Status::Error(e),
+        Ok(()) if view.status.pending.is_some() => Status::Info(format!(
+            "{label} has a different file: review it under the preset."
+        )),
+        Ok(()) if view.status.ready() => Status::Info(format!("{label} is ready.")),
+        Ok(()) => Status::Info(format!("{label} isn't downloaded.")),
+    });
 }
 
 fn section_changes(state: &AppState, section: Section) -> usize {
@@ -933,7 +973,7 @@ pub(crate) fn card_title(ui: &mut Ui, title: &str) {
     ui.add_space(2.0);
 }
 
-fn overview(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+fn overview(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     hero(ui, state, edits);
     ui.add_space(12.0);
     let wide = ui.available_width() >= 760.0;
@@ -1044,7 +1084,7 @@ fn reset_pill(ui: &mut Ui, was: &str) -> bool {
 }
 
 /// "What do you want?": four goal cards, the tweak readout, and a dropdown for every preset.
-fn hero(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+fn hero(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     theme::card().show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
@@ -1097,14 +1137,20 @@ fn hero(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
             ui.label(RichText::new(name).strong());
             ui.label(RichText::new(blurb).color(WEAK));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                egui::ComboBox::from_id_salt("all_presets")
+                let combo = egui::ComboBox::from_id_salt("all_presets")
                     .selected_text("All presets")
                     .width(150.0)
                     .show_ui(ui, |ui| {
-                        for info in preset::all() {
+                        let (embedded, remote): (Vec<_>, Vec<_>) =
+                            preset::all().iter().partition(|p| p.remote().is_none());
+                        for (i, info) in embedded.into_iter().chain(remote).enumerate() {
                             let Some(blurb) = friendly::preset_blurb(info.id) else {
                                 continue;
                             };
+                            let credit = info.remote().map(remote_credit);
+                            if credit.is_some() && i > 0 {
+                                ui.separator();
+                            }
                             let selected = state.profile.base == BaseRef::Preset(info.id);
                             if ui
                                 .selectable_label(
@@ -1116,11 +1162,119 @@ fn hero(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
                             {
                                 edits.push(Edit::Base(info.id));
                             }
+                            if let Some(credit) = credit {
+                                ui.label(RichText::new(credit).small().color(WEAK));
+                            }
+                        }
+                    });
+                if state.ui.open_presets {
+                    egui::Popup::open_id(ui.ctx(), combo.response.id.with("popup"));
+                }
+            });
+        });
+        if let BaseRef::Preset(id) = state.profile.base
+            && preset::info(id).remote().is_some()
+        {
+            remote_preset_panel(ui, state, id, edits);
+        }
+    });
+}
+
+fn remote_credit(r: &preset::Remote) -> String {
+    format!(
+        "by {}, {}, downloaded from GameBanana",
+        preset::info(r.id).author,
+        r.licence
+    )
+}
+
+/// Credit, plus whatever the player has to do before a remote preset can be used: download
+/// or import it, or review a file that differs from the one DeadTune checked.
+fn remote_preset_panel(ui: &mut Ui, state: &mut AppState, id: PresetId, edits: &mut Vec<Edit>) {
+    let r = preset::remote(id);
+    let label = preset::info(id).label;
+    let Some(view) = state.remote_presets.get(&id).cloned() else {
+        return;
+    };
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        let licence = format!("{}, downloaded from GameBanana", r.licence);
+        ui.label(RichText::new(licence).color(WEAK));
+        ui.hyperlink_to("Mod page", r.page);
+        #[cfg(feature = "fetch")]
+        if view.status.ready()
+            && view.status.pending.is_none()
+            && ui.small_button("Check for an update").clicked()
+        {
+            edits.push(Edit::Remote(RemoteEdit::Fetch(id)));
+        }
+    });
+    if view.status.pending.is_some() {
+        let headline = if view.status.ready() {
+            format!("{label} was updated upstream: review and accept.")
+        } else {
+            format!("This {label} file differs from the one DeadTune checked: review and accept.")
+        };
+        ui.colored_label(WARN, headline);
+        egui::CollapsingHeader::new(format!("Show the {} changed settings", view.changes.len()))
+            .id_salt("remote_changes")
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(160.0)
+                    .show(ui, |ui| {
+                        let show =
+                            |v: &Option<String>| v.clone().unwrap_or_else(|| "not set".into());
+                        for c in &view.changes {
+                            ui.monospace(format!(
+                                "{}: {} -> {}",
+                                c.name,
+                                show(&c.before),
+                                show(&c.after)
+                            ));
                         }
                     });
             });
+        ui.horizontal(|ui| {
+            if ui.button("Accept").clicked() {
+                edits.push(Edit::Remote(RemoteEdit::Accept(id)));
+            }
+            let keep = if view.status.ready() {
+                "Keep the current one"
+            } else {
+                "Discard"
+            };
+            if ui.button(keep).clicked() {
+                edits.push(Edit::Remote(RemoteEdit::Discard(id)));
+            }
         });
-    });
+    } else if !view.status.ready() {
+        ui.label(format!("{label} isn't downloaded yet."));
+        ui.horizontal_wrapped(|ui| {
+            #[cfg(feature = "fetch")]
+            {
+                if ui.button("Download from GameBanana").clicked() {
+                    edits.push(Edit::Remote(RemoteEdit::Fetch(id)));
+                }
+                ui.label(RichText::new("or import the cfg.zip you downloaded:").color(WEAK));
+            }
+            #[cfg(not(feature = "fetch"))]
+            ui.label(
+                RichText::new("Download cfg.zip from the mod page, then import it:").color(WEAK),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut state.ui.preset_import_path)
+                    .desired_width(260.0)
+                    .hint_text("C:\\Downloads\\cfg.zip"),
+            );
+            let path = state.ui.preset_import_path.trim();
+            if ui
+                .add_enabled(!path.is_empty(), egui::Button::new("Import"))
+                .clicked()
+            {
+                edits.push(Edit::Remote(RemoteEdit::Import(id, PathBuf::from(path))));
+            }
+        });
+    }
 }
 
 fn goal_card(ui: &mut Ui, width: f32, selected: bool, title: &str, sub: &str) -> bool {

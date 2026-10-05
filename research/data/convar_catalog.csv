@@ -59,6 +59,9 @@ citadel_commend_toast_enemy_seconds,restart (gameinfo only),"devonly, cl",4,Numb
 citadel_commend_toast_seconds,restart (gameinfo only),"devonly, cl",30,Number of seconds to show commend toasts,,,,,,,0,,
 citadel_crosshair_hit_marker_duration,live,"cl, a",0.1,,"Removes the hitmarker when shooting people.                      [def: ""0.1""]",,//0.00001,//0.00001,,,0.01,//0.01,//0.01
 citadel_custom_ui_colors,live,"cl, archive, per_user",false,"Enable colorblind-friendly colors and the player's custom UI colors.",,,,,,,,,
+citadel_damage_indicator_height,restart (gameinfo only),"devonly, cl",120,,,,,,,,,,
+citadel_damage_indicator_radius,restart (gameinfo only),"devonly, cl",300,,,,,,,,,,
+citadel_damage_indicator_width,restart (gameinfo only),"devonly, cl",120,,,,,,,,,,
 citadel_damage_offscreen_indicator_disabled,live,"cl, release",true,,"The little trooper portraits that show up behind walls.          [def: ""true""]",,true,true,1,1,1,1,1
 citadel_damage_report_enable,restart (gameinfo only),"devonly, cl",true,"If enabled, show damage report","Enables/Disables incoming/outgoing damage tab (tuning this off is very questionable but okay). [def: ""1""]",,1,1,,,1,1,1
 citadel_damage_text_batching_window_ability,restart (gameinfo only),"devonly, cl",1.05,"When ability damage events are within this amount of time of each other, they will be added together into a single entry.",How long to wait until batching damage text.,,1000,1000,,,,,
@@ -97,6 +100,8 @@ citadel_perf_interval_report_s,unknown,,,,"The interval that we record performan
 citadel_ping_wheel_activation_radius,restart (gameinfo only),"devonly, cl",0.37,LEGACY. See: citadel_show_chat_wheel_angle_threshold. Increase this to change how much you have to move your mouse to make the mousewheel visible.,,,//1,//1,,,,,
 citadel_player_glow_disabled,live w/ sv_cheats (hideout/sandbox),"cl, cheat, release, gameinfo_cannot_override",false,,"Disables player glow/highlight effect when pinged.               [def: ""0""]",,,,,,0,0,0
 citadel_player_outline_enemies,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",true,,turn off enemy outline DOES NOT BREAK BACKSTABBER OR PING THRU WALL,,,false,,,true,true,true
+citadel_player_outline_fade_range_max,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",1400,,,,,,,,,,
+citadel_player_outline_fade_range_min,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",400,,,,,,,,,,
 citadel_portrait_unit_ag2_enable,restart (gameinfo only),"devonly, cl",true,Enable AG2 use in portrait units,,,,false,,,,,
 citadel_portrait_world_renderer_off,restart (gameinfo only),"devonly, cl",false,,"Disables character models in shop and endgame screen                                            [def: ""false""]",,false,false,1,1,true,false,false
 citadel_reduce_camera_shake,unknown,,,,,,,,,,,true,
@@ -445,6 +450,7 @@ r_citadel_npr_outlines_max_dist,restart (gameinfo only),"devonly, cl, cheat, gam
 r_citadel_outlines,unknown,,,,Enables enemy outlines for better visibility.,,,,,,,1,1
 r_citadel_screenspace_particles_full_res,restart (gameinfo only),"devonly, cl",true,Render screen space particles at full resolution,"Render screen space particles at full resolution. This could introduce readability issues but should be fine. [def: ""true""]",,true,true,0,0,0,0,0
 r_citadel_selection_outline2_alpha,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",0.8,Selection Outline Alpha,"Outlines on enemy players and abilities on a scale of 0-1.       [def: ""0.8""]",,//0.2,//0.2,,,255,0.8,0.8
+r_citadel_selection_outline2_fade_pow,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",1.5,Selection Outline Fade Pow,,,,,,,,,
 r_citadel_selection_outline2_offset,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",0.3,"Selection Outline Offset: -1 for interior, 0 for centered, 1 for exterior.",,,,,,,,2,2
 r_citadel_selection_outline2_width,restart (gameinfo only),"devonly, cl, gameinfo_cannot_override",4,Selection Outline Width,,,,,,,,50,50
 r_citadel_shadow_caching,restart (gameinfo only),"devonly, cl",true,,"We disable all shadows so this shouldn't be needed               [def: ""true""]",,true,true,0,0,,,
@@ -754,6 +760,7 @@ violence_agibs,live,a,true,Show alien gib entities,"Disables alien/other gibs.  
 violence_hblood,live,a,true,Draw human blood,"Disables human blood effects.                                    [def: ""1""]",,0,0,0,0,false,false,false
 violence_hgibs,live,a,true,Show human gib entities,"Disables human gibs.                                             [def: ""1""]",,0,0,0,0,false,false,false
 vis_sunlight_enable,restart (gameinfo only),"devonly, cheat",true,"Toggle whether to use sunlight PVS for sunlight views (0 = sky PVS, 1 = sunlight PVS)","Use sky PVS instead of sunlight PVS (cheat, default true). Less PVS work",,,false,0,0,0,0,0
+voice_always_sample_mic,live,a,false,"When enabled, open the voip audio input stream when the application launches.",,,,,,,,,
 voice_in_process,restart (gameinfo only),devonly,true,,,1,1,1,,,1,1,1
 voice_input_stallout,live,user,0.5,Time before we consider a mic stalled out and need to reset it.,,0.5,0.5,0.5,,,0.5,0.5,0.5
 volume_fog_density_scale,restart (gameinfo only),"devonly, cheat",1,Scale global volume fog density,Zero volume fog density (cheat),,,,0,0,,,

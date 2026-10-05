@@ -377,6 +377,30 @@ type = "bool"
 impact = "low"
 notes = "Steam Audio reverb processing."
 
+[voice_always_sample_mic]
+impact = "low"
+notes = "Opens the voice chat microphone stream when the game starts instead of when you first talk."
+
+# Damage direction indicator (seen in SideLock)
+
+[citadel_damage_indicator_radius]
+category = "UI & Panorama"
+type = "int"
+impact = "low"
+notes = "Size of the marker that shows which direction damage came from."
+
+[citadel_damage_indicator_height]
+category = "UI & Panorama"
+type = "int"
+impact = "low"
+notes = "Height of the damage direction marker."
+
+[citadel_damage_indicator_width]
+category = "UI & Panorama"
+type = "int"
+impact = "low"
+notes = "Width of the damage direction marker."
+
 # Kind fixes where preset values are junk (`0918`, `kaiz`) or only 0/1 appear.
 
 [violence_ablood]
@@ -409,6 +433,18 @@ denylist = true
 
 [r_citadel_selection_outline2_width]
 denylist = true
+
+[r_citadel_selection_outline2_fade_pow]
+denylist = true
+notes = "How sharply enemy and ability outlines fade out. Same outline family as the alpha, offset and width settings."
+
+[citadel_player_outline_fade_range_min]
+denylist = true
+notes = "Distance where player outlines start to fade."
+
+[citadel_player_outline_fade_range_max]
+denylist = true
+notes = "Distance where player outlines have faded out completely."
 
 [citadel_trooper_outline_enabled]
 denylist = true

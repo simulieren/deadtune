@@ -879,6 +879,42 @@ notes = "Turns on the game's custom enemy colour (Settings: Enemy UI Color). Nee
 
 [citadel_custom_ui_colors.presets]
 
+[citadel_damage_indicator_height]
+category = "UI & Panorama"
+type = "int"
+default = "120"
+apply = "restart"
+impact = "low"
+denylist = false
+gameinfo_ignored = false
+notes = "Height of the damage direction marker."
+
+[citadel_damage_indicator_height.presets]
+
+[citadel_damage_indicator_radius]
+category = "UI & Panorama"
+type = "int"
+default = "300"
+apply = "restart"
+impact = "low"
+denylist = false
+gameinfo_ignored = false
+notes = "Size of the marker that shows which direction damage came from."
+
+[citadel_damage_indicator_radius.presets]
+
+[citadel_damage_indicator_width]
+category = "UI & Panorama"
+type = "int"
+default = "120"
+apply = "restart"
+impact = "low"
+denylist = false
+gameinfo_ignored = false
+notes = "Width of the damage direction marker."
+
+[citadel_damage_indicator_width.presets]
+
 [citadel_damage_offscreen_indicator_disabled]
 category = "UI & Panorama"
 type = "bool"
@@ -1456,6 +1492,30 @@ sqooky_test = "false"
 boot_maxfps = "true"
 optilock_recommended = "true"
 optilock_potato = "true"
+
+[citadel_player_outline_fade_range_max]
+category = "Outlines & glow"
+type = "int"
+default = "1400"
+apply = "restart"
+impact = "unknown"
+denylist = true
+gameinfo_ignored = true
+notes = "Distance where player outlines have faded out completely."
+
+[citadel_player_outline_fade_range_max.presets]
+
+[citadel_player_outline_fade_range_min]
+category = "Outlines & glow"
+type = "int"
+default = "400"
+apply = "restart"
+impact = "unknown"
+denylist = true
+gameinfo_ignored = true
+notes = "Distance where player outlines start to fade."
+
+[citadel_player_outline_fade_range_min.presets]
 
 [citadel_portrait_unit_ag2_enable]
 category = "UI & Panorama"
@@ -7041,6 +7101,18 @@ boot_maxfps = "255"
 optilock_recommended = "0.8"
 optilock_potato = "0.8"
 
+[r_citadel_selection_outline2_fade_pow]
+category = "Outlines & glow"
+type = "float"
+default = "1.5"
+apply = "restart"
+impact = "unknown"
+denylist = true
+gameinfo_ignored = true
+notes = "How sharply enemy and ability outlines fade out. Same outline family as the alpha, offset and width settings."
+
+[r_citadel_selection_outline2_fade_pow.presets]
+
 [r_citadel_selection_outline2_offset]
 category = "Outlines & glow"
 type = "float"
@@ -12040,6 +12112,18 @@ kaiz_extremelow = "0"
 boot_maxfps = "0"
 optilock_recommended = "0"
 optilock_potato = "0"
+
+[voice_always_sample_mic]
+category = "Audio"
+type = "bool"
+default = "false"
+apply = "live"
+impact = "low"
+denylist = false
+gameinfo_ignored = false
+notes = "Opens the voice chat microphone stream when the game starts instead of when you first talk."
+
+[voice_always_sample_mic.presets]
 
 [voice_in_process]
 category = "Audio"

@@ -19,7 +19,7 @@ const HEADER_VERSION: u16 = 12;
 const LAYOUT_TYPE_VERSION: u16 = 3;
 const STYLE_TYPE_VERSION: u16 = 3;
 /// Scripts of this version and up keep their text bare in DATA.
-const SCRIPT_TYPE_VERSION: u16 = 4;
+pub const SCRIPT_TYPE_VERSION: u16 = 4;
 
 /// One node of a layout: a panel, or one of the structural tags (`root`, `styles`,
 /// `scripts`, `snippets`, `snippet`, `include`, `script`).

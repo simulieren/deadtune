@@ -70,6 +70,10 @@ Top bar (`citadel_hud_top_bar.css`, per 88 px player panel, `#TeamsContainer { w
 
 Health bar (`hud_health.css`, `hud_health_container.css`): `#health_bar { width: 66px; height: 212px; background-color: #333333ea; opacity-mask: url(healthbar_backer_mask) }` (a slanted ruler, wider at the top), `.ProgressBarLeft { background-color: #FFEFD7; background-image: url(healthbar_fill_texture_png) }`, `#healthLines .line_large { height: 3px; background-color: offBlack; opacity: 0.7 }` and `.line_small { width: 30% }` (the ticks), `#health_bar_frame { width: 68px; height: 220px; wash-color: #142304; background-image: url(healthbar_frame_with_regen) }` (`.healthLow` `#cc340a`), `.healthBacker { width: 90%; wash-color: vivaciousGreen; background-image: url(hud/core/health_backer); background-position: right bottom }` behind `.currentHealthLabel { font-size: 32px; font-weight: bold; color: offWhite }` (36 px `#FF5656` when low) with `.totalHealthLabel { font-size: 14px; opacity: 0.2; transform: rotateZ(-3deg) }` under it, and `.regen_container` at the top left with the 7x8 arrows at opacity 0.3. The whole block runs at `ui-scale: 120%`.
 
+## Drawing
+
+`crates/dt-gui/src/hud_art.rs` paints every picture through one mesh: `Images::paint` (a rect, multiplied by the tint as `wash-color` does), `paint_shape` (a rect cut to a convex polygon, as an `opacity-mask` does; `badge_mask` is the hero badge's, `cut_top` makes a health fill), `paint_placed` (the same in a scaled, turned local frame, `Place`; the health bar's `-20deg`, the friendly patron's `180deg`) and `paint_turned` (a turned rect; the enemy edge arrow). The mask images themselves are not decoded.
+
 ## Checks
 
 - `dt_core::hud::art` tests: every path is a replaceable image; with `DEADTUNE_GAME_SNAPSHOT=<snapshot>` every path is in that build's `pak01.tsv`; with `DEADTUNE_PREVIEW_IMAGES=<export>` every path is in the export's `manifest.json`. Both ran green on build 25712201.

@@ -4,13 +4,13 @@
 
 use dt_core::hud::art;
 use dt_core::hud::health_style::{HealthPreset, HealthStyle, NUMBER_SCALE_RANGE};
-use eframe::egui::epaint::{Mesh, TextShape, Vertex};
+use eframe::egui::epaint::TextShape;
 use eframe::egui::{
     self, Align, Align2, Color32, CornerRadius, FontId, Layout, Painter, Pos2, Rect, RichText,
-    Sense, Shape, Stroke, Ui, emath::Rot2, pos2, vec2,
+    Sense, Stroke, Ui, emath::Rot2, pos2, vec2,
 };
 
-use crate::hud_art::{self, Images};
+use crate::hud_art::{self, Images, Place};
 use crate::minimap_view::{marked, percent_slider};
 use crate::state::AppState;
 use crate::theme::{self, ACCENT, RAIL, WARN, WEAK};
@@ -155,36 +155,6 @@ fn toggle(ui: &mut Ui, value: &mut bool, label: &str, help: &str) {
     ui.add_space(4.0);
 }
 
-/// Upright drawing coordinates (game px, origin at the bar's top-left) placed on screen:
-/// scaled, then turned by `angle` (radians, clockwise on screen) about `origin`.
-#[derive(Clone, Copy)]
-struct Place {
-    origin: Pos2,
-    scale: f32,
-    angle: f32,
-}
-
-impl Place {
-    fn at(self, local: Pos2) -> Pos2 {
-        self.origin + Rot2::from_angle(self.angle) * (local.to_vec2() * self.scale)
-    }
-
-    fn turned(self, degrees: f32) -> Self {
-        Self {
-            angle: self.angle + degrees.to_radians(),
-            ..self
-        }
-    }
-
-    fn polygon(self, shape: &[Pos2], fill: Color32) -> Shape {
-        Shape::convex_polygon(
-            shape.iter().map(|&at| self.at(at)).collect(),
-            fill,
-            Stroke::NONE,
-        )
-    }
-}
-
 /// `#health_bar`, 66x212.
 const BAR: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(66.0, 212.0));
 /// `#health_bar_frame`, 68x220, from the bar's top-left less 1 px.
@@ -274,41 +244,6 @@ fn corners(rect: Rect) -> [Pos2; 4] {
     ]
 }
 
-/// `Images::paint_shape` with a rotation: paints `art` laid over the upright `image`, only
-/// inside the upright convex `shape`, both put on screen by `place`.
-fn paint_placed(
-    p: &Painter,
-    images: &mut Images,
-    art: art::Art,
-    place: Place,
-    image: Rect,
-    shape: &[Pos2],
-    tint: Color32,
-) -> bool {
-    if shape.len() < 3 {
-        return false;
-    }
-    let Some(texture) = images.get(art, image.size().max_elem() * place.scale) else {
-        return false;
-    };
-    let mut mesh = Mesh::with_texture(texture.id());
-    for &at in shape {
-        mesh.vertices.push(Vertex {
-            pos: place.at(at),
-            uv: pos2(
-                (at.x - image.left()) / image.width(),
-                (at.y - image.top()) / image.height(),
-            ),
-            color: tint,
-        });
-    }
-    for i in 1..shape.len() as u32 - 1 {
-        mesh.add_triangle(0, i, i + 1);
-    }
-    p.add(mesh);
-    true
-}
-
 /// Text put on screen by `place`, its `align` point at the upright `anchor`, ringed with
 /// an offBlack `outline` (screen px, none at 0) the way the game's number is.
 #[allow(clippy::too_many_arguments)]
@@ -391,15 +326,7 @@ fn preview(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
             for part in shown {
                 painter.add(bar.polygon(part, BODY));
                 let level = hud_art::cut_top(part, top);
-                if paint_placed(
-                    painter,
-                    images,
-                    art::HEALTH_FILL,
-                    bar,
-                    BAR,
-                    &level,
-                    fill_tint,
-                ) {
+                if images.paint_placed(painter, art::HEALTH_FILL, bar, BAR, &level, fill_tint) {
                     real = true;
                 } else if level.len() >= 3 {
                     painter.add(bar.polygon(&level, paper));
@@ -419,9 +346,8 @@ fn preview(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
                 }
             }
             if framed {
-                paint_placed(
+                images.paint_placed(
                     painter,
-                    images,
                     art::HEALTH_FRAME,
                     bar,
                     FRAME_RECT,
@@ -432,9 +358,8 @@ fn preview(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
             if !style.hide_regen {
                 let arrows = Rect::from_center_size(pos2(13.0, 9.5), vec2(7.0, 8.0));
                 let arrows_tint = HEALTHY.gamma_multiply(0.3);
-                paint_placed(
+                images.paint_placed(
                     painter,
-                    images,
                     art::REGEN,
                     bar,
                     arrows,
@@ -460,9 +385,8 @@ fn preview(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
             .turned(NUMBER_TILT);
             if !style.hide_backer {
                 let backer = Rect::from_min_size(pos2(52.0, 36.0), vec2(78.0, 62.4));
-                let drawn = paint_placed(
+                let drawn = images.paint_placed(
                     painter,
-                    images,
                     art::HEALTH_BACKER,
                     number,
                     backer,

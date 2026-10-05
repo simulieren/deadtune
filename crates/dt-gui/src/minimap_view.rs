@@ -10,7 +10,6 @@ use dt_core::hud::minimap_style::{
     MAP_OPACITY_RANGE, MARKER_SCALE_RANGE, MARKERS, MarkerGroup, MarkerSpec,
 };
 use eframe::egui::color_picker::{Alpha, color_edit_button_srgba};
-use eframe::egui::epaint::{Mesh, Vertex};
 use eframe::egui::{
     self, Align, Color32, CornerRadius, Layout, Painter, Pos2, Rect, RichText, Sense, Shape,
     Stroke, Ui, Vec2, pos2, vec2,
@@ -848,8 +847,7 @@ fn minimap(p: &Painter, rect: Rect, state: &AppState, images: &mut Images) -> bo
     let dir = vec2(look.cos(), look.sin());
     let cone = vec2(36.0, 36.0) * k * s;
     let warm = Color32::from_rgb(0xF4, 0xD3, 0x5E);
-    if !paint_turned(
-        images,
+    if !images.paint_turned(
         p,
         art::VIEW_CONE,
         me + dir * (r + 0.1 * cone.x),
@@ -883,7 +881,7 @@ fn minimap(p: &Painter, rect: Rect, state: &AppState, images: &mut Images) -> bo
     let size = Vec2::splat(22.0) * k * scale(MarkerGroup::EnemyHeroes);
     let at = map.centre + out * (map.radius - size.x * 0.4);
     let tint = ink(state, IconId::EnemyHeroArrow, Color32::WHITE);
-    if !paint_turned(images, p, arrow_art, at, size, out.y.atan2(out.x), tint) {
+    if !images.paint_turned(p, arrow_art, at, size, out.y.atan2(out.x), tint) {
         let arrow = ink(state, IconId::EnemyHeroArrow, enemy);
         edge_arrow(p, map.centre, map.radius, angle, arrow);
     }
@@ -905,11 +903,11 @@ fn objective(
     health: f32,
 ) -> bool {
     let rect = map.rect(o.back, scale, at);
-    if !paint_turned(images, p, o.back, at, rect.size(), turn, tint) {
+    if !images.paint_turned(p, o.back, at, rect.size(), turn, tint) {
         return false;
     }
     if health >= 1.0 {
-        return paint_turned(images, p, o.fill, at, rect.size(), turn, tint);
+        return images.paint_turned(p, o.fill, at, rect.size(), turn, tint);
     }
     let corners = [
         rect.left_top(),
@@ -919,36 +917,6 @@ fn objective(
     ];
     let cut = rect.bottom() - rect.height() * health;
     images.paint_shape(p, o.fill, rect, &cut_top(&corners, cut), tint)
-}
-
-/// Paints `art` `size` big around `centre`, turned `turn` radians clockwise; false when
-/// the picture is not available. `Images::paint` only draws pictures upright.
-fn paint_turned(
-    images: &mut Images,
-    p: &Painter,
-    art: art::Art,
-    centre: Pos2,
-    size: Vec2,
-    turn: f32,
-    tint: Color32,
-) -> bool {
-    let Some(texture) = images.get(art, size.max_elem()) else {
-        return false;
-    };
-    let (sin, cos) = turn.sin_cos();
-    let mut mesh = Mesh::with_texture(texture.id());
-    for (x, y) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
-        let v = vec2(x - 0.5, y - 0.5) * size;
-        mesh.vertices.push(Vertex {
-            pos: centre + vec2(v.x * cos - v.y * sin, v.x * sin + v.y * cos),
-            uv: pos2(x, y),
-            color: tint,
-        });
-    }
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
-    p.add(mesh);
-    true
 }
 
 /// The patron's arch where its picture is missing: a thick half ring over the opening,

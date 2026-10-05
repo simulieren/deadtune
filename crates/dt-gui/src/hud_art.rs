@@ -8,8 +8,11 @@ use std::sync::Arc;
 
 use dt_core::hud::art::Art;
 use dt_core::snapshot::store::TEXT;
+use eframe::egui::emath::Rot2;
 use eframe::egui::epaint::{Mesh, Vertex};
-use eframe::egui::{self, Color32, Painter, Pos2, Rect, TextureHandle, pos2, vec2};
+use eframe::egui::{
+    self, Color32, Painter, Pos2, Rect, Shape, Stroke, TextureHandle, Vec2, pos2, vec2,
+};
 
 use crate::images::{ImageSource, Picture};
 use crate::state::AppState;
@@ -138,23 +141,34 @@ impl Images<'_> {
         shape: &[Pos2],
         tint: Color32,
     ) -> bool {
+        self.paint_placed(p, art, Place::SCREEN, image, shape, tint)
+    }
+
+    /// [`Images::paint_shape`] in a local frame: `image` and `shape` are upright local
+    /// points that `place` scales, turns and moves onto the screen.
+    pub fn paint_placed(
+        &mut self,
+        p: &Painter,
+        art: Art,
+        place: Place,
+        image: Rect,
+        shape: &[Pos2],
+        tint: Color32,
+    ) -> bool {
         if shape.len() < 3 {
             return false;
         }
-        let Some(texture) = self.get(art, image.width().max(image.height())) else {
+        let Some(texture) = self.get(art, image.size().max_elem() * place.scale) else {
             return false;
-        };
-        let uv = |at: Pos2| {
-            pos2(
-                (at.x - image.left()) / image.width(),
-                (at.y - image.top()) / image.height(),
-            )
         };
         let mut mesh = Mesh::with_texture(texture.id());
         for &at in shape {
             mesh.vertices.push(Vertex {
-                pos: at,
-                uv: uv(at),
+                pos: place.at(at),
+                uv: pos2(
+                    (at.x - image.left()) / image.width(),
+                    (at.y - image.top()) / image.height(),
+                ),
                 color: tint,
             });
         }
@@ -163,6 +177,31 @@ impl Images<'_> {
         }
         p.add(mesh);
         true
+    }
+
+    /// Paints `art` as a `size` rectangle centred on `centre` and turned by `turn` radians.
+    pub fn paint_turned(
+        &mut self,
+        p: &Painter,
+        art: Art,
+        centre: Pos2,
+        size: Vec2,
+        turn: f32,
+        tint: Color32,
+    ) -> bool {
+        let image = Rect::from_center_size(Pos2::ZERO, size);
+        let corners = [
+            image.left_top(),
+            image.right_top(),
+            image.right_bottom(),
+            image.left_bottom(),
+        ];
+        let place = Place {
+            origin: centre,
+            scale: 1.0,
+            angle: turn,
+        };
+        self.paint_placed(p, art, place, image, &corners, tint)
     }
 
     /// Paints `art` cut to a circle of `radius` around `centre`, the picture scaled so its
@@ -179,6 +218,43 @@ impl Images<'_> {
         let size = vec2(w, h) * (2.0 * radius / w.min(h));
         let image = Rect::from_center_size(centre, size);
         self.paint_shape(p, art, image, &circle(centre, radius), tint)
+    }
+}
+
+/// A local frame on the screen: local points are scaled by `scale`, turned by `angle`
+/// (radians, clockwise on screen) and moved to `origin`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Place {
+    pub origin: Pos2,
+    pub scale: f32,
+    pub angle: f32,
+}
+
+impl Place {
+    /// Screen points as they are.
+    pub const SCREEN: Place = Place {
+        origin: Pos2::ZERO,
+        scale: 1.0,
+        angle: 0.0,
+    };
+
+    pub fn at(self, local: Pos2) -> Pos2 {
+        self.origin + Rot2::from_angle(self.angle) * (local.to_vec2() * self.scale)
+    }
+
+    pub fn turned(self, degrees: f32) -> Self {
+        Self {
+            angle: self.angle + degrees.to_radians(),
+            ..self
+        }
+    }
+
+    pub fn polygon(self, shape: &[Pos2], fill: Color32) -> Shape {
+        Shape::convex_polygon(
+            shape.iter().map(|&at| self.at(at)).collect(),
+            fill,
+            Stroke::NONE,
+        )
     }
 }
 

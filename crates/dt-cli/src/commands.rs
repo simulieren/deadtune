@@ -3,8 +3,8 @@
 use crate::args::{Args, CliResult};
 use crate::env::Env;
 use crate::{
-    cmd_addons, cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_info, cmd_presets, cmd_profile,
-    cmd_snapshot, cmd_texture, cmd_update,
+    cmd_addons, cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_images, cmd_info, cmd_presets,
+    cmd_profile, cmd_snapshot, cmd_texture, cmd_update,
 };
 
 pub struct Command {
@@ -346,6 +346,14 @@ pub const COMMANDS: &[Command] = &[
         values: &[],
         switches: &["full"],
         run: cmd_snapshot::diff,
+    },
+    Command {
+        name: "images export-all",
+        usage: "images export-all [--out <dir>] [--folder <minimap|hud/top_bar|...>] [--from <snapshot folder>] [--zip]",
+        summary: "save every UI image as PNG (vector icons also as SVG) at its game path, with manifest.json and failures.txt; --zip also writes one .zip",
+        values: &["out", "folder", "from"],
+        switches: &["zip"],
+        run: cmd_images::export_all,
     },
     Command {
         name: "texture png",

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use dt_core::snapshot::spec::DEFAULT_SIZE_CAP;
 use dt_core::snapshot::{
-    Category, ChangeKind, FileChange, SnapshotDiff, SnapshotInfo, human_bytes, store,
+    Category, ChangeKind, FileChange, ImageScope, SnapshotDiff, SnapshotInfo, human_bytes, store,
 };
 use eframe::egui::{self, Align, Layout, RichText, Ui, vec2};
 
@@ -39,6 +39,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     let mut edits = Vec::new();
     status_card(ui, state, &mut edits);
     what_to_save(ui, state);
+    ui_images_card(ui, state);
     if let Some(diff) = state.latest_diff.clone() {
         report_card(ui, &diff, &mut edits);
     }
@@ -232,6 +233,12 @@ fn what_to_save(ui: &mut Ui, state: &mut AppState) {
         let per: Vec<(usize, u64)> = Category::ALL.iter().map(|c| inv.totals(*c)).collect();
         (per, inv.selected_totals(&selection))
     });
+    let scopes: Option<Vec<(usize, u64)>> = state.snapshot_inventory().ok().map(|inv| {
+        ImageScope::ALL
+            .iter()
+            .map(|s| inv.scope_totals(*s))
+            .collect()
+    });
     let settings = &mut state.settings.snapshots;
     widgets::card(ui, |ui| {
         widgets::caption(ui, "What to save");
@@ -262,6 +269,7 @@ fn what_to_save(ui: &mut Ui, state: &mut AppState) {
                 }
             });
         }
+        image_scope_picker(ui, &mut settings.selection.images, scopes.as_deref());
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.checkbox(&mut settings.selection.decode, "Decode to readable text")
@@ -298,6 +306,45 @@ fn what_to_save(ui: &mut Ui, state: &mut AppState) {
             "Snapshot automatically after game updates",
         )
         .on_hover_text("When Steam installs a new build, DeadTune takes a snapshot in the background and compares it with the previous one.");
+    });
+}
+
+/// "Images", with what each scope adds to the snapshot.
+fn image_scope_picker(ui: &mut Ui, scope: &mut ImageScope, totals: Option<&[(usize, u64)]>) {
+    let label = |i: usize, s: ImageScope| match (s, totals.and_then(|t| t.get(i))) {
+        (ImageScope::None, _) | (_, None) => s.label().to_string(),
+        (_, Some((files, bytes))) => format!(
+            "{} ({}, {})",
+            s.label(),
+            plural(*files, "image"),
+            human_bytes(*bytes)
+        ),
+    };
+    let current = ImageScope::ALL.iter().position(|s| s == scope).unwrap_or(0);
+    ui.horizontal(|ui| {
+        ui.label("Images")
+            .on_hover_text("Pictures and icons out of the game, stored whole whatever the size limit, and decoded to PNG and SVG next to them.");
+        egui::ComboBox::from_id_salt("snapshot_images")
+            .selected_text(label(current, *scope))
+            .width(300.0)
+            .show_ui(ui, |ui| {
+                for (i, s) in ImageScope::ALL.into_iter().enumerate() {
+                    ui.selectable_value(scope, s, label(i, s));
+                }
+            });
+    });
+}
+
+/// Every UI image as PNG and SVG, the same export as the UI images page's.
+fn ui_images_card(ui: &mut Ui, state: &mut AppState) {
+    widgets::card(ui, |ui| {
+        widgets::caption(ui, "Save all UI images as PNG/SVG");
+        ui.label(
+            RichText::new("Every picture and icon the game's interface uses, as files you can open, at the game's own paths, with a manifest.json listing their sizes. Nothing in the game changes.")
+                .color(WEAK),
+        );
+        ui.add_space(4.0);
+        crate::images_export_view::strip(ui, state, None, None);
     });
 }
 

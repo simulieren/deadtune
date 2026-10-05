@@ -7,9 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use dt_core::hud::art::Art;
-use dt_core::hud::install::GAME_PAK;
-use dt_core::hud::vpk::VpkDir;
-use dt_core::snapshot::store::{RAW, TEXT};
+use dt_core::snapshot::store::TEXT;
 use eframe::egui::epaint::{Mesh, Vertex};
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, TextureHandle, pos2, vec2};
 
@@ -45,25 +43,17 @@ impl AppState {
         if let Some(dir) = self
             .hud_art
             .from
-            .clone()
-            .or_else(|| self.settings.preview_images.clone())
+            .as_ref()
+            .or(self.settings.preview_images.as_ref())
         {
             chain.push(ImageSource::decoded(dir));
         }
-        if let Ok(pak) = VpkDir::open(&self.paths.citadel_dir.join(GAME_PAK)) {
-            chain.push(ImageSource::Game(pak));
+        if let Ok(game) = ImageSource::game(&self.paths) {
+            chain.push(game);
         }
         if let Some(dir) = &self.images.from {
-            let label = dir
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let raw = dir.join(RAW);
-            chain.push(ImageSource::Folder {
-                root: if raw.is_dir() { raw } else { dir.clone() },
-                label,
-            });
-            chain.push(ImageSource::decoded(dir.join(TEXT)));
+            chain.push(ImageSource::folder(dir));
+            chain.push(ImageSource::decoded(&dir.join(TEXT)));
         }
         ImageSource::Chain(chain)
     }

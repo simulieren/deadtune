@@ -1,12 +1,8 @@
-//! The game images DeadTune's HUD previews draw, by preview element, and where a folder of
-//! decoded images keeps each one. Paths only: the pictures are read at runtime from the
-//! player's pak01, an image export or a snapshot, never shipped.
-
-use std::collections::BTreeMap;
+//! The game images DeadTune's HUD previews draw, by preview element. Paths only: the
+//! pictures are read at runtime from the player's pak01, an image export or a snapshot
+//! (`snapshot::images::ImageSource`), never shipped.
 
 use super::minimap_colors::IconId;
-
-pub const EXPORT_MANIFEST: &str = "manifest.json";
 
 /// One game image a preview draws, and its size on a 1080p screen from the game's CSS.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -206,63 +202,6 @@ pub fn all() -> Vec<Art> {
     out
 }
 
-/// The files a decoded-image folder (a "Save all images" export, or a snapshot's `text/`)
-/// keeps for `game_path`, best first: `x_psd.vtex_c` is `x_psd.png`; `x.vsvg_c` is `x.svg`,
-/// then its rendered `x.png`.
-pub fn export_names(game_path: &str) -> Vec<String> {
-    if let Some(stem) = game_path.strip_suffix(".vtex_c") {
-        vec![format!("{stem}.png")]
-    } else if let Some(stem) = game_path.strip_suffix(".vsvg_c") {
-        vec![format!("{stem}.svg"), format!("{stem}.png")]
-    } else {
-        Vec::new()
-    }
-}
-
-/// Game path -> exported files, from an export's `manifest.json`. Lenient about the shape:
-/// any object naming a compiled image path (`path`, `game_path` or `source`) with its file
-/// names (`files`, or `png`/`svg`/`file`) counts, wherever it sits.
-pub fn manifest_names(json: &str) -> BTreeMap<String, Vec<String>> {
-    let mut out = BTreeMap::new();
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
-        collect(&value, &mut out);
-    }
-    out
-}
-
-fn collect(value: &serde_json::Value, out: &mut BTreeMap<String, Vec<String>>) {
-    use serde_json::Value;
-    match value {
-        Value::Array(items) => items.iter().for_each(|v| collect(v, out)),
-        Value::Object(map) => {
-            let game = ["path", "game_path", "source"]
-                .iter()
-                .filter_map(|k| map.get(*k)?.as_str())
-                .find(|p| p.ends_with(".vtex_c") || p.ends_with(".vsvg_c"));
-            if let Some(game) = game {
-                let mut files: Vec<String> = map
-                    .get("files")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|f| f.as_str().map(str::to_string))
-                    .collect();
-                for key in ["svg", "png", "file"] {
-                    if let Some(f) = map.get(key).and_then(Value::as_str) {
-                        files.push(f.to_string());
-                    }
-                }
-                files.sort_by_key(|f| !f.ends_with(".svg"));
-                if !files.is_empty() {
-                    out.insert(game.to_string(), files);
-                }
-            }
-            map.values().for_each(|v| collect(v, out));
-        }
-        _ => {}
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,7 +211,7 @@ mod tests {
         let all = all();
         assert!(all.len() > 50, "{}", all.len());
         for a in &all {
-            assert!(super::super::icons::target(a.path).is_ok(), "{}", a.path);
+            assert!(crate::hud::icons::target(a.path).is_ok(), "{}", a.path);
             assert!(a.size[0] > 0 && a.size[1] > 0, "{}", a.path);
         }
     }
@@ -294,38 +233,5 @@ mod tests {
             .filter(|p| !listed.contains(p))
             .collect();
         assert!(missing.is_empty(), "not in pak01: {missing:#?}");
-    }
-
-    #[test]
-    fn export_names_follow_the_snapshot_text_layout() {
-        assert_eq!(
-            export_names("panorama/images/minimap/gold_psd.vtex_c"),
-            ["panorama/images/minimap/gold_psd.png"]
-        );
-        assert_eq!(
-            export_names("panorama/images/hud/top_bar/icon_ultimate.vsvg_c"),
-            [
-                "panorama/images/hud/top_bar/icon_ultimate.svg",
-                "panorama/images/hud/top_bar/icon_ultimate.png"
-            ]
-        );
-        assert!(export_names("panorama/styles/hud.vcss_c").is_empty());
-    }
-
-    #[test]
-    fn manifest_names_read_any_reasonable_shape() {
-        let json = r#"{"build":"1","images":[
-            {"path":"panorama/images/a_psd.vtex_c","files":["panorama/images/a_psd.png"]},
-            {"game_path":"panorama/images/b.vsvg_c","png":"x/b.png","svg":"x/b.svg"},
-            {"path":"panorama/images/c_psd.vtex_c","error":"undecodable"}
-        ]}"#;
-        let names = manifest_names(json);
-        assert_eq!(
-            names["panorama/images/a_psd.vtex_c"],
-            ["panorama/images/a_psd.png"]
-        );
-        assert_eq!(names["panorama/images/b.vsvg_c"], ["x/b.svg", "x/b.png"]);
-        assert!(!names.contains_key("panorama/images/c_psd.vtex_c"));
-        assert!(manifest_names("not json").is_empty());
     }
 }

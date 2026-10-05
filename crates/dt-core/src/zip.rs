@@ -1,7 +1,7 @@
-//! Just enough of the zip format to pull one file out of a mod archive: stored or deflated
-//! entries, no zip64, no encryption.
+//! Just enough of the zip format to pull one file out of a mod archive, and to write one
+//! (the UI images export): stored or deflated entries, no zip64, no encryption.
 
-use std::io::Read;
+use std::io::{self, Read, Write};
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ZipError {
@@ -126,6 +126,100 @@ pub fn is_zip(bytes: &[u8]) -> bool {
     bytes.starts_with(&LOCAL.to_le_bytes())
 }
 
+/// Streams entries into a zip archive: each one is deflated unless that does not make it
+/// smaller (PNGs), names are UTF-8, every entry carries the same timestamp.
+pub struct ZipWriter<W: Write> {
+    out: W,
+    offset: u64,
+    central: Vec<u8>,
+    count: u16,
+    time: u16,
+    date: u16,
+}
+
+fn too_big() -> io::Error {
+    io::Error::other("the zip archive would be over 4 GB or 65535 files")
+}
+
+impl<W: Write> ZipWriter<W> {
+    pub fn new(out: W, modified: chrono::NaiveDateTime) -> ZipWriter<W> {
+        use chrono::{Datelike, Timelike};
+        let year = (modified.year().clamp(1980, 2107) - 1980) as u16;
+        ZipWriter {
+            out,
+            offset: 0,
+            central: Vec::new(),
+            count: 0,
+            time: (modified.hour() as u16) << 11
+                | (modified.minute() as u16) << 5
+                | (modified.second() as u16 / 2),
+            date: year << 9 | (modified.month() as u16) << 5 | modified.day() as u16,
+        }
+    }
+
+    pub fn add(&mut self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        let mut deflater =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+        deflater.write_all(bytes)?;
+        let deflated = deflater.finish()?;
+        let (method, data): (u16, &[u8]) = if deflated.len() < bytes.len() {
+            (8, &deflated)
+        } else {
+            (0, bytes)
+        };
+        let mut crc = flate2::Crc::new();
+        crc.update(bytes);
+        let size = u32::try_from(bytes.len()).map_err(|_| too_big())?;
+        let compressed = data.len() as u32;
+        let offset = u32::try_from(self.offset).map_err(|_| too_big())?;
+        self.count = self.count.checked_add(1).ok_or_else(too_big)?;
+        let name_len = u16::try_from(name.len()).map_err(|_| too_big())?;
+        let common = |out: &mut Vec<u8>| {
+            out.extend_from_slice(&20u16.to_le_bytes());
+            out.extend_from_slice(&0x0800u16.to_le_bytes());
+            out.extend_from_slice(&method.to_le_bytes());
+            out.extend_from_slice(&self.time.to_le_bytes());
+            out.extend_from_slice(&self.date.to_le_bytes());
+            out.extend_from_slice(&crc.sum().to_le_bytes());
+            out.extend_from_slice(&compressed.to_le_bytes());
+            out.extend_from_slice(&size.to_le_bytes());
+            out.extend_from_slice(&name_len.to_le_bytes());
+            out.extend_from_slice(&0u16.to_le_bytes());
+        };
+        let mut local = LOCAL.to_le_bytes().to_vec();
+        common(&mut local);
+        local.extend_from_slice(name.as_bytes());
+        let mut central = CENTRAL.to_le_bytes().to_vec();
+        central.extend_from_slice(&20u16.to_le_bytes());
+        common(&mut central);
+        central.extend_from_slice(&[0; 10]);
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name.as_bytes());
+        self.central.extend_from_slice(&central);
+        self.out.write_all(&local)?;
+        self.out.write_all(data)?;
+        self.offset += (local.len() + data.len()) as u64;
+        Ok(())
+    }
+
+    /// Writes the central directory and hands back the writer.
+    pub fn finish(mut self) -> io::Result<W> {
+        let start = u32::try_from(self.offset).map_err(|_| too_big())?;
+        let size = self.central.len() as u32;
+        self.out.write_all(&self.central)?;
+        let mut end = EOCD.to_le_bytes().to_vec();
+        end.extend_from_slice(&[0; 4]);
+        end.extend_from_slice(&self.count.to_le_bytes());
+        end.extend_from_slice(&self.count.to_le_bytes());
+        end.extend_from_slice(&size.to_le_bytes());
+        end.extend_from_slice(&start.to_le_bytes());
+        end.extend_from_slice(&0u16.to_le_bytes());
+        self.out.write_all(&end)?;
+        self.out.flush()?;
+        Ok(self.out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,6 +257,50 @@ mod tests {
         let at = bad.windows(8).position(|w| w == b"\"GameInf").unwrap();
         bad[at + 1] = b'X';
         assert_eq!(extract(&bad, "gameinfo.gi"), Err(ZipError::Damaged));
+    }
+
+    #[test]
+    fn written_archives_read_back_stored_and_deflated() {
+        let when = chrono::NaiveDate::from_ymd_opt(2026, 10, 5)
+            .unwrap()
+            .and_hms_opt(14, 30, 10)
+            .unwrap();
+        let mut zip = ZipWriter::new(Vec::new(), when);
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let noise: Vec<u8> = (0..4096)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                (seed >> 24) as u8
+            })
+            .collect();
+        zip.add("panorama/images/minimap/a_psd.png", &noise)
+            .unwrap();
+        zip.add("manifest.json", &b"{\"a\": 1}\n".repeat(200))
+            .unwrap();
+        zip.add("empty.txt", b"").unwrap();
+        let bytes = zip.finish().unwrap();
+        assert!(is_zip(&bytes));
+        assert_eq!(extract(&bytes, "a_psd.png").unwrap(), noise);
+        assert_eq!(
+            extract(&bytes, "manifest.json").unwrap(),
+            b"{\"a\": 1}\n".repeat(200)
+        );
+        assert_eq!(extract(&bytes, "empty.txt").unwrap(), b"");
+        let all = entries(&bytes).unwrap();
+        let methods: Vec<(&str, u16)> = all.iter().map(|e| (e.name, e.method)).collect();
+        assert_eq!(
+            methods,
+            [
+                ("panorama/images/minimap/a_psd.png", 0),
+                ("manifest.json", 8),
+                ("empty.txt", 0)
+            ]
+        );
+        assert!(bytes.len() < 4096 + 1800, "the repeated text is deflated");
+        let date = u16_at(&bytes, 12).unwrap();
+        assert_eq!((date >> 9, (date >> 5) & 15, date & 31), (46, 10, 5));
     }
 
     #[test]

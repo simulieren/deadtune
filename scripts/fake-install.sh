@@ -8,6 +8,7 @@ citadel="$dir/steamapps/common/Deadlock/game/citadel"
 mkdir -p "$citadel/cfg" "$dir/userdata/123/760/remote/1422450/screenshots"
 cp "$root/research/configs/OptimizationLock/clean gameinfo.gi/gameinfo.gi" "$citadel/gameinfo.gi"
 cp "$root/research/configs/OptimizationLock/test_cfg/video.txt" "$citadel/cfg/video.txt"
+(cd "$root" && cargo run -q -p dt-core --example fake_pak01 -- "$citadel/pak01_dir.vpk" >&2)
 cat > "$dir/steamapps/appmanifest_1422450.acf" <<ACF
 "AppState"
 {

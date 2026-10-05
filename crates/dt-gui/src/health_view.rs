@@ -3,17 +3,18 @@
 //! `crate::health_art`; edits go out with the HUD addon on Apply.
 
 use dt_core::hud::health_style::{
-    BarAngle, BarShape, HealthPreset, HealthStyle, LENGTH_RANGE, NumberFont, PresetGroup,
-    THICKNESS_RANGE,
+    BarAngle, BarShape, HealthPreset, HealthStyle, LENGTH_RANGE, NumberFont, NumberLayout, Offset,
+    PresetGroup, RegenPlace, THICKNESS_RANGE,
 };
 use dt_core::texture::adjust::Rgb;
 use eframe::egui::color_picker::color_edit_button_srgb;
+use eframe::egui::emath::Rot2;
 use eframe::egui::{
     self, Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Margin, Rect, RichText, Sense,
     Stroke, StrokeKind, Ui, pos2, vec2,
 };
 
-use crate::health_art::draw_health;
+use crate::health_art::{Drawn, Part, draw_health};
 use crate::hud_art::Images;
 use crate::icons::{self, Icon};
 use crate::state::AppState;
@@ -47,7 +48,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
                 let left = ui.available_width() - INSPECTOR - 14.0;
                 ui.vertical(|ui| {
                     ui.set_width(left);
-                    compare(ui, &style, images);
+                    compare(ui, &mut style, images);
                 });
                 ui.add_space(14.0 - ui.spacing().item_spacing.x);
                 ui.vertical(|ui| {
@@ -56,7 +57,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
                 });
             });
         } else {
-            compare(ui, &style, images);
+            compare(ui, &mut style, images);
             ui.add_space(12.0);
             inspector(ui, &mut style);
         }
@@ -200,8 +201,9 @@ fn backdrop(ui: &Ui, rect: Rect) {
     crate::game_shot::paint(&painter, &texture, crop, rect, Color32::from_gray(105));
 }
 
-/// The game's bar and yours at one health level, with the level to scrub.
-fn compare(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
+/// The game's bar and yours at one health level, with the level to scrub. Yours is an
+/// editor: the bar, the number and the regen can be dragged.
+fn compare(ui: &mut Ui, style: &mut HealthStyle, images: &mut Images) {
     card(ui, |ui| {
         let id = Id::new("health_scrub");
         let start = std::env::var("DEADTUNE_HEALTH_LEVEL")
@@ -215,24 +217,33 @@ fn compare(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
         let height = (w * 1.05).clamp(240.0, 340.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
-            for (label, look, yours) in [
-                ("Game's", HealthStyle::default(), false),
-                ("Yours", style.clone(), true),
-            ] {
+            for yours in [false, true] {
                 ui.vertical(|ui| {
                     ui.set_width(w);
                     ui.label(
-                        RichText::new(label)
+                        RichText::new(if yours { "Yours" } else { "Game's" })
                             .size(12.0)
                             .family(theme::semibold())
                             .color(if yours { ACCENT } else { WEAK }),
                     );
                     let (rect, _) = ui.allocate_exact_size(vec2(w, height), Sense::hover());
                     backdrop(ui, rect);
-                    ui.painter().rect(
+                    let painter = ui.painter_at(rect);
+                    if yours {
+                        let drawn = draw_health(&painter, images, style, rect.shrink(20.0), fill);
+                        editor(ui, rect, style, &drawn);
+                    } else {
+                        draw_health(
+                            &painter,
+                            images,
+                            &HealthStyle::default(),
+                            rect.shrink(20.0),
+                            fill,
+                        );
+                    }
+                    ui.painter().rect_stroke(
                         rect,
                         CornerRadius::same(8),
-                        Color32::TRANSPARENT,
                         Stroke::new(
                             1.0,
                             if yours {
@@ -243,7 +254,6 @@ fn compare(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
                         ),
                         StrokeKind::Inside,
                     );
-                    draw_health(ui.painter(), images, &look, rect.shrink(20.0), fill);
                 });
             }
         });
@@ -260,11 +270,25 @@ fn compare(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
         });
         ui.data_mut(|d| d.insert_temp(id, pct));
         ui.add_space(4.0);
-        ui.label(
-            RichText::new("A sketch of the settings, drawn from your game's own bar parts.")
-                .size(11.0)
-                .color(WEAK),
-        );
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("Drag the bar, the number or the regen in Yours to move them.")
+                    .size(11.5)
+                    .color(WEAK),
+            );
+            let moved = [style.bar_offset, style.number_offset, style.regen_offset]
+                .iter()
+                .any(|o| !o.is_zero());
+            if moved
+                && ui
+                    .add(egui::Button::new(RichText::new("Reset positions").size(11.5)).small())
+                    .clicked()
+            {
+                style.bar_offset = Offset::default();
+                style.number_offset = Offset::default();
+                style.regen_offset = Offset::default();
+            }
+        });
     });
     ui.add_space(10.0);
     crate::game_shot::in_game(
@@ -272,6 +296,76 @@ fn compare(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
         dt_core::hud::elements::ElementId::HealthAndAmmo,
         vec2(ui.available_width().min(320.0), 150.0),
     );
+}
+
+fn part_name(part: Part) -> &'static str {
+    match part {
+        Part::Bar => "Bar",
+        Part::Number => "Number",
+        Part::Regen => "Regen",
+    }
+}
+
+fn offset_of(style: &mut HealthStyle, part: Part) -> &mut Offset {
+    match part {
+        Part::Bar => &mut style.bar_offset,
+        Part::Number => &mut style.number_offset,
+        Part::Regen => &mut style.regen_offset,
+    }
+}
+
+/// Makes each drawn part draggable: hovering outlines it, a drag moves it in its own frame
+/// (the number block leans with a tilted bar), measured from where the drag began.
+fn editor(ui: &mut Ui, area: Rect, style: &mut HealthStyle, drawn: &Drawn) {
+    let start_id = Id::new("health_drag_start");
+    for (part, rect, frame) in &drawn.parts {
+        let hit = rect.expand(4.0).intersect(area);
+        if !hit.is_positive() {
+            continue;
+        }
+        let response = ui
+            .interact(hit, Id::new(("health_part", *part)), Sense::drag())
+            .on_hover_cursor(egui::CursorIcon::Grab);
+        if response.drag_started() {
+            let start = *offset_of(style, *part);
+            ui.data_mut(|d| d.insert_temp(start_id, (start.x, start.y)));
+        }
+        if response.dragged()
+            && let (Some(origin), Some(now)) = (
+                ui.input(|i| i.pointer.press_origin()),
+                ui.input(|i| i.pointer.interact_pos()),
+            )
+        {
+            let (x, y): (i16, i16) = ui.data(|d| d.get_temp(start_id)).unwrap_or((0, 0));
+            let local = Rot2::from_angle(-frame.angle) * (now - origin) / frame.scale;
+            *offset_of(style, *part) =
+                Offset::clamped(f32::from(x) + local.x, f32::from(y) + local.y);
+        }
+        let active = response.dragged();
+        if response.hovered() || active {
+            let painter = ui.painter_at(area);
+            let outline = rect.expand(3.0);
+            painter.rect_stroke(
+                outline,
+                CornerRadius::same(4),
+                Stroke::new(if active { 1.5 } else { 1.0 }, ACCENT),
+                StrokeKind::Outside,
+            );
+            let at_now = *offset_of(style, *part);
+            let tag = format!("{}  {}, {}", part_name(*part), at_now.x, at_now.y);
+            let galley = painter.layout_no_wrap(tag, FontId::proportional(10.5), ON_ACCENT);
+            let at = pos2(
+                outline.left(),
+                (outline.top() - galley.size().y - 4.0).max(area.top() + 2.0),
+            );
+            painter.rect_filled(
+                Rect::from_min_size(at, galley.size() + vec2(8.0, 3.0)),
+                CornerRadius::same(3),
+                ACCENT,
+            );
+            painter.galley(at + vec2(4.0, 1.5), galley, ON_ACCENT);
+        }
+    }
 }
 
 /// One inspector line: a label (with its help on hover) and its control on the right.
@@ -364,6 +458,19 @@ fn inspector(ui: &mut Ui, style: &mut HealthStyle) {
             });
             row(
                 ui,
+                "Layout",
+                "The game's two lines, or \"3645 / 4557\" on one line",
+                |ui| {
+                    pick(
+                        ui,
+                        &mut style.number_layout,
+                        &NumberLayout::ALL,
+                        NumberLayout::label,
+                    )
+                },
+            );
+            row(
+                ui,
                 "Font",
                 "Typefaces from the game's own interface",
                 |ui| pick(ui, &mut style.font, &NumberFont::ALL, NumberFont::label),
@@ -405,10 +512,26 @@ fn inspector(ui: &mut Ui, style: &mut HealthStyle) {
         row(
             ui,
             "Regen number",
-            "The small health regeneration beside the bar",
+            "Your health regeneration per second",
             |ui| switch(ui, &mut regen),
         );
         style.hide_regen = !regen;
+        let has_bar = style.shape != BarShape::Hidden;
+        ui.add_enabled_ui(regen && has_bar, |ui| {
+            row(
+                ui,
+                "Regen sits",
+                "On the bar's top end like the game, or under the number as \"14.8/s\"",
+                |ui| {
+                    pick(
+                        ui,
+                        &mut style.regen_place,
+                        &RegenPlace::ALL,
+                        RegenPlace::label,
+                    )
+                },
+            );
+        });
     });
 }
 

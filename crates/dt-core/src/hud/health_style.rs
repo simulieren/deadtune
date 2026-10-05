@@ -23,6 +23,10 @@ const NUMBER_PX: f64 = 32.0;
 const NUMBER_LOW_PX: f64 = 36.0;
 const NUMBER_BOX: (f64, f64) = (100.0, 65.0);
 const HURT_COLOR: &str = "#FFB347";
+/// `.healthContainer`'s top in `#HealthRegenAndTotal`; the regen goes just under the box.
+const NUMBER_TOP: f64 = 100.0;
+/// The regen label's height and a gap, for putting it above the number box.
+const REGEN_ABOVE: f64 = 22.0;
 const LOW_COLOR: &str = "#FF5656";
 /// `vivaciousGreen`, the frame's and the backer's wash.
 const FRAME_GREEN: &str = "#142304";
@@ -149,6 +153,71 @@ impl NumberFont {
     }
 }
 
+/// How current and max health sit: the game's two lines, or one line "3645 / 4557".
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NumberLayout {
+    #[default]
+    Stacked,
+    Row,
+}
+
+impl NumberLayout {
+    pub const ALL: [NumberLayout; 2] = [NumberLayout::Stacked, NumberLayout::Row];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            NumberLayout::Stacked => "Two lines",
+            NumberLayout::Row => "One line",
+        }
+    }
+}
+
+/// Where the regeneration number shows: on the bar's top end (the game's), or in the number
+/// block, where the game keeps a "14.8/s" label of its own that it never shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegenPlace {
+    #[default]
+    Bar,
+    Number,
+}
+
+impl RegenPlace {
+    pub const ALL: [RegenPlace; 2] = [RegenPlace::Bar, RegenPlace::Number];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            RegenPlace::Bar => "On the bar",
+            RegenPlace::Number => "By the number",
+        }
+    }
+}
+
+/// A move in game px, right and down.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Offset {
+    pub x: i16,
+    pub y: i16,
+}
+
+impl Offset {
+    pub const LIMIT: i16 = 400;
+
+    pub fn is_zero(&self) -> bool {
+        *self == Offset::default()
+    }
+
+    pub fn clamped(x: f32, y: f32) -> Offset {
+        let c = |v: f32| (v.round() as i16).clamp(-Self::LIMIT, Self::LIMIT);
+        Offset { x: c(x), y: c(y) }
+    }
+
+    fn translate(&self) -> String {
+        format!("translateX({}px) translateY({}px)", self.x, self.y)
+    }
+}
+
 /// `Default` is vanilla: nothing emitted.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -182,6 +251,15 @@ pub struct HealthStyle {
     pub font: NumberFont,
     pub hide_number: bool,
     pub hide_max: bool,
+    pub number_layout: NumberLayout,
+    pub regen_place: RegenPlace,
+    /// Moves made by dragging in the page's preview.
+    #[serde(skip_serializing_if = "Offset::is_zero")]
+    pub bar_offset: Offset,
+    #[serde(skip_serializing_if = "Offset::is_zero")]
+    pub number_offset: Offset,
+    #[serde(skip_serializing_if = "Offset::is_zero")]
+    pub regen_offset: Offset,
 }
 
 impl Default for HealthStyle {
@@ -203,6 +281,11 @@ impl Default for HealthStyle {
             font: NumberFont::Game,
             hide_number: false,
             hide_max: false,
+            number_layout: NumberLayout::Stacked,
+            regen_place: RegenPlace::Bar,
+            bar_offset: Offset::default(),
+            number_offset: Offset::default(),
+            regen_offset: Offset::default(),
         }
     }
 }
@@ -339,6 +422,7 @@ impl HealthPreset {
                 ..HealthStyle::default()
             },
             HealthPreset::Slim => HealthStyle {
+                regen_place: RegenPlace::Number,
                 shape: BarShape::Straight,
                 angle: BarAngle::Upright,
                 thickness_pct: 60,
@@ -346,6 +430,7 @@ impl HealthPreset {
                 ..calm
             },
             HealthPreset::Wedge => HealthStyle {
+                regen_place: RegenPlace::Number,
                 shape: BarShape::Wedge,
                 angle: BarAngle::Upright,
                 ..calm
@@ -356,6 +441,8 @@ impl HealthPreset {
                 ..calm
             },
             HealthPreset::Horizontal => HealthStyle {
+                regen_place: RegenPlace::Number,
+                number_layout: NumberLayout::Row,
                 shape: BarShape::Straight,
                 angle: BarAngle::Flat,
                 thickness_pct: 90,
@@ -365,6 +452,8 @@ impl HealthPreset {
                 ..calm
             },
             HealthPreset::Pill => HealthStyle {
+                regen_place: RegenPlace::Number,
+                number_layout: NumberLayout::Row,
                 shape: BarShape::Rounded,
                 angle: BarAngle::Flat,
                 thickness_pct: 80,
@@ -377,6 +466,8 @@ impl HealthPreset {
                 ..calm
             },
             HealthPreset::Terminal => HealthStyle {
+                regen_place: RegenPlace::Number,
+                number_layout: NumberLayout::Row,
                 shape: BarShape::Straight,
                 angle: BarAngle::Flat,
                 thickness_pct: 60,
@@ -402,10 +493,10 @@ impl HealthPreset {
             HealthPreset::NumberOnly => HealthStyle {
                 shape: BarShape::Hidden,
                 angle: BarAngle::Upright,
+                regen_place: RegenPlace::Number,
                 number_scale_pct: 200,
                 font: NumberFont::Block,
                 color_by_health: true,
-                hide_regen: true,
                 ..calm
             },
         }
@@ -450,6 +541,11 @@ impl HealthStyle {
             self.font != v.font,
             self.hide_number,
             self.hide_max,
+            self.number_layout != v.number_layout,
+            self.regen_place != v.regen_place,
+            !self.bar_offset.is_zero(),
+            !self.number_offset.is_zero(),
+            !self.regen_offset.is_zero(),
         ]
         .into_iter()
         .filter(|c| *c)
@@ -568,14 +664,90 @@ impl HealthStyle {
                 &none,
             );
         }
-        if self.hide_regen {
+        self.compile_number_block(&mut add);
+        Ok(files)
+    }
+
+    /// Where the regen number shows, the one-line number and the dragged moves of the
+    /// number and the regen.
+    fn compile_number_block(&self, add: &mut impl FnMut(&'static str, &str, &[(&str, String)])) {
+        let regen = self.regen_shown_at();
+        if self.hide_regen || regen == RegenPlace::Number {
             add(
                 HEALTH_STYLE,
                 ".regen_container",
                 &[("opacity", "0".to_string())],
             );
         }
-        Ok(files)
+        if !self.hide_regen && regen == RegenPlace::Number {
+            let mut decls = vec![
+                ("visibility", "visible".to_string()),
+                ("horizontal-align", "right".to_string()),
+                ("margin-top", px(self.regen_top())),
+                ("margin-right", "15px".to_string()),
+            ];
+            if !self.regen_offset.is_zero() {
+                decls.push(("transform", self.regen_offset.translate()));
+            }
+            add(HEALTH_CONTAINER_STYLE, ".healthRegenContainer", &decls);
+        } else if !self.hide_regen && !self.regen_offset.is_zero() {
+            add(
+                HEALTH_STYLE,
+                ".regen_container",
+                &[("transform", self.regen_offset.translate())],
+            );
+        }
+        if self.number_layout == NumberLayout::Row {
+            add(
+                HEALTH_CONTAINER_STYLE,
+                ".healthContainer",
+                &[
+                    ("flow-children", "right".to_string()),
+                    ("width", "fit-children".to_string()),
+                ],
+            );
+            add(
+                HEALTH_CONTAINER_STYLE,
+                ".currentHealthLabel",
+                &[("margin-bottom", "0px".to_string())],
+            );
+            add(
+                HEALTH_CONTAINER_STYLE,
+                ".totalHealthLabel",
+                &[
+                    ("vertical-align", "bottom".to_string()),
+                    ("horizontal-align", "left".to_string()),
+                    ("margin", "0px 0px 8px 6px".to_string()),
+                    ("transform", "none".to_string()),
+                ],
+            );
+        }
+        if !self.number_offset.is_zero() {
+            add(
+                HEALTH_CONTAINER_STYLE,
+                ".healthContainer",
+                &[("transform", self.number_offset.translate())],
+            );
+        }
+    }
+
+    /// The regen's top in the number block: 3 px under the number box, which grows with
+    /// the number; above the box when the bar lies flat under it.
+    pub fn regen_top(&self) -> f64 {
+        if self.angle == BarAngle::Flat && self.shape != BarShape::Hidden {
+            NUMBER_TOP - REGEN_ABOVE
+        } else {
+            NUMBER_TOP + NUMBER_BOX.1 * f64::from(self.number_scale_pct) / 100.0 + 3.0
+        }
+    }
+
+    /// Where the regen number ends up: with no bar there is no bar end to put it on.
+    pub fn regen_shown_at(&self) -> RegenPlace {
+        if self.shape == BarShape::Hidden {
+            RegenPlace::Number
+        } else {
+            self.regen_place
+        }
     }
 
     /// The bar's outline, size, angle, fill, ticks and frame, into `hud_health`.
@@ -590,8 +762,14 @@ impl HealthStyle {
         }
         let (w, h) = self.bar_size();
         let resized = self.thickness_pct != 100 || self.length_pct != 100;
-        if self.angle != BarAngle::Tilted || resized {
-            let mut decls = vec![("transform", format!("rotateZ({}deg)", self.angle.degrees()))];
+        if self.angle != BarAngle::Tilted || resized || !self.bar_offset.is_zero() {
+            let turn = format!("rotateZ({}deg)", self.angle.degrees());
+            let transform = if self.bar_offset.is_zero() {
+                turn
+            } else {
+                format!("{} {turn}", self.bar_offset.translate())
+            };
+            let mut decls = vec![("transform", transform)];
             if resized || self.shape != BarShape::Ruler {
                 decls.push(("width", "fit-children".to_string()));
                 decls.push(("height", "fit-children".to_string()));
@@ -796,6 +974,68 @@ mod tests {
             !upright[HEALTH_STYLE].contains(BARS),
             "the ruler keeps its size"
         );
+    }
+
+    #[test]
+    fn regen_moves_into_the_number_block_and_numbers_go_on_one_line() {
+        let files = HealthPreset::Horizontal.style().compile().unwrap();
+        assert!(files[HEALTH_STYLE].contains(".regen_container{opacity:0;}"));
+        let block = &files[HEALTH_CONTAINER_STYLE];
+        assert!(
+            block.contains(".healthRegenContainer{visibility:visible;horizontal-align:right;margin-top:78px;margin-right:15px;}"),
+            "above the number, clear of the flat bar: {block}"
+        );
+        let slim = HealthPreset::Slim.style().compile().unwrap();
+        assert!(
+            slim[HEALTH_CONTAINER_STYLE].contains("margin-top:168px;"),
+            "under the number"
+        );
+        assert!(block.contains(".healthContainer{flow-children:right;width:fit-children;}"));
+        assert!(block.contains(".totalHealthLabel{vertical-align:bottom;"));
+        let only = HealthPreset::NumberOnly.style();
+        assert_eq!(only.regen_shown_at(), RegenPlace::Number);
+        let none = HealthStyle {
+            shape: BarShape::Hidden,
+            ..HealthStyle::default()
+        };
+        assert_eq!(
+            none.regen_shown_at(),
+            RegenPlace::Number,
+            "no bar end to sit on"
+        );
+        let hidden = HealthStyle {
+            hide_regen: true,
+            ..only
+        };
+        assert!(
+            !hidden.compile().unwrap()[HEALTH_CONTAINER_STYLE].contains("healthRegenContainer")
+        );
+    }
+
+    #[test]
+    fn dragged_moves_become_translations() {
+        let s = HealthStyle {
+            bar_offset: Offset { x: 30, y: -12 },
+            number_offset: Offset::clamped(-8.4, 999.0),
+            regen_offset: Offset { x: 5, y: 5 },
+            ..HealthStyle::default()
+        };
+        assert_eq!(s.number_offset, Offset { x: -8, y: 400 });
+        let files = s.compile().unwrap();
+        assert!(files[HEALTH_STYLE].contains(
+            ".bars_container{transform:translateX(30px) translateY(-12px) rotateZ(-20deg);}"
+        ));
+        assert!(
+            files[HEALTH_STYLE]
+                .contains(".regen_container{transform:translateX(5px) translateY(5px);}")
+        );
+        assert!(
+            files[HEALTH_CONTAINER_STYLE]
+                .contains(".healthContainer{transform:translateX(-8px) translateY(400px);}")
+        );
+        assert_eq!(s.changed_count(), 3);
+        let text = toml::to_string(&HealthStyle::default()).unwrap();
+        assert!(!text.contains("offset"), "{text}");
     }
 
     #[test]

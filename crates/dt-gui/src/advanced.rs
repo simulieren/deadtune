@@ -337,10 +337,7 @@ fn banner(ui: &mut Ui, state: &mut AppState) {
         };
         ui.colored_label(WARN, RichText::new(text).strong());
         if ui.button("Re-apply").clicked() {
-            state.status = Some(match state.apply() {
-                Ok(_) => Status::Info("re-applied".into()),
-                Err(e) => Status::Error(e),
-            });
+            crate::simple::apply(ui.ctx(), state);
         }
         if ui.button("Dismiss").clicked() {
             state.banner = None;

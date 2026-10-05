@@ -233,27 +233,30 @@ fn pick_start(ui: &mut Ui, state: &mut AppState, choice: Option<StartChoice>) {
     ui.weak("Takes effect next time you start Deadlock. Your original files are backed up first.");
 }
 
-/// Apply with a plain-language result; what was applied becomes the saved profile.
-pub fn apply(ctx: &egui::Context, state: &mut AppState) {
-    match state.apply() {
+/// Every Apply button in every view: applies and saves the profile. The Apply bar says
+/// what happens next, so the status line only carries warnings and the clipboard hint.
+/// Returns whether it worked.
+pub fn apply(ctx: &egui::Context, state: &mut AppState) -> bool {
+    match state.apply_and_save() {
         Ok(applied) => {
             let copied = applied.copy.is_some();
             if let Some(text) = applied.copy {
                 ctx.copy_text(text);
             }
-            state.status = match state.save_profile() {
-                Err(e) => Some(Status::Error(format!("saving your profile: {e}"))),
-                Ok(_) => match applied.warning {
-                    Some(w) => Some(Status::Warn(w)),
-                    None if copied => Some(Status::Info(
-                        "The instant changes are copied. Paste them into the game console (F7)."
-                            .into(),
-                    )),
-                    None => None,
-                },
+            state.status = match applied.warning {
+                Some(w) => Some(Status::Warn(w)),
+                None if copied => Some(Status::Info(
+                    "The instant changes are copied. Paste them into the game console (F7)."
+                        .into(),
+                )),
+                None => None,
             };
+            true
         }
-        Err(e) => state.status = Some(Status::Error(e)),
+        Err(e) => {
+            state.status = Some(Status::Error(e));
+            false
+        }
     }
 }
 

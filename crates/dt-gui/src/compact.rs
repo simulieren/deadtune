@@ -163,7 +163,7 @@ pub fn ui(ui: &mut Ui, state: &mut AppState) {
                 .fill(RAIL)
                 .inner_margin(Margin::symmetric(12, 10)),
         )
-        .show(ui, |ui| footer(ui, state, body));
+        .show(ui, |ui| footer(ui, state));
     egui::CentralPanel::default()
         .frame(egui::Frame::new().fill(theme::BG).inner_margin(Margin {
             left: 12,
@@ -494,7 +494,7 @@ fn row(ui: &mut Ui, state: &AppState, name: &str, body: Body, fixed: bool, edits
     }
 }
 
-fn footer(ui: &mut Ui, state: &mut AppState, body: Body) {
+fn footer(ui: &mut Ui, state: &mut AppState) {
     let pending = state.pending();
     let ready = pending != Pending::Nothing;
     let instant = instant_count(state);
@@ -530,12 +530,7 @@ fn footer(ui: &mut Ui, state: &mut AppState, body: Body) {
                 .fill(ACCENT)
                 .min_size(vec2(96.0, 30.0));
             if ui.add_enabled(ready, apply).clicked() {
-                match body {
-                    Body::Quick => simple::apply(ui.ctx(), state),
-                    Body::Favourites => {
-                        views::run_apply(ui.ctx(), state);
-                    }
-                }
+                simple::apply(ui.ctx(), state);
             }
             let (label, hint) = match state.settings.bridge {
                 BridgeKind::ExecFile => (

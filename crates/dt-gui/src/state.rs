@@ -2166,6 +2166,15 @@ impl AppState {
         profiles::dir(&self.data_dir)
     }
 
+    /// What every Apply button runs: write, then keep what was written as the saved
+    /// profile, so Discard afterwards goes back to it and not to an older save.
+    pub fn apply_and_save(&mut self) -> Result<Applied, String> {
+        let applied = self.apply()?;
+        self.save_profile()
+            .map_err(|e| format!("Applied, but saving your profile failed: {e}"))?;
+        Ok(applied)
+    }
+
     pub fn save_profile(&mut self) -> io::Result<PathBuf> {
         let path = profiles::save(&self.profiles_dir(), &self.profile)?;
         self.saved = Some(self.profile.clone());
@@ -3379,6 +3388,20 @@ mod tests {
         state.reset_convars(ENEMY_UI_COLOR.iter().copied().chain([CUSTOM_UI_COLORS]));
         assert_eq!(state.enemy_ui_color(), [215, 50, 50]);
         assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn apply_and_save_makes_the_applied_profile_the_saved_one() {
+        let (_dir, mut state) = state();
+        state.set_convar("r_farz", "6000".into()).unwrap();
+        state.apply_and_save().unwrap();
+        assert_eq!(state.saved.as_ref(), Some(&state.profile));
+        state.revert_all();
+        assert_eq!(
+            state.profile.convars.set.get("r_farz").map(String::as_str),
+            Some("6000"),
+            "Discard after Apply keeps what was applied"
+        );
     }
 
     #[test]

@@ -50,43 +50,7 @@ pub fn apply_edit(state: &mut AppState, name: &str, edit: Edit) {
 }
 
 pub fn run_apply(ctx: &egui::Context, state: &mut AppState) -> bool {
-    match state.apply() {
-        Ok(applied) => {
-            let r = &applied.report;
-            let mut msg = format!(
-                "applied: gameinfo {}, video {}, {} pushed live{}",
-                if r.wrote_gameinfo {
-                    "written"
-                } else {
-                    "unchanged"
-                },
-                if r.wrote_video {
-                    "written"
-                } else {
-                    "unchanged"
-                },
-                r.pushed_live,
-                if r.needs_restart {
-                    ", restart needed"
-                } else {
-                    ""
-                },
-            );
-            if let Some(text) = applied.copy {
-                ctx.copy_text(text);
-                msg.push_str("; live commands copied to the clipboard");
-            }
-            if let Some(w) = applied.warning {
-                msg.push_str(&format!("; {w}"));
-            }
-            state.status = Some(Status::Info(msg));
-            true
-        }
-        Err(e) => {
-            state.status = Some(Status::Error(format!("apply failed: {e}")));
-            false
-        }
-    }
+    crate::simple::apply(ctx, state)
 }
 
 pub fn run_apply_relaunch(ctx: &egui::Context, state: &mut AppState) {

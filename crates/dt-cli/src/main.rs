@@ -6,6 +6,7 @@ mod cmd_apply;
 mod cmd_bench;
 mod cmd_game;
 mod cmd_hud;
+mod cmd_images;
 mod cmd_info;
 mod cmd_presets;
 mod cmd_profile;

@@ -4,12 +4,10 @@
 //! Overrides live in `profile.hud.icons` (`dt_core::hud::icons`) and ship with Apply.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use dt_core::hud::icons::{self, IMAGES_ROOT, IconError, IconOverride, Target};
-use dt_core::hud::install::GAME_PAK;
-use dt_core::hud::vpk::VpkDir;
 use dt_core::snapshot::ImageInfo;
 use dt_core::texture::encode::Fit;
 use dt_core::texture::{self, RgbaImage, png, svg};
@@ -20,66 +18,7 @@ use crate::state::AppState;
 const FIRST_FOLDERS: [&str; 6] = ["minimap", "hud", "heroes", "items", "upgrades", "icons"];
 const EXPORTS_DIR: &str = "exports";
 
-/// Where the game's images are read from.
-pub enum ImageSource {
-    Game(VpkDir),
-    /// A snapshot's `raw/` folder (or any folder holding `panorama/images/`).
-    Folder {
-        root: PathBuf,
-        label: String,
-    },
-}
-
-impl ImageSource {
-    pub fn read(&self, path: &str) -> Result<Vec<u8>, String> {
-        match self {
-            ImageSource::Game(pak) => pak.read(path).map_err(|e| e.to_string()),
-            ImageSource::Folder { root, .. } => {
-                std::fs::read(root.join(path)).map_err(|e| e.to_string())
-            }
-        }
-    }
-
-    /// What the page header says about where the pictures come from.
-    pub fn describe(&self) -> String {
-        match self {
-            ImageSource::Game(_) => "From your game files".into(),
-            ImageSource::Folder { label, .. } => format!("Previewing snapshot {label}"),
-        }
-    }
-
-    fn paths(&self) -> Vec<String> {
-        match self {
-            ImageSource::Game(pak) => pak
-                .entries
-                .range(IMAGES_ROOT.to_string()..)
-                .map(|(p, _)| p)
-                .take_while(|p| p.starts_with(IMAGES_ROOT))
-                .cloned()
-                .collect(),
-            ImageSource::Folder { root, .. } => {
-                let mut out = Vec::new();
-                walk(root, &root.join(IMAGES_ROOT), &mut out);
-                out
-            }
-        }
-    }
-}
-
-fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
-    let Ok(read) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in read.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            walk(root, &path, out);
-        } else if let Ok(rel) = path.strip_prefix(root) {
-            let rel: Vec<_> = rel.iter().map(|s| s.to_string_lossy()).collect();
-            out.push(rel.join("/"));
-        }
-    }
-}
+pub use dt_core::snapshot::images::ImageSource;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImageEntry {
@@ -367,6 +306,8 @@ pub struct ImagesState {
     pub exported: Option<PathBuf>,
     /// Decoded pictures and their workers, made when the page is first drawn.
     pub thumbs: Option<crate::thumbs::Thumbs>,
+    /// "Save all images" (`crate::images_export`).
+    pub export_all: crate::images_export::ExportAll,
 }
 
 impl ImagesState {
@@ -394,17 +335,8 @@ impl AppState {
             return;
         }
         let source = match &self.images.from {
-            Some(dir) => {
-                let raw = dir.join(dt_core::snapshot::store::RAW);
-                let root = if raw.is_dir() { raw } else { dir.clone() };
-                let label = dir
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                Ok(ImageSource::Folder { root, label })
-            }
-            None => VpkDir::open(&self.paths.citadel_dir.join(GAME_PAK))
-                .map(ImageSource::Game)
+            Some(dir) => Ok(ImageSource::folder(dir)),
+            None => ImageSource::game(&self.paths)
                 .map_err(|e| format!("Couldn't read the game's images ({e}). Check the game folder in Safety & setup.")),
         };
         self.images.library = Some(source.map(Library::new));
@@ -637,11 +569,15 @@ impl AppState {
 
 #[cfg(test)]
 pub mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::state::testutil;
     use dt_core::hud::crc32::crc32;
+    use dt_core::hud::install::GAME_PAK;
     use dt_core::hud::resource::{Block, Resource};
     use dt_core::hud::vpk;
+    use dt_core::hud::vpk::VpkDir;
 
     pub const TEXTURE: &str = "panorama/images/minimap/hero_ally_psd.vtex_c";
     pub const TOP_BAR: &str = "panorama/images/hud/top_bar/icon_ultimate.vsvg_c";

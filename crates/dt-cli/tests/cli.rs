@@ -119,6 +119,85 @@ fn read(path: &Path) -> String {
 }
 
 #[test]
+fn images_export_all_writes_pngs_svgs_a_manifest_and_a_zip() {
+    use dt_core::snapshot::images::ImagesManifest;
+    let fake = Fake::new();
+    let color = fs::read(repo(
+        "crates/dt-core/tests/fixtures/texture/color_512_bc7_8mips.vtex_c",
+    ))
+    .unwrap();
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"12\"/></svg>";
+    let files = BTreeMap::from([
+        ("panorama/images/minimap/gold_psd.vtex_c".to_string(), color),
+        (
+            "panorama/images/hud/top_bar/icon_ultimate.vsvg_c".to_string(),
+            dt_core::hud::inject::style_resource(svg),
+        ),
+        (
+            "panorama/images/hud/broken_psd.vtex_c".to_string(),
+            b"not a texture".to_vec(),
+        ),
+    ]);
+    fs::write(
+        fake.game.join("game/citadel/pak01_dir.vpk"),
+        dt_core::hud::vpk::write(&files),
+    )
+    .unwrap();
+    let out_dir = fake.file("export");
+    let out = fake.ok(&[
+        "images",
+        "export-all",
+        "--out",
+        out_dir.to_str().unwrap(),
+        "--zip",
+    ]);
+    assert!(
+        out.contains("Exported 2 of 3 images (build 20261004)"),
+        "{out}"
+    );
+    assert!(
+        out.contains("panorama/images/hud/broken_psd.vtex_c: couldn't decode"),
+        "{out}"
+    );
+    assert!(
+        out_dir
+            .join("panorama/images/minimap/gold_psd.png")
+            .is_file()
+    );
+    assert_eq!(
+        read(&out_dir.join("panorama/images/hud/top_bar/icon_ultimate.svg")),
+        svg
+    );
+    assert!(
+        out_dir
+            .join("panorama/images/hud/top_bar/icon_ultimate.png")
+            .is_file(),
+        "the CLI draws vector icons too"
+    );
+    let manifest = ImagesManifest::load(&out_dir).unwrap();
+    assert_eq!((manifest.total, manifest.failed), (3, 1));
+    assert!(out_dir.join("failures.txt").is_file());
+    assert!(fake.file("export.zip").is_file());
+
+    let out = fake.ok(&["images", "export-all", "--folder", "minimap"]);
+    assert!(out.contains("Exported 1 of 1 images"), "{out}");
+    let exports: Vec<String> = fs::read_dir(fake.data().join("exports"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(exports.len(), 1);
+    assert!(
+        exports[0].starts_with("ui-images-20261004-") && exports[0].ends_with("-minimap"),
+        "{exports:?}"
+    );
+    let bad = fake.expect(&["images", "export-all", "--folder", "heroes"], 1);
+    assert!(
+        bad.contains("no images under panorama/images/heroes"),
+        "{bad}"
+    );
+}
+
+#[test]
 fn doctor_passes_on_the_fake_install_and_writes_nothing_into_the_game() {
     let fake = Fake::new();
     let before = read(&fake.gameinfo());

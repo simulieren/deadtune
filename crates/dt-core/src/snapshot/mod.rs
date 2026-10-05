@@ -20,6 +20,7 @@ use crate::hud::vpk::VpkError;
 pub mod decode;
 pub mod diff;
 pub mod export;
+pub mod images;
 pub mod spec;
 pub mod store;
 
@@ -51,6 +52,10 @@ pub enum SnapshotError {
     NoSuch(String),
     #[error("{0} is not a snapshot folder (no manifest.toml)")]
     NotASnapshot(PathBuf),
+    #[error("json: {0}")]
+    Json(String),
+    #[error("no images under {0}")]
+    NoImages(String),
 }
 
 /// A DeadTune feature that reads a game file. A change to that file is the first thing

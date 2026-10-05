@@ -16,6 +16,12 @@ pub const STYLE: &str = "panorama/styles/citadel_base_styles.vcss_c";
 pub const BASE: &str = "panorama/styles/base/citadel_base_styles.vcss_c";
 const STUB: &[u8] = include_bytes!("native_blur_stub.vcss_c");
 
+/// Sqooky's compiled stub as published: what the shipped stub's RED2, SrMa and source CRC
+/// must match.
+pub fn stub() -> &'static [u8] {
+    STUB
+}
+
 /// The stub's stylesheet text for `opts`; the default options give Sqooky's text exactly.
 pub fn stub_text(opts: &BlurOptions) -> String {
     let mut text = format!("@import url(\"s2r://{BASE}\");");
@@ -49,19 +55,17 @@ pub(crate) mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::addons::verify::{Expect, verify};
+    use crate::addons::verify::{Check, Expect, verify};
     use crate::hud::crc32::crc32;
     use crate::hud::resource::{image_table, source_crc, style_text};
     use crate::hud::vpk;
 
     const SQOOKY_TEXT: &str = "@import url(\"s2r://panorama/styles/base/citadel_base_styles.vcss_c\");@define ingameHudBlur: none;@define menuBlur: none;";
     const HUD_ONLY: BlurOptions = BlurOptions {
-        rebuild: false,
         hud: true,
         menu: false,
     };
     const MENU_ONLY: BlurOptions = BlurOptions {
-        rebuild: false,
         hud: false,
         menu: true,
     };
@@ -73,7 +77,8 @@ pub(crate) mod tests {
         .unwrap()
     }
 
-    fn vanilla_style() -> Vec<u8> {
+    /// The game's stylesheet as it was when Sqooky published pak97.
+    pub fn vanilla_style() -> Vec<u8> {
         pak97().read(BASE).unwrap()
     }
 
@@ -94,7 +99,7 @@ pub(crate) mod tests {
         u32::from_le_bytes([d[0], d[1], d[2], d[3]])
     }
 
-    fn vanilla_with_images() -> Vec<u8> {
+    pub fn vanilla_with_images() -> Vec<u8> {
         let mut res = Resource::parse(&vanilla_style()).unwrap();
         assert_eq!(res.type_version, 3);
         let mut table = 2u16.to_le_bytes().to_vec();
@@ -159,7 +164,6 @@ pub(crate) mod tests {
     #[test]
     fn neither_define_builds_nothing() {
         let off = BlurOptions {
-            rebuild: false,
             hud: false,
             menu: false,
         };
@@ -190,9 +194,9 @@ pub(crate) mod tests {
             let pak = VpkDir::in_memory(vpk::write(&out)).unwrap();
             let expect = Expect {
                 particle_stub: None,
-                originals: BTreeMap::from([
-                    (STYLE.to_string(), STUB.to_vec()),
-                    (BASE.to_string(), live.clone()),
+                checks: BTreeMap::from([
+                    (STYLE.to_string(), Check::StyleFrom(STUB.to_vec())),
+                    (BASE.to_string(), Check::Bytes(live.clone())),
                 ]),
             };
             let got = verify(&pak, &expect);

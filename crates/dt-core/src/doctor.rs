@@ -582,7 +582,7 @@ fn probe_writable(dir: &Path) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use crate::addons::install::{self as addons_install, tests::fake_install};
-    use crate::addons::{AddonId, AddonsConfig, sources};
+    use crate::addons::{AddonId, AddonsConfig};
 
     #[test]
     fn report_quotes_the_search_paths_records_paks_and_the_log_tail() {
@@ -603,11 +603,6 @@ mod tests {
         assert!(text.contains("== launch guard (guard.toml) ==\n(none)"));
         assert!(text.contains("no console.log found"));
 
-        sources::import(
-            &sources::cache_dir(&data),
-            &sources::tests::research("Sinner Light Fix Mod", "pak26_dir.vpk"),
-        )
-        .unwrap();
         let config = AddonsConfig {
             enabled: [AddonId::SinnerLightFix].into_iter().collect(),
             ..Default::default()

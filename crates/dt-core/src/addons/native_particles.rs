@@ -18,6 +18,9 @@ use crate::hud::resource::{Resource, ResourceError};
 use crate::hud::vpk::VpkDir;
 
 pub const EMPTY_PARTICLE: &str = "particles/empty.vpcf_c";
+/// CRC32 of the game's `particles/empty.vpcf_c` (GameTracking, 2026-10), the same file
+/// Laund's pak02 copies to every hidden path.
+pub const STUB_CRC: u32 = 0xf3db_7131;
 
 /// DATA keys that give a particle system something to spawn, move or draw.
 const BEHAVIOUR_KEYS: &[&[u8]] = &[
@@ -73,14 +76,14 @@ pub(crate) fn check_empty(bytes: &[u8]) -> Result<(), AddonError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::addons::verify::{Expect, verify};
     use crate::hud::crc32::crc32;
     use crate::hud::vpk;
 
     /// `particles/empty.vpcf_c` as GameTracking lists it in pak01: CRC 0xf3db7131, 1189 bytes.
-    const EMPTY: &[u8] = include_bytes!("../../tests/fixtures/particles/empty.vpcf_c");
+    pub const EMPTY: &[u8] = include_bytes!("../../tests/fixtures/particles/empty.vpcf_c");
 
     fn pak(files: &[(&str, &[u8])]) -> VpkDir {
         let files: BTreeMap<String, Vec<u8>> = files
@@ -113,7 +116,7 @@ mod tests {
     #[test]
     fn the_upstream_stub_is_the_games_empty_particle() {
         assert_eq!(EMPTY.len(), 1189);
-        assert_eq!(crc32(EMPTY), particles::STUB_CRC);
+        assert_eq!(crc32(EMPTY), STUB_CRC);
         let upstream = VpkDir::open(&particles::tests::upstream_path()).unwrap();
         for path in particles::hidden_paths(&BTreeSet::new()) {
             if !upstream.contains(path) {
@@ -157,7 +160,7 @@ mod tests {
             w
         });
         assert!(files.values().all(|b| b == EMPTY));
-        assert!(!files.contains_key(particles::DEBUG_TEXTURE));
+        assert!(files.keys().all(|p| p.ends_with(".vpcf_c")));
     }
 
     #[test]

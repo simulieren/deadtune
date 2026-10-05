@@ -16,10 +16,7 @@ use sha2::{Digest, Sha256};
 
 use super::textures::{self, Progress};
 use super::verify::{self, Expect};
-use super::{
-    AddonError, AddonId, AddonsConfig, Kind, Source, blur, clutter, info, native_particles,
-    particles, sources,
-};
+use super::{AddonError, AddonId, AddonsConfig, Kind, info, sources};
 use crate::backup::{atomic_write, sha256_hex};
 use crate::hud::install::{ADDON_FILE as HUD_ADDON_FILE, GAME_PAK, addons_dir};
 use crate::hud::searchpaths;
@@ -295,6 +292,16 @@ struct Inputs {
     make: Box<dyn FnOnce() -> Result<Option<Build>, AddonError>>,
 }
 
+fn game_pak(paths: &GamePaths) -> Result<VpkDir, Blocker> {
+    let pak_path = paths.citadel_dir.join(GAME_PAK);
+    if !pak_path.is_file() {
+        return Err(Blocker::GameFiles(format!(
+            "{GAME_PAK} not found; is the game fully installed?"
+        )));
+    }
+    VpkDir::open(&pak_path).map_err(|e| Blocker::GameFiles(e.to_string()))
+}
+
 fn inputs(
     id: AddonId,
     config: &AddonsConfig,
@@ -302,17 +309,11 @@ fn inputs(
     cache: &Path,
     build_id: Option<&str>,
 ) -> Result<Result<Inputs, Blocker>, AddonError> {
-    let rebuild_blur = info(id).kind == Kind::Blur && config.blur.rebuild;
-    let source = match info(id).source {
-        Source::Upstream { .. } if !rebuild_blur => match sources::cached(cache, id)? {
-            Some(a) => Some(a),
-            None => return Ok(Err(Blocker::NotDownloaded)),
-        },
-        _ => None,
-    };
     let out = match info(id).kind {
-        Kind::Toggle | Kind::Blur if !rebuild_blur => {
-            let src = source.expect("toggle addons have an upstream source");
+        Kind::Toggle => {
+            let Some(src) = sources::cached(cache, id)? else {
+                return Ok(Err(Blocker::NotDownloaded));
+            };
             let upstream = VpkDir::open(&src.path)?;
             let ships = upstream.entries.keys().cloned().collect();
             let path = src.path.clone();
@@ -325,89 +326,34 @@ fn inputs(
                 }),
             }
         }
-        Kind::ParticleGroups => {
-            let src = source.expect("the particle disabler has an upstream source");
-            let hidden = particles::hidden_paths(&config.keep_particles);
-            let mut parts = vec!["particles", src.sha256.as_str()];
-            parts.extend(hidden.iter().copied());
-            let mut ships: Vec<String> = hidden.iter().map(|p| p.to_string()).collect();
-            if !ships.is_empty() {
-                ships.push(particles::DEBUG_TEXTURE.to_string());
-            }
-            let path = src.path.clone();
-            Inputs {
-                input: fingerprint(&parts),
-                ships,
-                make: Box::new(move || {
-                    let stub = particles::stub_from_upstream(&VpkDir::open(&path)?)?;
-                    let Some(bytes) = particles::build(&stub, &hidden) else {
-                        return Ok(None);
-                    };
-                    let expect = Expect {
-                        particle_stub: Some(stub.particle),
-                        originals: BTreeMap::new(),
-                    };
-                    checked(&VpkDir::in_memory(bytes.clone())?, &expect)?;
-                    Ok(Some(Build::Bytes(bytes)))
-                }),
-            }
-        }
-        Kind::Toggle | Kind::Blur => {
+        Kind::Native(native) => {
             let pak = match game_pak(paths) {
                 Ok(pak) => pak,
                 Err(blocker) => return Ok(Err(blocker)),
             };
-            let Some(entry) = pak.entries.get(blur::STYLE) else {
-                return Ok(Err(Blocker::GameFiles(format!(
-                    "{} is missing from {GAME_PAK}",
-                    blur::STYLE
-                ))));
-            };
-            let opts = config.blur;
-            Inputs {
-                input: fingerprint(&[
-                    "blur-rebuilt",
-                    &format!("{:08x}", entry.crc),
-                    build_id.unwrap_or(""),
-                    &format!("hud={} menu={}", opts.hud, opts.menu),
-                ]),
-                ships: vec![blur::STYLE.to_string()],
-                make: Box::new(move || {
-                    let original = pak.read(blur::STYLE)?;
-                    let files =
-                        BTreeMap::from([(blur::STYLE.to_string(), blur::build(&pak, &opts)?)]);
-                    let bytes = vpk::write(&files);
-                    let expect = Expect {
-                        particle_stub: None,
-                        originals: BTreeMap::from([(blur::STYLE.to_string(), original)]),
-                    };
-                    checked(&VpkDir::in_memory(bytes.clone())?, &expect)?;
-                    Ok(Some(Build::Bytes(bytes)))
-                }),
+            let mut parts = vec!["native".to_string(), id.key().to_string()];
+            for path in native.game_files() {
+                let Some(entry) = pak.entries.get(*path) else {
+                    return Ok(Err(Blocker::GameFiles(format!(
+                        "{path} is missing from {GAME_PAK}"
+                    ))));
+                };
+                parts.push(format!("{:08x}", entry.crc));
             }
-        }
-        Kind::Clutter => {
-            let pak = match game_pak(paths) {
-                Ok(pak) => pak,
-                Err(blocker) => return Ok(Err(blocker)),
-            };
-            let hidden = clutter::hidden_paths(&config.hide_clutter, &pak);
-            let mut parts = vec!["clutter", build_id.unwrap_or("")];
-            parts.extend(config.hide_clutter.iter().map(String::as_str));
+            parts.push(build_id.unwrap_or("").to_string());
+            parts.push(native.options(config));
+            let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+            let config = config.clone();
             Inputs {
                 input: fingerprint(&parts),
-                ships: hidden.clone(),
+                ships: native.ships(&config, &pak),
                 make: Box::new(move || {
-                    let files = clutter::build(&pak, &hidden)?;
+                    let files = native.build(&pak, &config)?;
                     if files.is_empty() {
                         return Ok(None);
                     }
-                    let expect = Expect {
-                        particle_stub: Some(pak.read(native_particles::EMPTY_PARTICLE)?),
-                        originals: BTreeMap::new(),
-                    };
                     let bytes = vpk::write(&files);
-                    checked(&VpkDir::in_memory(bytes.clone())?, &expect)?;
+                    checked(&VpkDir::in_memory(bytes.clone())?, &native.expect(&pak)?)?;
                     Ok(Some(Build::Bytes(bytes)))
                 }),
             }
@@ -423,16 +369,6 @@ fn inputs(
         },
     };
     Ok(Ok(out))
-}
-
-fn game_pak(paths: &GamePaths) -> Result<VpkDir, Blocker> {
-    let pak_path = paths.citadel_dir.join(GAME_PAK);
-    if !pak_path.is_file() {
-        return Err(Blocker::GameFiles(format!(
-            "{GAME_PAK} not found; is the game fully installed?"
-        )));
-    }
-    VpkDir::open(&pak_path).map_err(|e| Blocker::GameFiles(e.to_string()))
 }
 
 /// Pure planning plus reads: our record, the cache, the game pak for generated addons,
@@ -501,7 +437,8 @@ pub fn plan(
             Kind::Textures => Action::Build,
             _ => match (prepared.make)() {
                 Ok(Some(build)) => Action::Write(build),
-                // Nothing left to override (every particle group kept): same as off.
+                // Nothing left to override (every particle group kept, neither blur
+                // turned off): same as off.
                 Ok(None) => {
                     addons.extend(rec.map(remove));
                     continue;
@@ -539,8 +476,7 @@ pub fn plan(
             path: dir.join(file),
             action,
             input: Some(prepared.input),
-            from_game: matches!(info(id).kind, Kind::Textures | Kind::Clutter)
-                || (info(id).kind == Kind::Blur && config.blur.rebuild),
+            from_game: matches!(info(id).kind, Kind::Textures | Kind::Native(_)),
             ships: prepared.ships,
         });
     }
@@ -823,8 +759,13 @@ pub(crate) mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::addons::TextureCategory;
+    use crate::addons::native::tests::fake_game_files;
+    use crate::addons::{
+        BlurOptions, ScopeOptions, TextureCategory, clutter, native_blur, native_particles,
+        native_scope, native_sinner, particles,
+    };
     use crate::hud::vpk;
+    use crate::texture::vtex::Vtex;
 
     const CLEAN_GAMEINFO: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -838,7 +779,8 @@ pub(crate) mod tests {
         std::fs::write(steamapps.join("appmanifest_1422450.acf"), acf).unwrap();
     }
 
-    /// A fake game with a clean gameinfo.gi and a pak01 that carries the vanilla base stylesheet.
+    /// A fake game with a clean gameinfo.gi and a pak01 carrying every file the native
+    /// builders read (the scope texture at 512 px, so the default side leaves it as is).
     pub fn fake_install(buildid: &str) -> (tempfile::TempDir, GamePaths) {
         let steam = tempfile::tempdir().unwrap();
         let steamapps = steam.path().join("steamapps");
@@ -847,7 +789,7 @@ pub(crate) mod tests {
         std::fs::create_dir_all(citadel.join("cfg")).unwrap();
         std::fs::write(citadel.join("gameinfo.gi"), CLEAN_GAMEINFO).unwrap();
         write_manifest(&steamapps, buildid);
-        crate::addons::blur::tests::fake_game_pak(&citadel);
+        std::fs::write(citadel.join(GAME_PAK), vpk::write(&fake_game_files())).unwrap();
         let paths = locate::from_game_root(&game_root).unwrap();
         (steam, paths)
     }
@@ -856,10 +798,10 @@ pub(crate) mod tests {
         steam.path().join("data")
     }
 
-    fn import(state: &Path, dir: &str, file: &str) {
+    fn import_soul_container(state: &Path) {
         sources::import(
             &sources::cache_dir(state),
-            &sources::tests::research(dir, file),
+            &sources::tests::research("Optimized Soul Container", "pak01_dir.vpk"),
         )
         .unwrap();
     }
@@ -890,6 +832,13 @@ pub(crate) mod tests {
         names
     }
 
+    const NATIVE: [AddonId; 4] = [
+        AddonId::ParticleDisabler,
+        AddonId::BlurDisabler,
+        AddonId::SinnerLightFix,
+        AddonId::VindictaScope,
+    ];
+
     #[test]
     fn a_pak_that_fails_its_read_back_is_refused_as_invalid() {
         let files = BTreeMap::from([("a.txt".to_string(), b"data".to_vec())]);
@@ -910,23 +859,37 @@ pub(crate) mod tests {
     fn an_addon_that_fails_to_build_only_blocks_itself() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        let broken = BTreeMap::from([(
-            blur::STYLE.to_string(),
-            b"not a compiled stylesheet".to_vec(),
-        )]);
+        let broken = BTreeMap::from([
+            (
+                native_blur::STYLE.to_string(),
+                b"not a compiled stylesheet".to_vec(),
+            ),
+            (
+                native_particles::EMPTY_PARTICLE.to_string(),
+                native_particles::tests::EMPTY.to_vec(),
+            ),
+        ]);
         std::fs::write(paths.citadel_dir.join(GAME_PAK), vpk::write(&broken)).unwrap();
-        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
-        let mut config = enabled(&[AddonId::BlurDisabler, AddonId::SinnerLightFix]);
-        config.blur.rebuild = true;
-        let plan = plan(&paths, &config, &state).expect("plan survives one broken addon");
-        assert!(matches!(
-            action(&plan, AddonId::BlurDisabler),
-            Action::Unavailable(Blocker::GameFiles(_))
-        ));
+        let config = enabled(&NATIVE);
+        let plan = plan(&paths, &config, &state).expect("plan survives broken addons");
+        assert!(
+            matches!(
+                action(&plan, AddonId::BlurDisabler),
+                Action::Unavailable(Blocker::GameFiles(_))
+            ),
+            "{:?}",
+            action(&plan, AddonId::BlurDisabler)
+        );
         assert!(matches!(
             action(&plan, AddonId::SinnerLightFix),
-            Action::Write(_)
+            Action::Unavailable(Blocker::GameFiles(e)) if e.contains("missing from pak01_dir.vpk")
         ));
+        assert!(matches!(
+            action(&plan, AddonId::ParticleDisabler),
+            Action::Write(Build::Bytes(_))
+        ));
+        assert!(execute(&plan, &paths, &state).unwrap());
+        assert_eq!(files(&addons_dir(&paths)), ["pak71_dir.vpk"]);
     }
 
     #[test]
@@ -937,7 +900,6 @@ pub(crate) mod tests {
             !remove_now(AddonId::SinnerLightFix, &paths, &state).unwrap(),
             "nothing installed"
         );
-        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
         let config = enabled(&[AddonId::SinnerLightFix]);
         execute(&plan(&paths, &config, &state).unwrap(), &paths, &state).unwrap();
         let dir = addons_dir(&paths);
@@ -959,7 +921,6 @@ pub(crate) mod tests {
     fn remove_now_refuses_a_pak_someone_replaced() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
         let config = enabled(&[AddonId::SinnerLightFix]);
         let planned = plan(&paths, &config, &state).unwrap();
         execute(&planned, &paths, &state).unwrap();
@@ -985,53 +946,58 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn toggle_addon_needs_its_download_then_installs_as_a_copy_and_is_idempotent() {
+    fn the_soul_container_needs_its_download_then_installs_as_a_copy_and_is_idempotent() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        let config = enabled(&[AddonId::SinnerLightFix]);
+        let config = enabled(&[AddonId::SoulContainer]);
         let first = plan(&paths, &config, &state).unwrap();
         assert_eq!(
-            action(&first, AddonId::SinnerLightFix),
+            action(&first, AddonId::SoulContainer),
             &Action::Unavailable(Blocker::NotDownloaded)
         );
         assert!(first.is_empty());
         assert!(!first.needs_search_path, "nothing to mount yet");
 
-        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
+        import_soul_container(&state);
         let second = plan(&paths, &config, &state).unwrap();
-        let entry = second.get(AddonId::SinnerLightFix).unwrap();
+        let entry = second.get(AddonId::SoulContainer).unwrap();
         assert!(matches!(entry.action, Action::Write(Build::Copy(_))));
-        assert_eq!(entry.path, addons_dir(&paths).join("pak73_dir.vpk"));
+        assert_eq!(entry.path, addons_dir(&paths).join("pak75_dir.vpk"));
         assert!(second.needs_search_path);
         assert!(execute(&second, &paths, &state).unwrap());
         let upstream = std::fs::read(sources::tests::research(
-            "Sinner Light Fix Mod",
-            "pak26_dir.vpk",
+            "Optimized Soul Container",
+            "pak01_dir.vpk",
         ))
         .unwrap();
         assert_eq!(std::fs::read(&entry.path).unwrap(), upstream);
 
         let third = plan(&paths, &config, &state).unwrap();
-        assert_eq!(action(&third, AddonId::SinnerLightFix), &Action::Keep);
+        assert_eq!(action(&third, AddonId::SoulContainer), &Action::Keep);
         assert!(third.is_empty());
         assert!(!execute(&third, &paths, &state).unwrap());
-        assert!(matches!(
-            installed_state(&paths, &state).unwrap()[&AddonId::SinnerLightFix],
-            InstalledState::Current(_)
-        ));
         let record = read_record(&state).unwrap();
-        assert_eq!(record.installed["sinner_light_fix"].file, "pak73_dir.vpk");
-        assert_eq!(
-            record.installed["sinner_light_fix"].build_id.as_deref(),
-            Some("1")
+        let rec = &record.installed["soul_container"];
+        assert_eq!(rec.file, "pak75_dir.vpk");
+        assert_eq!(rec.build_id.as_deref(), Some("1"));
+        assert!(!rec.from_game);
+
+        write_manifest(&steam.path().join("steamapps"), "2");
+        assert!(
+            matches!(
+                installed_state(&paths, &state).unwrap()[&AddonId::SoulContainer],
+                InstalledState::Current(_)
+            ),
+            "an upstream copy never goes stale on its own"
         );
+        assert!(game_updated_since(rec, &paths), "but the card can warn");
+        assert!(plan(&paths, &config, &state).unwrap().is_empty());
     }
 
     #[test]
     fn disabling_removes_only_our_file_and_the_record_entry() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        import(&state, "Vindicta Scope Downscale", "pak89_dir.vpk");
         let dir = addons_dir(&paths);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("pak01_dir.vpk"), b"qol lite").unwrap();
@@ -1055,8 +1021,6 @@ pub(crate) mod tests {
     fn preferred_slot_taken_by_another_mod_moves_to_the_first_free_number() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
-        import(&state, "Vindicta Scope Downscale", "pak89_dir.vpk");
         let dir = addons_dir(&paths);
         std::fs::create_dir_all(&dir).unwrap();
         for taken in ["pak73_dir.vpk", "pak70_dir.vpk", HUD_ADDON_FILE] {
@@ -1087,7 +1051,6 @@ pub(crate) mod tests {
     fn a_tampered_file_is_foreign_and_never_overwritten_or_deleted() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
         let config = enabled(&[AddonId::SinnerLightFix]);
         execute(&plan(&paths, &config, &state).unwrap(), &paths, &state).unwrap();
         let ours = addons_dir(&paths).join("pak73_dir.vpk");
@@ -1115,10 +1078,9 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn particle_pak_holds_exactly_the_hidden_groups_and_all_kept_means_removal() {
+    fn particle_pak_holds_the_games_empty_particle_at_the_hidden_paths_only() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        import(&state, "Screenspace Particle Disabler", "pak02_dir.vpk");
         let mut config = enabled(&[AddonId::ParticleDisabler]);
         for g in particles::GROUPS {
             if g.id != "low_health" && g.id != "inferno" {
@@ -1131,11 +1093,14 @@ pub(crate) mod tests {
         execute(&first, &paths, &state).unwrap();
         let ours = VpkDir::open(&entry.path).unwrap();
         let mut want: Vec<&str> = particles::hidden_paths(&config.keep_particles);
-        want.push(particles::DEBUG_TEXTURE);
         want.sort_unstable();
         let got: Vec<&str> = ours.entries.keys().map(String::as_str).collect();
         assert_eq!(got, want);
-        assert_eq!(got.len(), 4 + 4 + 1);
+        assert_eq!(got.len(), 4 + 4);
+        for path in &got {
+            assert_eq!(ours.read(path).unwrap(), native_particles::tests::EMPTY);
+        }
+        assert!(read_record(&state).unwrap().installed["particle_disabler"].from_game);
 
         config.keep_particles.remove("shiv");
         let second = plan(&paths, &config, &state).unwrap();
@@ -1144,10 +1109,7 @@ pub(crate) mod tests {
             Action::Write(Build::Bytes(_))
         ));
         execute(&second, &paths, &state).unwrap();
-        assert_eq!(
-            VpkDir::open(&entry.path).unwrap().entries.len(),
-            4 + 4 + 5 + 1
-        );
+        assert_eq!(VpkDir::open(&entry.path).unwrap().entries.len(), 4 + 4 + 5);
         assert!(plan(&paths, &config, &state).unwrap().is_empty());
 
         config.keep_particles = particles::GROUPS.iter().map(|g| g.id.to_string()).collect();
@@ -1158,91 +1120,35 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn default_blur_install_is_sqookys_pak97_byte_for_byte() {
+    fn blur_ships_sqookys_stub_over_the_games_own_stylesheet() {
         let (steam, paths) = fake_install("100");
         let state = state_dir(&steam);
         let config = enabled(&[AddonId::BlurDisabler]);
-        assert_eq!(
-            action(
-                &plan(&paths, &config, &state).unwrap(),
-                AddonId::BlurDisabler
-            ),
-            &Action::Unavailable(Blocker::NotDownloaded),
-            "the published file, never a generated one"
-        );
-        import(&state, "Blur Disabler", "pak97_dir.vpk");
         let planned = plan(&paths, &config, &state).unwrap();
         let entry = planned.get(AddonId::BlurDisabler).unwrap();
-        assert!(matches!(entry.action, Action::Write(Build::Copy(_))));
+        assert!(matches!(entry.action, Action::Write(Build::Bytes(_))));
         assert_eq!(entry.path, addons_dir(&paths).join("pak72_dir.vpk"));
         execute(&planned, &paths, &state).unwrap();
-        let upstream =
-            std::fs::read(sources::tests::research("Blur Disabler", "pak97_dir.vpk")).unwrap();
-        assert_eq!(std::fs::read(&entry.path).unwrap(), upstream);
         let ours = VpkDir::open(&entry.path).unwrap();
+        let pak97 =
+            VpkDir::open(&sources::tests::research("Blur Disabler", "pak97_dir.vpk")).unwrap();
         assert_eq!(
             ours.entries.keys().collect::<Vec<_>>(),
-            [
-                "panorama/styles/base/citadel_base_styles.vcss_c",
-                blur::STYLE
-            ],
-            "both of Sqooky's files, the stub and its base copy"
+            [native_blur::BASE, native_blur::STYLE]
         );
-        let rec = read_record(&state).unwrap().installed["blur_disabler"].clone();
-        assert!(!rec.from_game);
-        assert!(!game_updated_since(&rec, &paths));
-
-        write_manifest(&steam.path().join("steamapps"), "101");
-        assert!(
-            matches!(
-                installed_state(&paths, &state).unwrap()[&AddonId::BlurDisabler],
-                InstalledState::Current(_)
-            ),
-            "an upstream copy never goes stale on its own"
-        );
-        assert!(game_updated_since(&rec, &paths), "but the card can warn");
-        assert!(plan(&paths, &config, &state).unwrap().is_empty());
-    }
-
-    #[test]
-    fn rebuilt_blur_is_generated_from_the_game_pak_and_goes_stale_on_update() {
-        let (steam, paths) = fake_install("100");
-        let state = state_dir(&steam);
-        let mut config = enabled(&[AddonId::BlurDisabler]);
-        config.blur.rebuild = true;
-        let first = plan(&paths, &config, &state).unwrap();
-        let entry = first.get(AddonId::BlurDisabler).unwrap();
-        let Action::Write(Build::Bytes(bytes)) = &entry.action else {
-            panic!("{:?}", entry.action);
-        };
-        let pak = VpkDir::open(&paths.citadel_dir.join(GAME_PAK)).unwrap();
-        execute(&first, &paths, &state).unwrap();
-        assert_eq!(std::fs::read(&entry.path).unwrap(), *bytes);
+        for path in [native_blur::BASE, native_blur::STYLE] {
+            assert_eq!(
+                ours.read(path).unwrap(),
+                pak97.read(path).unwrap(),
+                "{path}"
+            );
+        }
+        let game = VpkDir::open(&paths.citadel_dir.join(GAME_PAK)).unwrap();
         assert_eq!(
-            VpkDir::open(&entry.path)
-                .unwrap()
-                .read(blur::STYLE)
-                .unwrap(),
-            blur::build(&pak, &config.blur).unwrap()
+            ours.read(native_blur::BASE).unwrap(),
+            game.read(native_blur::STYLE).unwrap()
         );
-        assert!(matches!(
-            installed_state(&paths, &state).unwrap()[&AddonId::BlurDisabler],
-            InstalledState::Current(_)
-        ));
         assert!(read_record(&state).unwrap().installed["blur_disabler"].from_game);
-
-        write_manifest(&steam.path().join("steamapps"), "101");
-        assert!(matches!(
-            installed_state(&paths, &state).unwrap()[&AddonId::BlurDisabler],
-            InstalledState::Stale(_)
-        ));
-        let rebuilt = plan(&paths, &config, &state).unwrap();
-        assert!(matches!(
-            action(&rebuilt, AddonId::BlurDisabler),
-            Action::Write(_)
-        ));
-        execute(&rebuilt, &paths, &state).unwrap();
-        assert!(plan(&paths, &config, &state).unwrap().is_empty());
 
         let mut menu_only = config.clone();
         menu_only.blur.hud = false;
@@ -1253,34 +1159,140 @@ pub(crate) mod tests {
             ),
             Action::Write(_)
         ));
-
-        // Switching the experiment off again swaps the generated pak for the upstream one.
-        import(&state, "Blur Disabler", "pak97_dir.vpk");
-        let back = plan(&paths, &enabled(&[AddonId::BlurDisabler]), &state).unwrap();
-        assert!(matches!(
-            action(&back, AddonId::BlurDisabler),
-            Action::Write(Build::Copy(_))
-        ));
+        let mut neither = config.clone();
+        neither.blur = BlurOptions {
+            hud: false,
+            menu: false,
+        };
+        assert_eq!(
+            action(
+                &plan(&paths, &neither, &state).unwrap(),
+                AddonId::BlurDisabler
+            ),
+            &Action::Remove,
+            "nothing to turn off means no pak"
+        );
     }
 
     #[test]
-    fn blur_without_game_files_is_blocked_not_an_error() {
+    fn scope_is_resampled_to_the_chosen_side_and_left_alone_when_already_smaller() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        let mut config = enabled(&[AddonId::VindictaScope]);
+        config.scope = ScopeOptions { side: 256 };
+        let planned = plan(&paths, &config, &state).unwrap();
+        let entry = planned.get(AddonId::VindictaScope).unwrap();
+        assert_eq!(entry.path, addons_dir(&paths).join("pak74_dir.vpk"));
+        execute(&planned, &paths, &state).unwrap();
+        let built = VpkDir::open(&entry.path)
+            .unwrap()
+            .read(native_scope::TEXTURE)
+            .unwrap();
+        let v = Vtex::parse(&built).unwrap();
+        assert_eq!((v.width, v.height), (256, 256));
+
+        config.scope = ScopeOptions::default();
+        let again = plan(&paths, &config, &state).unwrap();
+        assert!(matches!(
+            action(&again, AddonId::VindictaScope),
+            Action::Write(_)
+        ));
+        execute(&again, &paths, &state).unwrap();
+        let game = VpkDir::open(&paths.citadel_dir.join(GAME_PAK)).unwrap();
+        assert_eq!(
+            VpkDir::open(&entry.path)
+                .unwrap()
+                .read(native_scope::TEXTURE)
+                .unwrap(),
+            game.read(native_scope::TEXTURE).unwrap(),
+            "the 512 px fake original is already below 1080"
+        );
+    }
+
+    #[test]
+    fn every_native_addon_rebuilds_after_a_game_update_or_a_changed_game_file() {
+        let (steam, paths) = fake_install("100");
+        let state = state_dir(&steam);
+        let config = enabled(&NATIVE);
+        let first = plan(&paths, &config, &state).unwrap();
+        for id in NATIVE {
+            assert!(
+                matches!(action(&first, id), Action::Write(Build::Bytes(_))),
+                "{id:?}"
+            );
+        }
+        execute(&first, &paths, &state).unwrap();
+        assert!(plan(&paths, &config, &state).unwrap().is_empty());
+        let states = installed_state(&paths, &state).unwrap();
+        for id in NATIVE {
+            assert!(matches!(states[&id], InstalledState::Current(_)), "{id:?}");
+        }
+
+        write_manifest(&steam.path().join("steamapps"), "101");
+        let states = installed_state(&paths, &state).unwrap();
+        for id in NATIVE {
+            assert!(matches!(states[&id], InstalledState::Stale(_)), "{id:?}");
+        }
+        let rebuilt = plan(&paths, &config, &state).unwrap();
+        for id in NATIVE {
+            assert!(matches!(action(&rebuilt, id), Action::Write(_)), "{id:?}");
+        }
+        execute(&rebuilt, &paths, &state).unwrap();
+        assert!(plan(&paths, &config, &state).unwrap().is_empty());
+
+        let mut files = fake_game_files();
+        files.insert(
+            native_blur::STYLE.to_string(),
+            native_blur::tests::vanilla_with_images(),
+        );
+        std::fs::write(paths.citadel_dir.join(GAME_PAK), vpk::write(&files)).unwrap();
+        let changed = plan(&paths, &config, &state).unwrap();
+        assert!(matches!(
+            action(&changed, AddonId::BlurDisabler),
+            Action::Write(_)
+        ));
+        for id in [
+            AddonId::ParticleDisabler,
+            AddonId::SinnerLightFix,
+            AddonId::VindictaScope,
+        ] {
+            assert_eq!(action(&changed, id), &Action::Keep, "{id:?}");
+        }
+    }
+
+    #[test]
+    fn natives_without_game_files_are_blocked_not_an_error() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        let config = enabled(&NATIVE);
+        execute(&plan(&paths, &config, &state).unwrap(), &paths, &state).unwrap();
+        std::fs::remove_file(paths.citadel_dir.join(GAME_PAK)).unwrap();
+        let plan = plan(&paths, &config, &state).unwrap();
+        for id in NATIVE {
+            assert_eq!(
+                action(&plan, id),
+                &Action::Keep,
+                "an installed copy stays while the game archive is unreadable: {id:?}"
+            );
+        }
         let (steam, paths) = fake_install("1");
         std::fs::remove_file(paths.citadel_dir.join(GAME_PAK)).unwrap();
-        let mut config = enabled(&[AddonId::BlurDisabler]);
-        config.blur.rebuild = true;
-        let plan = plan(&paths, &config, &state_dir(&steam)).unwrap();
-        assert!(matches!(
-            action(&plan, AddonId::BlurDisabler),
-            Action::Unavailable(Blocker::GameFiles(_))
-        ));
+        let plan = super::plan(&paths, &config, &state_dir(&steam)).unwrap();
+        for id in NATIVE {
+            assert!(
+                matches!(
+                    action(&plan, id),
+                    Action::Unavailable(Blocker::GameFiles(e)) if e.contains("not found")
+                ),
+                "{id:?}"
+            );
+        }
     }
 
     #[test]
     fn deleting_our_file_by_hand_reinstalls_and_forgets_the_old_entry() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
         let config = enabled(&[AddonId::SinnerLightFix]);
         let first = plan(&paths, &config, &state).unwrap();
         execute(&first, &paths, &state).unwrap();
@@ -1316,50 +1328,30 @@ pub(crate) mod tests {
         let dir = addons_dir(&paths);
         std::fs::create_dir_all(&dir).unwrap();
         let other = BTreeMap::from([
-            (blur::STYLE.to_string(), b"their stylesheet".to_vec()),
+            (native_blur::STYLE.to_string(), b"their stylesheet".to_vec()),
             ("panorama/styles/hud.vcss_c".to_string(), b"x".to_vec()),
         ]);
         std::fs::write(dir.join("pak03_dir.vpk"), vpk::write(&other)).unwrap();
         std::fs::write(dir.join("pak05_dir.vpk"), b"unreadable").unwrap();
-        import(&state, "Blur Disabler", "pak97_dir.vpk");
         let plan = plan(&paths, &enabled(&[AddonId::BlurDisabler]), &state).unwrap();
         assert_eq!(
             plan.conflicts,
             vec![Conflict {
                 id: AddonId::BlurDisabler,
                 addon: dir.join("pak03_dir.vpk"),
-                paths: vec![blur::STYLE.to_string()],
+                paths: vec![native_blur::STYLE.to_string()],
             }]
         );
-    }
-
-    #[test]
-    fn search_path_is_wanted_until_gameinfo_mounts_addons() {
-        let (steam, paths) = fake_install("1");
-        let state = state_dir(&steam);
-        import(&state, "Blur Disabler", "pak97_dir.vpk");
-        let config = enabled(&[AddonId::BlurDisabler]);
-        assert!(plan(&paths, &config, &state).unwrap().needs_search_path);
-        let mounted = searchpaths::ensure_addons(CLEAN_GAMEINFO).unwrap();
-        std::fs::write(&paths.gameinfo, mounted).unwrap();
-        assert!(!plan(&paths, &config, &state).unwrap().needs_search_path);
     }
 
     #[test]
     fn clutter_pak_holds_the_games_empty_particle_and_rebuilds_on_game_update() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        let pak01 = paths.citadel_dir.join(GAME_PAK);
-        let game = VpkDir::open(&pak01).unwrap();
-        let mut files: BTreeMap<String, Vec<u8>> = game
-            .entries
-            .keys()
-            .map(|p| (p.clone(), game.read(p).unwrap()))
-            .collect();
-        let empty = include_bytes!("../../tests/fixtures/particles/empty.vpcf_c").to_vec();
-        files.insert(native_particles::EMPTY_PARTICLE.into(), empty.clone());
+        let mut files = fake_game_files();
         files.insert("particles/a/fire.vpcf_c".into(), b"real".to_vec());
-        std::fs::write(&pak01, vpk::write(&files)).unwrap();
+        std::fs::write(paths.citadel_dir.join(GAME_PAK), vpk::write(&files)).unwrap();
+        let empty = native_particles::tests::EMPTY;
 
         let mut config = AddonsConfig::default();
         config.set_enabled(AddonId::ClutterRemover, true);
@@ -1401,6 +1393,17 @@ pub(crate) mod tests {
         assert_eq!(action(&none, AddonId::ClutterRemover), &Action::Remove);
     }
 
+    #[test]
+    fn search_path_is_wanted_until_gameinfo_mounts_addons() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        let config = enabled(&[AddonId::BlurDisabler]);
+        assert!(plan(&paths, &config, &state).unwrap().needs_search_path);
+        let mounted = searchpaths::ensure_addons(CLEAN_GAMEINFO).unwrap();
+        std::fs::write(&paths.gameinfo, mounted).unwrap();
+        assert!(!plan(&paths, &config, &state).unwrap().needs_search_path);
+    }
+
     fn game_with_textures(paths: &GamePaths) {
         use crate::texture::vtex::tests::{COLOR, MASK};
         let files = BTreeMap::from([
@@ -1415,6 +1418,8 @@ pub(crate) mod tests {
     fn textures_are_built_on_demand_and_rebuilt_when_the_config_changes() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
+        // The fake pak01 holds the sinner mask and scope texture too; count only pak02's.
+        std::fs::remove_file(paths.citadel_dir.join(GAME_PAK)).unwrap();
         game_with_textures(&paths);
         let mut config = enabled(&[AddonId::TextureDownscaler]);
         let first = plan(&paths, &config, &state).unwrap();
@@ -1484,7 +1489,6 @@ pub(crate) mod tests {
         let dir = addons_dir(&paths);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("pak73_000.vpk"), b"someone's chunk").unwrap();
-        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
         let plan = plan(&paths, &enabled(&[AddonId::SinnerLightFix]), &state).unwrap();
         assert_eq!(
             plan.get(AddonId::SinnerLightFix).unwrap().path,
@@ -1513,15 +1517,36 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn installed_copy_stays_while_its_source_is_gone() {
+    fn installed_copy_stays_while_its_download_is_gone() {
         let (steam, paths) = fake_install("1");
         let state = state_dir(&steam);
-        import(&state, "Sinner Light Fix Mod", "pak26_dir.vpk");
-        let config = enabled(&[AddonId::SinnerLightFix]);
+        import_soul_container(&state);
+        let config = enabled(&[AddonId::SoulContainer]);
         execute(&plan(&paths, &config, &state).unwrap(), &paths, &state).unwrap();
         std::fs::remove_dir_all(sources::cache_dir(&state)).unwrap();
         let plan = plan(&paths, &config, &state).unwrap();
-        assert_eq!(action(&plan, AddonId::SinnerLightFix), &Action::Keep);
+        assert_eq!(action(&plan, AddonId::SoulContainer), &Action::Keep);
         assert!(plan.is_empty());
+    }
+
+    #[test]
+    fn a_sinner_model_the_builder_cannot_patch_is_blocked_with_its_reason() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        let mut files = fake_game_files();
+        files.insert(
+            native_sinner::MODEL.to_string(),
+            native_sinner::tests::zstd_model(),
+        );
+        std::fs::write(paths.citadel_dir.join(GAME_PAK), vpk::write(&files)).unwrap();
+        let plan = plan(&paths, &enabled(&[AddonId::SinnerLightFix]), &state).unwrap();
+        assert!(
+            matches!(
+                action(&plan, AddonId::SinnerLightFix),
+                Action::Unavailable(Blocker::GameFiles(e)) if e.contains("zstd")
+            ),
+            "{:?}",
+            action(&plan, AddonId::SinnerLightFix)
+        );
     }
 }

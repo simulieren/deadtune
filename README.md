@@ -38,7 +38,6 @@ DeadTune turns that into an app:
 - **Simple view** grouped the way players think: Display, Shadows, Lighting and effects, World detail, Performance. The biggest FPS wins sit on the Overview page.
 - **Advanced view** with every one of the **761 catalogued ConVars**, searchable, with type-aware controls, defaults, preset values and an impact rating.
 - **Honest apply classes.** Each setting is tagged *live*, *live in sandbox*, *needs restart* or *ignored* (the game no longer reads it from `gameinfo.gi`), so you know when a change takes effect and whether it does anything.
-- **Particle cleanup** you choose effect by effect: the screen-edge flashes (low health, burns, hero debuffs) and world clutter after Laund's Clutter Be Gone (city steam and smoke, Graves and Walker effects). Built from your own game files, nothing to download.
 - **Profiles** stored as small TOML files. Import and export Sqooky's `overrides.gi` format, so you can switch between his updater and DeadTune.
 
 ### HUD editor
@@ -50,6 +49,15 @@ DeadTune turns that into an app:
 - **Built from your own game files.** DeadTune patches the stylesheet from your installed Deadlock and packs it into one addon. A game update never leaves stale copies behind; DeadTune rebuilds it.
 - **208 HUD ConVars** in the same place: crosshair style, minimap icons, overhead health bars, damage numbers. Settings that reveal extra enemy information are blocked.
 - **Conflict warnings** when another HUD mod (QoL Lite, QoL Lock) replaces the same file.
+
+### Performance addons
+
+The community's performance mods, each as one DeadTune-owned pak file that comes off with one click:
+
+- **Rebuilt from your game files, method by the original author.** The screen-edge particle disabler and the world clutter remover (Laund, after his Clutter Be Gone packs), the UI blur disabler (Sqooky, with Bytenode), the Sinner's Sacrifice light fix (HoppCX) and the Vindicta scope downscale (Tamara Mochaccinae) are made from your own `pak01` on Apply, so they never go stale: after a game update DeadTune rebuilds them. No download.
+- **Pick what to hide.** The particle disabler is split into groups (low-health vignette, burns, hero debuffs); the clutter remover covers city steam and smoke, Graves and Walker effects, or everything for offline play; the blur disabler covers HUD and menus separately; the scope size is yours to choose.
+- **The optimized soul container** by Jayie is a hand-made model, so it stays a download from Sqooky's repository (or an import of the file).
+- **Checked before and after.** Every pak is read back against your game files before it goes into the game folder, and the next launch is a trial: if Deadlock fails to start, DeadTune removes the new addon and tells you.
 
 ### Testing and comparing
 
@@ -81,7 +89,7 @@ DeadTune only works through files, launch options and the official console.
 
 **Matchmaking.** Edited ConVars do not block matchmaking (checked on Windows). Since March 2026 the game only refuses to queue when the `Engine2`, `MaterialSystem2`, `NetworkSystem`, `Particles`, `RenderSystem`, `SceneSystem` or `WorldRenderer` sections of `gameinfo.gi` are changed, or the game runs in Tools mode. DeadTune never edits those sections. Since September 2026 the game also ignores 77 ConVars when they are set in `gameinfo.gi` (shadows, fog, outlines, glow and others). DeadTune marks these as *ignored*, so you can see which preset lines no longer do anything.
 
-**No ads, no analytics, no tracking.** DeadTune collects nothing about you or your PC and has no telemetry. It goes online only to check GitHub for a new version and to download presets and addons from their authors' GitHub repos. Those requests send nothing about you.
+**No ads, no analytics, no tracking.** DeadTune collects nothing about you or your PC and has no telemetry. It goes online only to check GitHub for a new version and to download presets and the soul container addon from their authors' GitHub repos. Those requests send nothing about you.
 
 **Ranked-safe mode.** If Valve tightens the rules again, one click restores the stock ConVars block and removes the HUD addon, while keeping your `video.txt` settings (those are normal menu options). One more click brings your profile back.
 
@@ -188,7 +196,7 @@ In progress: a local texture downscaler that builds a low-VRAM texture addon fro
 
 DeadTune stands on the work of the Deadlock tuning community:
 
-- [Sqooky/OptimizationLock](https://github.com/Sqooky/OptimizationLock): presets and the override model DeadTune's `gameinfo.gi` editor is ported from
+- [Sqooky/OptimizationLock](https://github.com/Sqooky/OptimizationLock): presets, the override model DeadTune's `gameinfo.gi` editor is ported from, and the performance addons bundle whose methods DeadTune rebuilds (Laund, Sqooky with Bytenode, HoppCX, Tamara Mochaccinae, Jayie)
 - [dacooderr/OptiLock](https://github.com/dacooderr/OptiLock): presets including `video.txt` tuning
 - Kaizuchaneru and Boot: minimum-spec and max-FPS presets
 - [Laund](https://gamebanana.com/mods/722853): the screen-edge particle disabler and Clutter Be Gone, whose effect lists DeadTune's particle cleanup uses

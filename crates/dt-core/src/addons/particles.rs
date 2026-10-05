@@ -1,19 +1,10 @@
-//! The screen-space particle disabler, made configurable. Upstream (Laund's
-//! `pak02_dir.vpk`) replaces 108 particle systems with one empty stub. We take the
-//! stub from the upstream file and ship it at only the paths the player hides,
-//! grouped by what the player sees on screen. The groups also cover the four effects
-//! Laund added later in the Screenspace pack of Clutter Be Gone (`clutter/screenspace.txt`).
+//! The screen-space particle disabler's path table. Upstream (Laund's `pak02_dir.vpk`)
+//! replaces 108 particle systems with the game's empty particle, and the Screenspace pack
+//! of his Clutter Be Gone (`clutter/screenspace.txt`) adds four more; here they are
+//! grouped by what the player sees on screen, so `native_particles` ships only the
+//! hidden ones.
 
-use std::collections::{BTreeMap, BTreeSet};
-
-use super::AddonError;
-use crate::hud::vpk::{self, VpkDir};
-
-/// Any upstream entry carries the stub; this one is checked.
-pub const STUB_PATH: &str = "particles/generic/player_low_health_screen.vpcf_c";
-pub const STUB_CRC: u32 = 0xf3db_7131;
-/// The empty texture the stub references; always shipped with it.
-pub const DEBUG_TEXTURE: &str = "materials/debug/debugempty_color_tga_fd967415.vtex_c";
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParticleGroup {
@@ -375,43 +366,12 @@ pub fn hidden_paths(keep: &BTreeSet<String>) -> Vec<&'static str> {
         .collect()
 }
 
-/// The two upstream files every build needs.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Stub {
-    pub particle: Vec<u8>,
-    pub texture: Vec<u8>,
-}
-
-pub fn stub_from_upstream(upstream: &VpkDir) -> Result<Stub, AddonError> {
-    if upstream.entries.get(STUB_PATH).map(|e| e.crc) != Some(STUB_CRC) {
-        return Err(AddonError::BadStub);
-    }
-    Ok(Stub {
-        particle: upstream.read(STUB_PATH)?,
-        texture: upstream.read(DEBUG_TEXTURE)?,
-    })
-}
-
-/// Our pak: the stub at each hidden path plus the texture it references. No paths
-/// means no pak at all (the caller plans a removal).
-pub fn build(stub: &Stub, paths: &[&str]) -> Option<Vec<u8>> {
-    if paths.is_empty() {
-        return None;
-    }
-    let mut files: BTreeMap<String, Vec<u8>> = paths
-        .iter()
-        .map(|p| (p.to_string(), stub.particle.clone()))
-        .collect();
-    files.insert(DEBUG_TEXTURE.to_string(), stub.texture.clone());
-    Some(vpk::write(&files))
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::hud::crc32::crc32;
+    use crate::hud::vpk::VpkDir;
 
     pub fn upstream_path() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join(
@@ -432,7 +392,7 @@ pub(crate) mod tests {
             .entries
             .keys()
             .map(String::as_str)
-            .filter(|p| *p != DEBUG_TEXTURE)
+            .filter(|p| p.ends_with(".vpcf_c"))
             .collect();
         theirs.extend(include_str!("clutter/screenspace.txt").lines());
         theirs.sort_unstable();
@@ -444,55 +404,5 @@ pub(crate) mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), GROUPS.len());
-    }
-
-    #[test]
-    fn stub_is_the_same_bytes_at_every_upstream_path() {
-        let upstream = upstream();
-        let stub = stub_from_upstream(&upstream).unwrap();
-        assert_eq!(crc32(&stub.particle), STUB_CRC);
-        for path in hidden_paths(&BTreeSet::new()) {
-            if !upstream.contains(path) {
-                continue;
-            }
-            assert_eq!(upstream.read(path).unwrap(), stub.particle, "{path}");
-        }
-        assert_eq!(stub.texture.len(), 7556);
-    }
-
-    #[test]
-    fn build_holds_exactly_the_selected_paths_plus_texture() {
-        let stub = stub_from_upstream(&upstream()).unwrap();
-        let keep: BTreeSet<String> = GROUPS
-            .iter()
-            .map(|g| g.id.to_string())
-            .filter(|id| id != "low_health" && id != "shiv")
-            .collect();
-        let paths = hidden_paths(&keep);
-        assert_eq!(paths.len(), 4 + 5);
-        let bytes = build(&stub, &paths).unwrap();
-        assert_eq!(bytes, build(&stub, &paths).unwrap());
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("pak71_dir.vpk");
-        std::fs::write(&p, &bytes).unwrap();
-        let ours = VpkDir::open(&p).unwrap();
-        assert_eq!(ours.entries.len(), paths.len() + 1);
-        for path in &paths {
-            assert_eq!(ours.read(path).unwrap(), stub.particle);
-        }
-        assert_eq!(ours.read(DEBUG_TEXTURE).unwrap(), stub.texture);
-        assert!(!ours.contains("particles/abilities/lash/lash_final_strike_screen.vpcf_c"));
-        let all: BTreeSet<String> = GROUPS.iter().map(|g| g.id.to_string()).collect();
-        assert_eq!(build(&stub, &hidden_paths(&all)), None);
-    }
-
-    #[test]
-    fn a_file_without_the_stub_is_rejected() {
-        let files = BTreeMap::from([(STUB_PATH.to_string(), b"not a stub".to_vec())]);
-        let fake = VpkDir::parse(Path::new("x_dir.vpk"), &vpk::write(&files)).unwrap();
-        assert!(matches!(
-            stub_from_upstream(&fake),
-            Err(AddonError::BadStub)
-        ));
     }
 }

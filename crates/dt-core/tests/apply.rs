@@ -761,14 +761,14 @@ fn ranked_safe_removes_our_addon_and_keeps_the_search_path_line() {
 
 fn addons_profile(install: &FakeInstall) -> Profile {
     let upstream = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "../../research/configs/OptimizationLock/Various Addons Relating to Performance/Sinner Light Fix Mod/pak26_dir.vpk",
+        "../../research/configs/OptimizationLock/Various Addons Relating to Performance/Optimized Soul Container/pak01_dir.vpk",
     );
     let cache = dt_core::addons::sources::cache_dir(&install.store.root);
     dt_core::addons::sources::import(&cache, &upstream).unwrap();
     let mut profile = kaiz_profile();
     profile
         .addons
-        .set_enabled(dt_core::addons::AddonId::SinnerLightFix, true);
+        .set_enabled(dt_core::addons::AddonId::SoulContainer, true);
     profile
 }
 
@@ -786,7 +786,7 @@ fn enabled_addon_installs_its_pak_mounts_addons_then_ranked_safe_removes_it() {
 
     let report = execute(&install.paths, &first, &install.store, None).unwrap();
     assert!(report.addons_changed && report.needs_restart && !report.hud_changed);
-    let pak = addons_dir(&install.paths).join("pak73_dir.vpk");
+    let pak = addons_dir(&install.paths).join("pak75_dir.vpk");
     assert!(pak.is_file());
     assert!(has_addons(&read(&install.paths.gameinfo)).unwrap());
 

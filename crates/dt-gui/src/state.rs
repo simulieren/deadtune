@@ -1478,6 +1478,11 @@ impl AppState {
         self.refresh_preview();
     }
 
+    pub fn set_scope(&mut self, opts: addons::ScopeOptions) {
+        self.profile.addons.scope = opts;
+        self.refresh_preview();
+    }
+
     pub fn set_textures(&mut self, cfg: TextureDownscale) {
         self.profile.addons.textures = cfg;
         self.refresh_preview();
@@ -3058,15 +3063,15 @@ mod tests {
         .join(file)
     }
 
-    /// Imports and installs the Sinner light fix, the simplest pak to put in the game folder.
-    fn with_sinner_installed(state: &mut AppState) -> PathBuf {
+    /// Imports and installs the soul container, the one addon that needs no game files.
+    fn with_soul_container_installed(state: &mut AppState) -> PathBuf {
         state
-            .import_addon(&upstream("Sinner Light Fix Mod", "pak26_dir.vpk"))
+            .import_addon(&upstream("Optimized Soul Container", "pak01_dir.vpk"))
             .unwrap();
-        state.set_addon_enabled(AddonId::SinnerLightFix, true);
+        state.set_addon_enabled(AddonId::SoulContainer, true);
         state.apply().unwrap();
         state.save_profile().unwrap();
-        let pak = dt_core::hud::install::addons_dir(&state.paths).join("pak73_dir.vpk");
+        let pak = dt_core::hud::install::addons_dir(&state.paths).join("pak75_dir.vpk");
         assert!(pak.exists());
         pak
     }
@@ -3074,14 +3079,14 @@ mod tests {
     #[test]
     fn a_failed_trial_removes_the_new_addon_switches_it_off_and_raises_the_banner() {
         let (_dir, mut state) = state();
-        let pak = with_sinner_installed(&mut state);
+        let pak = with_soul_container_installed(&mut state);
         let launched = SystemTime::now() + Duration::from_secs(5);
         state.observe_game(true, Some(launched));
         assert!(state.guard.trial.is_some(), "a new pak is on trial");
         assert!(matches!(
             state.addon_badge(
-                AddonId::SinnerLightFix,
-                state.addon_states().get(&AddonId::SinnerLightFix)
+                AddonId::SoulContainer,
+                state.addon_states().get(&AddonId::SoulContainer)
             ),
             Some(Badge::Untried)
         ));
@@ -3091,26 +3096,26 @@ mod tests {
         state.observe_game(true, Some(launched));
 
         assert!(!pak.exists(), "the pak that broke the start is gone");
-        assert!(!state.profile.addons.is_enabled(AddonId::SinnerLightFix));
+        assert!(!state.profile.addons.is_enabled(AddonId::SoulContainer));
         assert!(
             !state
                 .saved
                 .as_ref()
                 .unwrap()
                 .addons
-                .is_enabled(AddonId::SinnerLightFix)
+                .is_enabled(AddonId::SoulContainer)
         );
         let on_disk = profiles::load(&state.profiles_dir(), &state.profile.name).unwrap();
         assert!(
-            !on_disk.addons.is_enabled(AddonId::SinnerLightFix),
+            !on_disk.addons.is_enabled(AddonId::SoulContainer),
             "profile on disk updated"
         );
         let failure = state.guard.failure.clone().expect("banner shows");
-        assert_eq!(failure.ids, [AddonId::SinnerLightFix]);
-        assert_eq!(failure.removed, ["pak73_dir.vpk"]);
+        assert_eq!(failure.ids, [AddonId::SoulContainer]);
+        assert_eq!(failure.removed, ["pak75_dir.vpk"]);
         assert!(failure.fatal.as_deref().unwrap().starts_with("FATAL ERROR"));
         assert!(matches!(
-            state.addon_badge(AddonId::SinnerLightFix, None),
+            state.addon_badge(AddonId::SoulContainer, None),
             Some(Badge::Broke { fatal: Some(_), .. })
         ));
         assert!(matches!(state.status, Some(Status::Error(ref m)) if m.contains("didn't start")));
@@ -3127,20 +3132,17 @@ mod tests {
     #[test]
     fn a_passed_trial_marks_the_addon_verified() {
         let (_dir, mut state) = state();
-        with_sinner_installed(&mut state);
+        with_soul_container_installed(&mut state);
         let launched = SystemTime::now() + Duration::from_secs(5);
         state.observe_game(true, Some(launched));
         state.guard_lines.push("DEADTUNE_BOOT 0.3.0".into());
         state.observe_game(true, Some(launched));
         let states = state.addon_states();
         assert!(matches!(
-            state.addon_badge(
-                AddonId::SinnerLightFix,
-                states.get(&AddonId::SinnerLightFix)
-            ),
+            state.addon_badge(AddonId::SoulContainer, states.get(&AddonId::SoulContainer)),
             Some(Badge::Verified { .. })
         ));
-        assert!(state.profile.addons.is_enabled(AddonId::SinnerLightFix));
+        assert!(state.profile.addons.is_enabled(AddonId::SoulContainer));
         assert!(matches!(state.status, Some(Status::Info(ref m)) if m.contains("started fine")));
     }
 
@@ -3173,12 +3175,12 @@ mod tests {
     #[test]
     fn safe_mode_removes_every_pak_and_restores_on_the_way_back() {
         let (_dir, mut state) = state();
-        let pak = with_sinner_installed(&mut state);
+        let pak = with_soul_container_installed(&mut state);
         state.toggle_safe_mode().unwrap();
         assert!(state.settings.safe_mode);
         assert!(!pak.exists());
         assert!(
-            state.profile.addons.is_enabled(AddonId::SinnerLightFix),
+            state.profile.addons.is_enabled(AddonId::SoulContainer),
             "remembered"
         );
         assert!(plan(&state).is_empty());
@@ -3190,11 +3192,11 @@ mod tests {
     #[test]
     fn diagnostic_report_names_the_installed_pak() {
         let (_dir, mut state) = state();
-        with_sinner_installed(&mut state);
+        with_soul_container_installed(&mut state);
         let text = state.diagnostic_report();
-        assert!(text.contains("pak73_dir.vpk"), "{text}");
+        assert!(text.contains("pak75_dir.vpk"), "{text}");
         assert!(
-            text.contains("DeadTune: Sinner's Sacrifice light fix"),
+            text.contains("DeadTune: Optimized soul container"),
             "{text}"
         );
         assert!(text.contains("-condebug"), "launch args: {text}");

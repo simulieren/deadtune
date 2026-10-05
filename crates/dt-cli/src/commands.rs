@@ -308,6 +308,14 @@ pub const COMMANDS: &[Command] = &[
         run: cmd_addons::verify,
     },
     Command {
+        name: "addons guard",
+        usage: "addons guard",
+        summary: "the launch guard's view of every DeadTune pak, the HUD included: verified, on trial, untried or rolled back",
+        values: &[],
+        switches: &[],
+        run: cmd_addons::guard,
+    },
+    Command {
         name: "addons build",
         usage: "addons build --profile <file>",
         summary: "build the texture downscaler pak from the game files",

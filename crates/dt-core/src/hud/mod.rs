@@ -33,6 +33,6 @@ pub mod vpk;
 
 pub use elements::{ElementId, ElementSpec};
 pub use ingame::IngameSettings;
-pub use layout::{ElementEdit, HudLayout, HudPatch};
+pub use layout::{ElementEdit, HudFeature, HudLayout, HudPatch};
 pub use minimap_colors::{Color, IconId};
 pub use topbar::TopBarStyle;

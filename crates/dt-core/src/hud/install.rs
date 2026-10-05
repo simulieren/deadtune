@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use super::icons::{self, IconProblem};
 use super::inject::{self, SCRIPTS_DIR, STYLES_DIR};
-use super::layout::{self, HudLayout, HudPatch};
+use super::layout::{self, HudFeature, HudLayout, HudPatch};
 use super::vpk::{self, VpkDir};
 use super::{resource, searchpaths};
 use crate::addons::verify;
@@ -44,6 +44,8 @@ pub struct HudPlan {
     pub needs_search_path: bool,
     /// Icon overrides left out of this build, and why; the rest of the addon still ships.
     pub icon_problems: Vec<IconProblem>,
+    /// What the layout changes, recorded with the pak so a failed launch can name it.
+    pub features: Vec<HudFeature>,
 }
 
 impl HudPlan {
@@ -62,6 +64,8 @@ pub struct InstallRecord {
     pub sha256: String,
     pub build_id: Option<String>,
     pub patched: Vec<String>,
+    #[serde(default)]
+    pub features: Vec<HudFeature>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -108,7 +112,9 @@ pub fn addons_dir(paths: &GamePaths) -> PathBuf {
 
 /// Pure planning plus reads: game pak, our record, other addons' trees, gameinfo.
 pub fn plan(paths: &GamePaths, layout: &HudLayout, state_dir: &Path) -> Result<HudPlan, HudError> {
-    plan_patch(paths, layout::compile(layout)?, state_dir)
+    let mut plan = plan_patch(paths, layout::compile(layout)?, state_dir)?;
+    plan.features = layout.features();
+    Ok(plan)
 }
 
 /// `plan` after compilation. An empty patch, or one whose every file failed to build (only
@@ -159,6 +165,7 @@ pub fn plan_patch(
             conflicts: Vec::new(),
             needs_search_path: false,
             icon_problems,
+            features: Vec::new(),
         });
     };
     let built = sha256_hex(&bytes);
@@ -189,6 +196,7 @@ pub fn plan_patch(
         conflicts,
         needs_search_path,
         icon_problems,
+        features: Vec::new(),
     })
 }
 
@@ -217,11 +225,9 @@ pub fn execute(plan: &HudPlan, paths: &GamePaths, state_dir: &Path) -> Result<()
                 sha256,
                 build_id: build_id(paths)?,
                 patched: plan.shipped().map(str::to_string).collect(),
+                features: plan.features.clone(),
             };
-            let text = toml::to_string(&record).map_err(|e| HudError::Toml(e.to_string()))?;
-            std::fs::create_dir_all(state_dir)?;
-            atomic_write(&record_path, text.as_bytes())?;
-            Ok(())
+            write_record(state_dir, &record)
         }
         HudAction::Remove => {
             ensure_owned(
@@ -235,6 +241,108 @@ pub fn execute(plan: &HudPlan, paths: &GamePaths, state_dir: &Path) -> Result<()
             Ok(())
         }
     }
+}
+
+/// Where the last HUD pak a launch proved is kept, as `<sha>.vpk` plus its `<sha>.toml`
+/// record, so a failed launch puts it back instead of leaving the HUD vanilla.
+pub const VERIFIED_DIR: &str = "hud-verified";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HudRollback {
+    /// The kept copy of the last HUD that started is back in place.
+    Restored,
+    /// No usable kept copy, so our pak is gone and the HUD is the game's own.
+    Removed,
+}
+
+/// Keeps a copy of our installed pak once a launch proved it, replacing any older copy.
+/// Does nothing unless the pak on disk is ours and hashes to `sha256`.
+pub fn keep_verified(paths: &GamePaths, state_dir: &Path, sha256: &str) -> Result<(), HudError> {
+    let dir = state_dir.join(VERIFIED_DIR);
+    let pak = dir.join(format!("{sha256}.vpk"));
+    if pak.is_file() {
+        return Ok(());
+    }
+    let Some(record) = read_record(state_dir)?.filter(|r| r.sha256 == sha256) else {
+        return Ok(());
+    };
+    let bytes = match std::fs::read(addons_dir(paths).join(ADDON_FILE)) {
+        Ok(bytes) if sha256_hex(&bytes) == sha256 => bytes,
+        Ok(_) => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+    std::fs::create_dir_all(&dir)?;
+    let text = toml::to_string(&record).map_err(|e| HudError::Toml(e.to_string()))?;
+    atomic_write(&dir.join(format!("{sha256}.toml")), text.as_bytes())?;
+    atomic_write(&pak, &bytes)?;
+    for entry in std::fs::read_dir(&dir)? {
+        let path = entry?.path();
+        if path.file_stem().and_then(|s| s.to_str()) != Some(sha256) {
+            remove_if_present(&path)?;
+        }
+    }
+    Ok(())
+}
+
+/// The kept copy, if it is intact and was built for the installed game build: a copy from
+/// before a game update may break the start the same way a fresh build did.
+fn kept_copy(
+    paths: &GamePaths,
+    state_dir: &Path,
+) -> Result<Option<(Vec<u8>, InstallRecord)>, HudError> {
+    let dir = state_dir.join(VERIFIED_DIR);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(None);
+    };
+    let build = build_id(paths)?;
+    for entry in entries {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        let Ok(record) = toml::from_str::<InstallRecord>(&std::fs::read_to_string(&path)?) else {
+            continue;
+        };
+        let Ok(bytes) = std::fs::read(path.with_extension("vpk")) else {
+            continue;
+        };
+        if sha256_hex(&bytes) == record.sha256 && record.build_id == build {
+            return Ok(Some((bytes, record)));
+        }
+    }
+    Ok(None)
+}
+
+/// Takes our pak out of a failed launch: the kept copy of the last HUD that started goes
+/// back in when there is one for this game build, otherwise our pak and record are removed.
+pub fn roll_back(paths: &GamePaths, state_dir: &Path) -> Result<HudRollback, HudError> {
+    let addon_path = addons_dir(paths).join(ADDON_FILE);
+    let record = read_record(state_dir)?;
+    let installed = file_sha(&addon_path)?;
+    ensure_owned(&addon_path, installed.as_deref(), record.as_ref(), None)?;
+    match kept_copy(paths, state_dir)?.filter(|(_, r)| installed.as_ref() != Some(&r.sha256)) {
+        Some((bytes, kept)) => {
+            if let Some(dir) = addon_path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            atomic_write(&addon_path, &bytes)?;
+            write_record(state_dir, &kept)?;
+            Ok(HudRollback::Restored)
+        }
+        None => {
+            remove_if_present(&addon_path)?;
+            remove_if_present(&state_dir.join(RECORD_FILE))?;
+            Ok(HudRollback::Removed)
+        }
+    }
+}
+
+fn write_record(state_dir: &Path, record: &InstallRecord) -> Result<(), HudError> {
+    let text = toml::to_string(record).map_err(|e| HudError::Toml(e.to_string()))?;
+    std::fs::create_dir_all(state_dir)?;
+    Ok(atomic_write(&state_dir.join(RECORD_FILE), text.as_bytes())?)
 }
 
 pub fn installed_state(paths: &GamePaths, state_dir: &Path) -> Result<InstalledState, HudError> {
@@ -355,7 +463,7 @@ fn conflicts(addons: &Path, patch: &HudPatch) -> Vec<Conflict> {
         .collect()
 }
 
-fn read_record(state_dir: &Path) -> Result<Option<InstallRecord>, HudError> {
+pub fn read_record(state_dir: &Path) -> Result<Option<InstallRecord>, HudError> {
     match std::fs::read_to_string(state_dir.join(RECORD_FILE)) {
         Ok(text) => toml::from_str(&text)
             .map(Some)

@@ -43,7 +43,7 @@ It lives in the profile like every other HUD choice, so presets, Vanilla, ranked
 
 **Safety.** Same pak, same rules: the addon is recorded by sha256 and a foreign file at our path is refused. The built pak is now read back through `addons::verify` against the game's files before `plan` returns, for every HUD feature: a texture must be one BGRA8888 `NO_LOD` level of exactly `width * height * 4` bytes with the game's RED2 block; a vector image must hold SVG text in the game's container. `addons verify` checks the installed pak the same way.
 
-One gap is not new: the launch guard (`addons/guard.rs`) covers the performance addons by `AddonId`, not the HUD addon. A HUD pak that stops the game from starting is removed by hand (`hud remove`), not automatically. Bringing pak77 under the guard is its own change.
+The launch guard (`addons/guard.rs`) covers the HUD addon too (`Pak::Hud`): a HUD pak that stops the game from starting goes back to the last verified HUD pak, or is removed.
 
 **CLI.** `deadtune-cli hud icon list|set <game_path> <image> [--fit original|own]|reset <game_path>|reset-all --layout <hud.toml>`, then `hud apply --layout <hud.toml>`. `hud status --layout` lists replaced images; apply prints icons left out.
 

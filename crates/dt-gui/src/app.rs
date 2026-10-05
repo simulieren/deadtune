@@ -5,6 +5,8 @@ use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant, SystemTime};
 
 use dt_core::addons::AddonId;
+use dt_core::addons::guard::Pak;
+use dt_core::hud::install::HudRollback;
 use dt_core::launch;
 use dt_core::locate::{self, GamePaths};
 use dt_core::profile::Profile;
@@ -235,21 +237,19 @@ impl App {
                     state.set_base(dt_core::profile::BaseRef::Preset(info.id));
                 }
                 state.ui.open_presets = std::env::var_os("DEADTUNE_OPEN_PRESETS").is_some();
-                // `DEADTUNE_FAKE_TRIAL=failed:vindicta_scope,blur_disabler` shows the launch
-                // guard's failure banner, details open, for those addons (every one if none
-                // are listed) with a captured FATAL line.
+                // `DEADTUNE_FAKE_TRIAL=failed:vindicta_scope,hud` shows the launch guard's
+                // failure banner, details open, for those paks (every addon if none are
+                // listed) with a captured FATAL line; `restored:hud` shows the HUD put back to
+                // its last working copy instead of removed.
                 if let Ok(spec) = std::env::var("DEADTUNE_FAKE_TRIAL")
-                    && let Some(list) = spec.strip_prefix("failed")
+                    && let Some((kind, list)) = spec
+                        .strip_prefix("failed")
+                        .map(|l| ("failed", l))
+                        .or_else(|| spec.strip_prefix("restored").map(|l| ("restored", l)))
                 {
-                    let ids: Vec<AddonId> = list
-                        .trim_start_matches(':')
-                        .split(',')
-                        .filter_map(|s| AddonId::parse(s.trim()))
-                        .collect();
-                    let ids = if ids.is_empty() {
-                        AddonId::ALL.to_vec()
-                    } else {
-                        ids
+                    let ids = match fake_paks(list) {
+                        ids if ids.is_empty() => AddonId::ALL.map(Pak::Addon).to_vec(),
+                        ids => ids,
                     };
                     state.inject_trial_failure(
                         ids,
@@ -258,6 +258,11 @@ impl App {
                                 .into(),
                         ),
                     );
+                    if kind == "restored"
+                        && let Some(hud) = state.guard.failure.as_mut().and_then(|f| f.hud.as_mut())
+                    {
+                        hud.rollback = HudRollback::Restored;
+                    }
                     state.ui.guard_details = true;
                 }
                 // Screenshot lever: `DEADTUNE_FAKE_PUSH=waiting|confirmed|mixed|timeout` shows
@@ -456,12 +461,17 @@ impl App {
         {
             simple::apply(ctx, state);
         }
-        // `DEADTUNE_FAKE_TRIAL=verified` marks whatever Apply just installed as started with.
+        // `DEADTUNE_FAKE_TRIAL=verified` marks whatever Apply just installed as started with;
+        // `testing:hud,blur_disabler` puts those paks on trial as if the game had just started.
         if job.frames == 6
-            && std::env::var("DEADTUNE_FAKE_TRIAL").is_ok_and(|v| v == "verified")
+            && let Ok(spec) = std::env::var("DEADTUNE_FAKE_TRIAL")
             && let Screen::Main(state) = &mut self.screen
         {
-            state.inject_trial_verified();
+            if spec == "verified" {
+                state.inject_trial_verified();
+            } else if let Some(list) = spec.strip_prefix("testing") {
+                state.inject_trial_started(fake_paks(list));
+            }
         }
         if job.frames == 20 && !job.requested {
             job.requested = true;
@@ -484,8 +494,18 @@ impl App {
     }
 }
 
+/// `:hud,blur_disabler` from a `DEADTUNE_FAKE_TRIAL` value.
+fn fake_paks(list: &str) -> Vec<Pak> {
+    list.trim_start_matches(':')
+        .split(',')
+        .filter_map(|s| Pak::parse(s.trim()))
+        .collect()
+}
+
+/// A faked trial needs the game to look running, or the next poll ends it as an early exit.
 fn fake_running() -> bool {
     std::env::var_os("DEADTUNE_FAKE_RUNNING").is_some_and(|v| v == "1")
+        || std::env::var("DEADTUNE_FAKE_TRIAL").is_ok_and(|v| v.starts_with("testing"))
 }
 
 fn fake_push(state: &mut AppState, kind: &str) {

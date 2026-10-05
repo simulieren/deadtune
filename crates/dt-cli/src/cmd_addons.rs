@@ -1,7 +1,8 @@
-//! addons list | enable | disable | import | fetch | build
+//! addons list | enable | disable | import | fetch | build | verify | guard
 
 use std::path::Path;
 
+use dt_core::addons::guard::{self, Guard};
 use dt_core::addons::install::{self, Action, InstalledState};
 use dt_core::addons::{self, AddonId, Kind, Native, Source, sources, textures};
 use dt_core::locate::GamePaths;
@@ -219,6 +220,38 @@ pub fn verify(env: &Env, args: &Args) -> CliResult {
     }
     println!("All {} pak(s) read back clean.", reports.len());
     Ok(())
+}
+
+pub fn guard(env: &Env, args: &Args) -> CliResult {
+    args.positionals::<0>("no positional arguments")?;
+    let paths = env.paths()?;
+    for line in guard_lines(env, &paths) {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// The launch guard's line per pak, the HUD included, for `addons guard` and `status`.
+pub fn guard_lines(env: &Env, paths: &GamePaths) -> Vec<String> {
+    let guard = match Guard::load(&env.data_dir) {
+        Ok(g) => g,
+        Err(e) => return vec![format!("launch guard: unreadable: {e}")],
+    };
+    let mut lines: Vec<String> = guard
+        .report(&guard::installed_paks(paths, &env.data_dir))
+        .into_iter()
+        .map(|l| format!("launch guard: {l}"))
+        .collect();
+    if lines.is_empty() {
+        lines.push("launch guard: nothing installed or tested yet".into());
+    }
+    if let Some(failure) = &guard.failure {
+        lines.push(format!(
+            "last failed launch: {}",
+            failure.message().headline
+        ));
+    }
+    lines
 }
 
 /// One-line addon facts for `status` and `doctor`.

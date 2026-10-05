@@ -84,6 +84,7 @@ pub static INFO: &[CheckInfo] = &[
     info("Steam launch options", Area::Game, "Steam launch options", true, "Launch options you set in Steam can override what DeadTune sets."),
     info("Game archive (HUD)", Area::Addons, "Game files for the HUD", false, "DeadTune needs the game's own HUD files to build your HUD."),
     info("HUD addon", Area::Addons, "HUD layout addon", true, "DeadTune's HUD addon should be installed and match your HUD settings."),
+    info("HUD launch test", Area::Addons, "HUD launch test", true, "New HUD changes are tested on the next launch and turned off if the game fails to start."),
     info("HUD search path", Area::Addons, "Addon loading", false, "The game must be set up to load mods from its addons folder."),
     info("HUD conflicts", Area::Addons, "Other HUD mods", false, "Another mod that replaces the same HUD files would undo your layout."),
     info("Settings menu mods", Area::Addons, "Other settings menu mods", false, "Another mod that replaces the game's settings menu would hide DeadTune's in-game settings rows."),

@@ -252,6 +252,14 @@ pub const COMMANDS: &[Command] = &[
         run: cmd_hud::status,
     },
     Command {
+        name: "hud icon",
+        usage: "hud icon list|set <game_path> <image.png|image.svg> [--fit original|own]|reset <game_path>|reset-all --layout <hud.toml>",
+        summary: "swap any UI image (panorama/images/**) for your own PNG or SVG; ship with `hud apply`",
+        values: &["layout", "fit"],
+        switches: &[],
+        run: cmd_hud::icon,
+    },
+    Command {
         name: "addons list",
         usage: "addons list [--profile <file>]",
         summary: "performance addons: authors, download and install state",

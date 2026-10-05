@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use dt_core::addons::verify;
 use dt_core::hud::apples_tunnels::{self, MINIMAP_LAYOUT};
+use dt_core::hud::icons;
 use dt_core::hud::ingame::{self, IngameSettings, SETTINGS_LAYOUT};
 use dt_core::hud::inject;
 use dt_core::hud::install::{self, ADDON_FILE, GAME_PAK, HudAction, HudError, InstalledState};
@@ -14,11 +15,15 @@ use dt_core::hud::{
     Color, ElementEdit, ElementId, HudLayout, HudPatch, IconId, TopBarStyle, layout,
 };
 use dt_core::locate::{self, GamePaths};
+use dt_core::texture::encode::Fit;
+use dt_core::texture::png::{self, RgbaImage};
+use dt_core::texture::vtex::{Flags, Vtex};
 use dt_core::usercfg;
 
 const HUD: &str = "panorama/styles/hud.vcss_c";
 const MINIMAP: &str = "panorama/styles/hud_minimap.vcss_c";
 const CSS: &str = "#TopBar{opacity:0.5;}";
+const ICON: &str = "panorama/images/hud/minimap/objective_icon_psd.vtex_c";
 
 fn repo_file(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -35,6 +40,10 @@ struct Fake {
 impl Fake {
     fn new() -> Fake {
         Fake::with_pak(true)
+    }
+
+    fn game(&self) -> VpkDir {
+        VpkDir::open(&self.paths.citadel_dir.join(GAME_PAK)).unwrap()
     }
 
     fn with_pak(pak: bool) -> Fake {
@@ -69,6 +78,7 @@ impl Fake {
             files.insert(TOP_BAR_LAYOUT.to_string(), vanilla_top_bar());
             files.insert(MINIMAP_LAYOUT.to_string(), vanilla_minimap_layout());
             files.insert("scripts/unrelated.txt".to_string(), b"unrelated".to_vec());
+            files.insert(ICON.to_string(), game_icon());
             fs::write(citadel.join(GAME_PAK), vpk::write(&files)).unwrap();
         }
         let paths = locate::from_game_root(&root).unwrap();
@@ -92,6 +102,19 @@ impl Fake {
         self.state.join(install::RECORD_FILE)
     }
 
+    /// Rewrites the game's pak01 with `path` holding `bytes`, as a game update would.
+    fn update_game_file(&self, path: &str, bytes: Vec<u8>) {
+        let pak_path = self.paths.citadel_dir.join(GAME_PAK);
+        let game = VpkDir::open(&pak_path).unwrap();
+        let mut files: BTreeMap<String, Vec<u8>> = game
+            .entries
+            .keys()
+            .map(|p| (p.clone(), game.read(p).unwrap()))
+            .collect();
+        files.insert(path.to_string(), bytes);
+        fs::write(pak_path, vpk::write(&files)).unwrap();
+    }
+
     fn install(&self, patch: HudPatch) {
         let plan = install::plan_patch(&self.paths, patch, &self.state).unwrap();
         install::execute(&plan, &self.paths, &self.state).unwrap();
@@ -106,6 +129,30 @@ fn write_manifest(path: &Path, build: &str) {
         ),
     )
     .unwrap();
+}
+
+/// A real single-mip NO_LOD game texture (ATI1N, 1024x1024).
+fn game_icon() -> Vec<u8> {
+    fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/texture/emissive_1024_ati1n_nolod_1mip.vtex_c"),
+    )
+    .unwrap()
+}
+
+/// The Vindicta scope texture from research: the game's own 1080x1080 BGRA8888 header.
+fn vindicta_texture() -> Vec<u8> {
+    VpkDir::open(&repo_file(
+        "research/configs/OptimizationLock/Various Addons Relating to Performance/Vindicta Scope Downscale/pak89_dir.vpk",
+    ))
+    .unwrap()
+    .read("panorama/images/hud/crosshair/scope_common_psd.vtex_c")
+    .unwrap()
+}
+
+fn test_png(width: u32, height: u32) -> Vec<u8> {
+    let pixels = [255, 0, 255, 255].repeat(width as usize * height as usize);
+    png::write(&RgbaImage::new(width, height, pixels).unwrap()).unwrap()
 }
 
 fn vanilla_hud() -> Vec<u8> {
@@ -175,7 +222,7 @@ fn apples_and_tunnels_rebuild_the_minimap_layout_beside_the_top_bar() {
             .ends_with("backgroundImage3{opacity:1;brightness:1.15;}")
     );
 
-    let expect = verify::expect_for_hud(&fake.paths, &addon);
+    let expect = verify::expect_for_hud(&fake.game(), &addon);
     let verified = verify::verify(&addon, &expect);
     assert!(verified.is_ok(), "{verified}");
 }
@@ -234,7 +281,7 @@ fn top_bar_extras_rebuild_the_layout_and_add_our_files() {
     let sheet = Resource::parse(&addon.read(OWN_STYLE).unwrap()).unwrap();
     assert!(style_text(&sheet).unwrap().starts_with("#DtSpawnTimers{"));
 
-    let expect = verify::expect_for_hud(&fake.paths, &addon);
+    let expect = verify::expect_for_hud(&fake.game(), &addon);
     assert_eq!(
         expect.checks.len(),
         2,
@@ -259,7 +306,7 @@ fn top_bar_extras_rebuild_the_layout_and_add_our_files() {
     }
     files.insert(TOP_BAR_LAYOUT.to_string(), tampered);
     let bad = VpkDir::in_memory(vpk::write(&files)).unwrap();
-    let verified = verify::verify(&bad, &verify::expect_for_hud(&fake.paths, &bad));
+    let verified = verify::verify(&bad, &verify::expect_for_hud(&fake.game(), &bad));
     assert!(
         verified
             .problems
@@ -305,8 +352,8 @@ fn build_is_deterministic() {
     let fake = Fake::new();
     let pak = VpkDir::open(&fake.paths.citadel_dir.join(GAME_PAK)).unwrap();
     assert_eq!(
-        install::build_addon(&pak, &patch(CSS)).unwrap(),
-        install::build_addon(&pak, &patch(CSS)).unwrap()
+        install::build_addon(&pak, &patch(CSS), &fake.state).unwrap(),
+        install::build_addon(&pak, &patch(CSS), &fake.state).unwrap()
     );
 }
 
@@ -555,7 +602,7 @@ fn check_ingame_rows(fake: &Fake) -> String {
             .data
             .starts_with(b"var DT_INGAME = { wideFov: true,")
     );
-    let expect = verify::expect_for_hud(&fake.paths, &addon);
+    let expect = verify::expect_for_hud(&fake.game(), &addon);
     assert_eq!(expect.checks.len(), 1, "{expect:?}");
     let verified = verify::verify(&addon, &expect);
     assert!(verified.is_ok(), "{verified}");
@@ -639,4 +686,192 @@ fn minimap_colors_patch_only_the_minimap_stylesheet() {
     assert!(style_text(&res).unwrap().ends_with(
         "#hud_minimap .map_button.player.enemy #BackgroundImage{background-color:#00D5FF;}"
     ));
+}
+
+#[test]
+fn icon_override_ships_in_the_hud_pak_and_passes_verify() {
+    let fake = Fake::new();
+    let scope = "panorama/images/hud/crosshair/scope_common_psd.vtex_c";
+    fake.update_game_file(scope, vindicta_texture());
+    let mut hud = HudLayout::default();
+    hud.elements.insert(
+        ElementId::Minimap,
+        ElementEdit {
+            scale_pct: 120,
+            ..ElementEdit::default()
+        },
+    );
+    icons::set(
+        &mut hud.icons,
+        &fake.state,
+        scope,
+        &test_png(300, 200),
+        Fit::Original,
+    )
+    .unwrap();
+    assert!(!hud.is_vanilla());
+
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    assert_eq!(plan.icon_problems, []);
+    let HudAction::Write(bytes) = &plan.action else {
+        panic!("expected a write, got {:?}", plan.action);
+    };
+    let addon = VpkDir::in_memory(bytes.clone()).unwrap();
+    assert!(addon.contains(HUD), "the layout edit ships beside the icon");
+    let v = Vtex::parse(&addon.read(scope).unwrap()).unwrap();
+    assert_eq!(
+        (v.width, v.height, v.format.name(), v.mips.len()),
+        (1080, 1080, "BGRA8888", 1)
+    );
+    assert!(v.flags.contains(Flags::NO_LOD));
+    let expect = verify::expect_for_hud(&fake.game(), &addon);
+    assert!(matches!(
+        expect.checks.get(scope),
+        Some(verify::Check::ReplacedImageOf(_))
+    ));
+    let verified = verify::verify(&addon, &expect);
+    assert!(verified.is_ok(), "{verified}");
+
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    match install::installed_state(&fake.paths, &fake.state).unwrap() {
+        InstalledState::Current(r) => assert!(r.patched.contains(&scope.to_string()), "{r:?}"),
+        other => panic!("expected Current, got {other:?}"),
+    }
+    let reports = verify::verify_installed(&fake.paths, &fake.state);
+    assert_eq!(reports.len(), 1);
+    assert!(
+        reports[0].result.as_ref().is_ok_and(|v| v.is_ok()),
+        "{}",
+        reports[0]
+    );
+    assert_eq!(
+        install::plan(&fake.paths, &hud, &fake.state)
+            .unwrap()
+            .action,
+        HudAction::Nothing,
+        "rebuilding the same icon is byte-identical"
+    );
+}
+
+#[test]
+fn a_broken_icon_is_reported_and_the_rest_still_ships() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    let gone = "panorama/images/hud/removed_by_update_psd.vtex_c";
+    icons::set(
+        &mut hud.icons,
+        &fake.state,
+        gone,
+        &test_png(8, 8),
+        Fit::Original,
+    )
+    .unwrap();
+
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    assert_eq!(plan.action, HudAction::Nothing, "nothing else to ship");
+    assert_eq!(plan.icon_problems.len(), 1);
+    assert_eq!(plan.icon_problems[0].game_path, gone);
+
+    icons::set(&mut hud.icons, &fake.state, ICON, &test_png(8, 8), Fit::Own).unwrap();
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    assert_eq!(plan.icon_problems.len(), 1);
+    assert_eq!(plan.shipped().collect::<Vec<_>>(), [ICON]);
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    let addon = VpkDir::open(&fake.addon()).unwrap();
+    assert!(addon.contains(ICON) && !addon.contains(gone));
+    let v = Vtex::parse(&addon.read(ICON).unwrap()).unwrap();
+    assert_eq!((v.width, v.height), (8, 8));
+    match install::installed_state(&fake.paths, &fake.state).unwrap() {
+        InstalledState::Current(r) => assert_eq!(r.patched, [ICON]),
+        other => panic!("expected Current, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_game_update_rebuilds_icons_from_the_new_file() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    icons::set(
+        &mut hud.icons,
+        &fake.state,
+        ICON,
+        &test_png(30, 30),
+        Fit::Original,
+    )
+    .unwrap();
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    let dims = |fake: &Fake| {
+        let v = Vtex::parse(&VpkDir::open(&fake.addon()).unwrap().read(ICON).unwrap()).unwrap();
+        (v.width, v.height)
+    };
+    assert_eq!(dims(&fake), (1024, 1024));
+
+    fake.update_game_file(ICON, vindicta_texture());
+    write_manifest(fake.paths.appmanifest.as_ref().unwrap(), "20261006");
+    assert!(matches!(
+        install::installed_state(&fake.paths, &fake.state).unwrap(),
+        InstalledState::Stale(_)
+    ));
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    assert!(matches!(plan.action, HudAction::Write(_)));
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    assert_eq!(
+        dims(&fake),
+        (1080, 1080),
+        "sized from the updated game file"
+    );
+}
+
+#[test]
+fn removing_the_hud_removes_icons_and_keeps_the_stored_image() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    let set = icons::set(&mut hud.icons, &fake.state, ICON, &test_png(8, 8), Fit::Own).unwrap();
+    fake.install(layout::compile(&hud).unwrap());
+    assert!(fake.addon().exists());
+
+    let plan = install::plan(&fake.paths, &HudLayout::default(), &fake.state).unwrap();
+    assert_eq!(plan.action, HudAction::Remove);
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    assert!(!fake.addon().exists());
+    assert!(set.stored_at(&fake.state).is_file());
+
+    icons::reset(&mut hud.icons, ICON);
+    assert!(hud.is_vanilla());
+}
+
+#[test]
+fn verify_rejects_an_icon_that_is_not_our_encoding() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    icons::set(&mut hud.icons, &fake.state, ICON, &test_png(8, 8), Fit::Own).unwrap();
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    let HudAction::Write(bytes) = &plan.action else {
+        panic!("expected a write");
+    };
+    let built = VpkDir::in_memory(bytes.clone()).unwrap();
+    let mut files: BTreeMap<String, Vec<u8>> = built
+        .entries
+        .keys()
+        .map(|p| (p.clone(), built.read(p).unwrap()))
+        .collect();
+    files.insert(ICON.to_string(), game_icon());
+    let bad = VpkDir::in_memory(vpk::write(&files)).unwrap();
+    let verified = verify::verify(&bad, &verify::expect_for_hud(&fake.game(), &bad));
+    assert!(
+        verified
+            .problems
+            .iter()
+            .any(|p| p.contains("expected one BGRA8888")),
+        "{verified}"
+    );
+    files.insert(ICON.to_string(), {
+        let mut ours = built.read(ICON).unwrap();
+        ours.pop();
+        ours
+    });
+    let bad = VpkDir::in_memory(vpk::write(&files)).unwrap();
+    let verified = verify::verify(&bad, &verify::expect_for_hud(&fake.game(), &bad));
+    assert!(!verified.is_ok(), "a truncated icon fails");
 }

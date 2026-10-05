@@ -15,6 +15,8 @@ use crate::hud::install::{ADDON_FILE as HUD_ADDON_FILE, GAME_PAK, addons_dir};
 use crate::hud::resource::{self, Resource};
 use crate::hud::vpk::VpkDir;
 use crate::locate::GamePaths;
+use crate::texture::encode;
+use crate::texture::svg;
 use crate::texture::vtex::{Flags, Layout, Vtex};
 
 /// What one entry must match beyond being readable, taken from the game's own file.
@@ -35,6 +37,9 @@ pub enum Check {
     PinnedLodsOf(Vec<u8>),
     /// This texture area-averaged smaller with its aspect, format and flags kept.
     ResampledFrom(Vec<u8>),
+    /// The player's image encoded into this game image: uncompressed BGRA8888, one mip,
+    /// `NO_LOD`, the game file's RED2 block.
+    ReplacedImageOf(Vec<u8>),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -143,6 +148,9 @@ fn check_content(path: &str, data: &[u8], expect: &Expect) -> Result<(), String>
         "vxml_c" => check_text_layout(data)?,
         "vjs_c" => check_script(data)?,
         "vtex_c" => check_texture(data)?,
+        "vsvg_c" => {
+            svg::svg_text(data).map_err(|e| e.to_string())?;
+        }
         "vpcf_c" => {
             if let Some(stub) = &expect.particle_stub
                 && data != stub
@@ -161,6 +169,7 @@ fn check_content(path: &str, data: &[u8], expect: &Expect) -> Result<(), String>
         Some(Check::TopMipOf(original)) => top_mip_of(data, original),
         Some(Check::PinnedLodsOf(original)) => pinned_lods_of(data, original),
         Some(Check::ResampledFrom(original)) => resampled_from(data, original),
+        Some(Check::ReplacedImageOf(original)) => replaced_image_of(data, original),
     }
 }
 
@@ -351,6 +360,38 @@ fn resampled_from(data: &[u8], original: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+fn replaced_image_of(data: &[u8], original: &[u8]) -> Result<(), String> {
+    let (ours, _) = parse_both(data, original)?;
+    if ours.format.0 != encode::BGRA8888 || ours.mips.len() != 1 {
+        return Err(format!(
+            "{} with {} mip levels; expected one BGRA8888 level",
+            ours.format.name(),
+            ours.mips.len()
+        ));
+    }
+    if !ours.flags.contains(Flags::NO_LOD) {
+        return Err("NO_LOD flag is not set".into());
+    }
+    let want = usize::from(ours.width) * usize::from(ours.height) * 4;
+    if data.len() != ours.pixel_start() + want {
+        return Err(format!(
+            "pixel data is {} bytes, {}x{} BGRA8888 needs {want}",
+            data.len().saturating_sub(ours.pixel_start()),
+            ours.width,
+            ours.height
+        ));
+    }
+    let red2 = |bytes: &[u8]| {
+        Resource::parse(bytes)
+            .ok()
+            .and_then(|r| r.block(b"RED2").cloned())
+    };
+    if red2(data) != red2(original) {
+        return Err("RED2 block differs from the game's image".into());
+    }
+    Ok(())
+}
+
 /// What `id`'s pak must match, from the game's own files. A game archive that cannot be
 /// read leaves those checks out; the pak's own integrity is always checked.
 pub fn expect_for(id: AddonId, paths: &GamePaths) -> Expect {
@@ -363,35 +404,27 @@ pub fn expect_for(id: AddonId, paths: &GamePaths) -> Expect {
     }
 }
 
-/// The HUD pak patches whichever stylesheets and layouts the layout touches; each must
-/// come from the game's file at the same path. Our own files under `deadtune/` have no
-/// game original and get the content checks only.
-pub fn expect_for_hud(paths: &GamePaths, pak: &VpkDir) -> Expect {
+/// The HUD pak patches whichever stylesheets and layouts the layout touches and replaces
+/// whichever images the player swapped; each must come from `game`'s file at the same path.
+/// Our own files under `deadtune/` have no game original and get the content checks only.
+pub fn expect_for_hud(game: &VpkDir, pak: &VpkDir) -> Expect {
     let checks = pak
         .entries
         .keys()
         .filter_map(|p| {
-            let check = if p.ends_with(".vcss_c") {
-                Check::StyleFrom
-            } else if p.ends_with(".vxml_c") {
-                Check::LayoutFrom
-            } else {
-                return None;
+            let check = match p.rsplit_once('.').map_or("", |(_, ext)| ext) {
+                "vcss_c" | "vsvg_c" => Check::StyleFrom,
+                "vxml_c" => Check::LayoutFrom,
+                "vtex_c" => Check::ReplacedImageOf,
+                _ => return None,
             };
-            game_file(paths, p).map(|b| (p.clone(), check(b)))
+            game.read(p).ok().map(|b| (p.clone(), check(b)))
         })
         .collect();
     Expect {
         particle_stub: None,
         checks,
     }
-}
-
-fn game_file(paths: &GamePaths, path: &str) -> Option<Vec<u8>> {
-    VpkDir::open(&paths.citadel_dir.join(GAME_PAK))
-        .ok()?
-        .read(path)
-        .ok()
 }
 
 /// One installed pak and what its check found.
@@ -443,8 +476,14 @@ pub fn verify_installed(paths: &GamePaths, state_dir: &Path) -> Vec<PakReport> {
             Ok(crate::hud::install::InstalledState::Foreign)
         )
     {
+        let game = VpkDir::open(&paths.citadel_dir.join(GAME_PAK)).ok();
         let result = VpkDir::open(&hud)
-            .map(|pak| verify(&pak, &expect_for_hud(paths, &pak)))
+            .map(|pak| {
+                let expect = game
+                    .as_ref()
+                    .map_or_else(Expect::default, |game| expect_for_hud(game, &pak));
+                verify(&pak, &expect)
+            })
             .map_err(|e| e.to_string());
         out.push(PakReport {
             label: "HUD layout".into(),

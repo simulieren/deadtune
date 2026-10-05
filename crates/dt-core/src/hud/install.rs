@@ -5,10 +5,12 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use super::icons::{self, IconProblem};
 use super::inject::{self, SCRIPTS_DIR, STYLES_DIR};
 use super::layout::{self, HudLayout, HudPatch};
 use super::vpk::{self, VpkDir};
 use super::{resource, searchpaths};
+use crate::addons::verify;
 use crate::backup::{atomic_write, sha256_hex};
 use crate::locate::{self, GamePaths};
 
@@ -40,6 +42,17 @@ pub struct HudPlan {
     pub conflicts: Vec<Conflict>,
     /// gameinfo.gi lacks `Game citadel/addons`; run `searchpaths::ensure_addons`.
     pub needs_search_path: bool,
+    /// Icon overrides left out of this build, and why; the rest of the addon still ships.
+    pub icon_problems: Vec<IconProblem>,
+}
+
+impl HudPlan {
+    /// Paths the addon carries: the patch's, minus icon overrides that failed to build.
+    pub fn shipped(&self) -> impl Iterator<Item = &str> {
+        self.patch
+            .paths()
+            .filter(|p| !self.icon_problems.iter().any(|i| i.game_path == *p))
+    }
 }
 
 /// What `state_dir/hud.toml` records after `execute`, to recognise our file and
@@ -83,6 +96,8 @@ pub enum HudError {
     Foreign(PathBuf),
     #[error("game archive {0} not found; is the game fully installed?")]
     MissingGamePak(PathBuf),
+    #[error("the built HUD addon failed its read-back check, so it was not installed: {0}")]
+    Verify(String),
 }
 
 pub const RECORD_FILE: &str = "hud.toml";
@@ -96,7 +111,9 @@ pub fn plan(paths: &GamePaths, layout: &HudLayout, state_dir: &Path) -> Result<H
     plan_patch(paths, layout::compile(layout)?, state_dir)
 }
 
-/// `plan` after compilation. An empty patch plans removal of our addon.
+/// `plan` after compilation. An empty patch, or one whose every file failed to build (only
+/// broken icon overrides), plans removal of our addon. The built pak is read back through
+/// `addons::verify` against the game's files before it can be written.
 pub fn plan_patch(
     paths: &GamePaths,
     patch: HudPatch,
@@ -106,7 +123,29 @@ pub fn plan_patch(
     let record = read_record(state_dir)?;
     let installed = file_sha(&addon_path)?;
 
-    if patch.is_empty() {
+    let (bytes, icon_problems) = if patch.is_empty() {
+        (None, Vec::new())
+    } else {
+        let pak_path = paths.citadel_dir.join(GAME_PAK);
+        if !pak_path.is_file() {
+            return Err(HudError::MissingGamePak(pak_path));
+        }
+        let game = VpkDir::open(&pak_path)?;
+        let built = build_addon(&game, &patch, state_dir)?;
+        if built.files.is_empty() {
+            (None, built.icon_problems)
+        } else {
+            let bytes = vpk::write(&built.files);
+            let pak = VpkDir::in_memory(bytes.clone())?;
+            let verified = verify::verify(&pak, &verify::expect_for_hud(&game, &pak));
+            if !verified.is_ok() {
+                return Err(HudError::Verify(verified.to_string()));
+            }
+            (Some(bytes), built.icon_problems)
+        }
+    };
+
+    let Some(bytes) = bytes else {
         ensure_owned(&addon_path, installed.as_deref(), record.as_ref(), None)?;
         let action = if installed.is_some() || record.is_some() {
             HudAction::Remove
@@ -119,14 +158,9 @@ pub fn plan_patch(
             patch,
             conflicts: Vec::new(),
             needs_search_path: false,
+            icon_problems,
         });
-    }
-
-    let pak_path = paths.citadel_dir.join(GAME_PAK);
-    if !pak_path.is_file() {
-        return Err(HudError::MissingGamePak(pak_path));
-    }
-    let bytes = build_addon(&VpkDir::open(&pak_path)?, &patch)?;
+    };
     let built = sha256_hex(&bytes);
     ensure_owned(
         &addon_path,
@@ -154,6 +188,7 @@ pub fn plan_patch(
         patch,
         conflicts,
         needs_search_path,
+        icon_problems,
     })
 }
 
@@ -181,7 +216,7 @@ pub fn execute(plan: &HudPlan, paths: &GamePaths, state_dir: &Path) -> Result<()
             let record = InstallRecord {
                 sha256,
                 build_id: build_id(paths)?,
-                patched: patched_paths(&plan.patch).map(str::to_string).collect(),
+                patched: plan.shipped().map(str::to_string).collect(),
             };
             let text = toml::to_string(&record).map_err(|e| HudError::Toml(e.to_string()))?;
             std::fs::create_dir_all(state_dir)?;
@@ -218,10 +253,23 @@ pub fn installed_state(paths: &GamePaths, state_dir: &Path) -> Result<InstalledS
     }
 }
 
-/// Builds the addon bytes from the game pak and a patch: the game's stylesheets with our
-/// CSS appended, the game's layouts rebuilt as text with our includes, and our own
-/// scripts and stylesheets. Exposed for tests and the example binary.
-pub fn build_addon(game_pak: &VpkDir, patch: &HudPatch) -> Result<Vec<u8>, HudError> {
+/// The addon's files, from the game pak and a patch.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BuiltAddon {
+    pub files: BTreeMap<String, Vec<u8>>,
+    /// Icon overrides that could not be built; everything else is in `files`.
+    pub icon_problems: Vec<IconProblem>,
+}
+
+/// Builds the addon's files from the game pak and a patch: the game's stylesheets with our
+/// CSS appended, the game's layouts rebuilt as text with our includes, our own scripts and
+/// stylesheets, and the player's icons encoded from the game's images (stored images are
+/// read from `data_dir`). Exposed for tests and the example binary.
+pub fn build_addon(
+    game_pak: &VpkDir,
+    patch: &HudPatch,
+    data_dir: &Path,
+) -> Result<BuiltAddon, HudError> {
     let mut files = BTreeMap::new();
     for (path, css) in patch.styles.iter().filter(|(_, css)| !css.is_empty()) {
         let compiled = game_pak.read(path)?;
@@ -253,11 +301,12 @@ pub fn build_addon(game_pak: &VpkDir, patch: &HudPatch) -> Result<Vec<u8>, HudEr
         };
         files.insert(path.clone(), built);
     }
-    Ok(vpk::write(&files))
-}
-
-fn patched_paths(patch: &HudPatch) -> impl Iterator<Item = &str> {
-    patch.paths()
+    let (images, icon_problems) = icons::build(game_pak, &patch.icons, data_dir);
+    files.extend(images);
+    Ok(BuiltAddon {
+        files,
+        icon_problems,
+    })
 }
 
 /// A file at our path is ours if it matches our record, or is byte-identical to what
@@ -296,7 +345,8 @@ fn conflicts(addons: &Path, patch: &HudPatch) -> Vec<Conflict> {
         .into_iter()
         .filter_map(|addon| {
             let other = VpkDir::open(&addon).ok()?;
-            let paths: Vec<String> = patched_paths(patch)
+            let paths: Vec<String> = patch
+                .paths()
                 .filter(|p| other.contains(p))
                 .map(str::to_string)
                 .collect();

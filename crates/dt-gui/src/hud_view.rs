@@ -50,14 +50,21 @@ enum Guide {
 }
 
 pub fn hud(ui: &mut Ui, state: &mut AppState) {
-    let pages = [HudPage::Layout, HudPage::Colors, HudPage::TopBar];
+    let pages = [
+        HudPage::Layout,
+        HudPage::Colors,
+        HudPage::TopBar,
+        HudPage::Ingame,
+    ];
     let selected = pages
         .iter()
         .position(|p| *p == state.ui.hud_page)
         .unwrap_or(0);
-    if let Some(i) =
-        crate::widgets::segmented(ui, &["Layout", "Minimap colours", "Top bar"], selected)
-    {
+    if let Some(i) = crate::widgets::segmented(
+        ui,
+        &["Layout", "Minimap colours", "Top bar", "In-game settings"],
+        selected,
+    ) {
         state.ui.hud_page = pages[i];
     }
     ui.add_space(8.0);
@@ -65,6 +72,7 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
         HudPage::Layout => layout_page(ui, state),
         HudPage::Colors => crate::minimap_view::page(ui, state),
         HudPage::TopBar => crate::topbar_view::page(ui, state),
+        HudPage::Ingame => crate::ingame_view::page(ui, state),
     }
 }
 

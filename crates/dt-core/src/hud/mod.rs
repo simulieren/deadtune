@@ -16,6 +16,7 @@ pub mod crc32;
 pub mod css;
 pub mod elements;
 pub mod health_style;
+pub mod ingame;
 pub mod inject;
 pub mod install;
 pub mod kv3;
@@ -28,6 +29,7 @@ pub mod topbar;
 pub mod vpk;
 
 pub use elements::{ElementId, ElementSpec};
+pub use ingame::IngameSettings;
 pub use layout::{ElementEdit, HudLayout, HudPatch};
 pub use minimap_colors::{Color, IconId};
 pub use topbar::TopBarStyle;

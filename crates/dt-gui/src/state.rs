@@ -24,6 +24,7 @@ use dt_core::gi::{self, Override};
 use dt_core::hud::apples_tunnels::{ApplesTunnels, DOT_SIZE_RANGE, RADIUS_RANGE};
 use dt_core::hud::elements::ElementId;
 use dt_core::hud::health_style::HealthStyle;
+use dt_core::hud::ingame::{self, IngameSettings};
 use dt_core::hud::install::HudPlan;
 use dt_core::hud::layout::{ElementEdit, HudLayout};
 use dt_core::hud::minimap_colors::{self, Color, IconId};
@@ -196,6 +197,7 @@ pub enum Section {
     Minimap,
     TopBar,
     Health,
+    Ingame,
     Addons,
     System,
     GameFiles,
@@ -203,7 +205,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 14] = [
+    pub const ALL: [Section; 15] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -214,6 +216,7 @@ impl Section {
         Section::Minimap,
         Section::TopBar,
         Section::Health,
+        Section::Ingame,
         Section::Addons,
         Section::System,
         Section::GameFiles,
@@ -232,6 +235,7 @@ impl Section {
             Section::Minimap => "Minimap",
             Section::TopBar => "Top bar",
             Section::Health => "Health bar",
+            Section::Ingame => "In-game settings",
             Section::Addons => "Addons",
             Section::System => "System check",
             Section::GameFiles => "Game files",
@@ -251,6 +255,9 @@ impl Section {
             Section::Minimap => "Colours, marker sizes and the look of the minimap.",
             Section::TopBar => "Hero portraits, clock and soul lead, plus spawn timers and more.",
             Section::Health => "A bigger health number, colours by health, less shaking.",
+            Section::Ingame => {
+                "DeadTune rows inside Deadlock's own settings menu: a Wide FOV slider and live performance sliders."
+            }
             Section::Addons => {
                 "Community performance mods, rebuilt by DeadTune so they survive game updates."
             }
@@ -511,6 +518,7 @@ pub enum HudPage {
     Layout,
     Colors,
     TopBar,
+    Ingame,
 }
 
 /// The game's own enemy colour setting (2026-09-29 accessibility update).
@@ -1787,12 +1795,14 @@ impl AppState {
         let top_bar = std::mem::take(&mut self.profile.hud.top_bar);
         let health = std::mem::take(&mut self.profile.hud.health);
         let apples_tunnels = self.profile.hud.apples_tunnels;
+        let ingame = std::mem::take(&mut self.profile.hud.ingame);
         self.profile.hud = HudLayout {
             minimap_colors,
             minimap,
             top_bar,
             health,
             apples_tunnels,
+            ingame,
             ..preset.layout()
         };
         self.refresh_preview();
@@ -1808,6 +1818,7 @@ impl AppState {
                 top_bar: self.profile.hud.top_bar.clone(),
                 health: self.profile.hud.health.clone(),
                 apples_tunnels: self.profile.hud.apples_tunnels,
+                ingame: self.profile.hud.ingame.clone(),
                 ..p.layout()
             } == self.profile.hud
         })
@@ -1893,6 +1904,54 @@ impl AppState {
 
     pub fn health_changed_count(&self) -> usize {
         self.profile.hud.health.changed_count()
+    }
+
+    /// Replaces the in-game settings rows; names that are not rows of the DeadTune group
+    /// are dropped.
+    pub fn set_ingame(&mut self, mut settings: IngameSettings) {
+        settings
+            .performance
+            .retain(|name| ingame::perf_row(name).is_some());
+        self.profile.hud.ingame = settings;
+        self.refresh_preview();
+    }
+
+    pub fn ingame_changed_count(&self) -> usize {
+        self.profile.hud.ingame.changed_count()
+    }
+
+    /// Carries a Wide FOV set on the in-game slider into gameinfo.gi and the profile, so
+    /// the Overview's Wide view shows it. Once per saved value; nothing most of the time.
+    pub fn sync_ingame(&mut self) -> Option<Status> {
+        let sync = match ingame::sync_wide_fov(&self.paths, &self.store) {
+            Ok(Some(sync)) => sync,
+            Ok(None) => return None,
+            Err(e) => return Some(Status::Error(format!("in-game Wide FOV: {e}"))),
+        };
+        if sync.gameinfo_changed {
+            match LiveFiles::read(&self.paths) {
+                Ok(live) => {
+                    self.live = live;
+                    self.known_gameinfo_sha = sha256_hex(self.live.gameinfo.as_bytes());
+                }
+                Err(e) => return Some(Status::Error(format!("in-game Wide FOV: {e}"))),
+            }
+        }
+        let value = ingame::wide_fov_text(sync.ratio);
+        let was_saved = self.saved.is_some();
+        if let Err(e) = self.set_convar(ingame::WIDE_FOV_CONVAR, value.clone()) {
+            return Some(Status::Error(format!("in-game Wide FOV: {e}")));
+        }
+        if was_saved && let Err(e) = self.save_profile() {
+            return Some(Status::Error(format!("in-game Wide FOV: {e}")));
+        }
+        let shown = match crate::friendly::row(ingame::WIDE_FOV_CONVAR) {
+            Some(row) => crate::friendly::display(row.control, &value),
+            None => value,
+        };
+        Some(Status::Info(format!(
+            "Wide view set to {shown} from the in-game slider"
+        )))
     }
 
     pub fn reset_minimap_style(&mut self) {
@@ -3200,6 +3259,72 @@ mod tests {
         state.apply_hud_preset(HudPreset::Vanilla);
         assert_eq!(state.hud_preset(), Some(HudPreset::Vanilla));
         assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn ingame_rows_drop_unknown_names_count_and_survive_layout_presets() {
+        let (_dir, mut state) = state();
+        state.set_ingame(IngameSettings {
+            wide_fov: true,
+            performance: ["r_citadel_shadow_quality", "fps_max"]
+                .map(String::from)
+                .into(),
+        });
+        let stored = state.profile.hud.ingame.clone();
+        assert_eq!(
+            stored.performance.iter().collect::<Vec<_>>(),
+            ["r_citadel_shadow_quality"]
+        );
+        assert_eq!(state.ingame_changed_count(), 2);
+        assert!(state.is_dirty());
+        state.apply_hud_preset(HudPreset::Competitive);
+        assert_eq!(state.profile.hud.ingame, stored);
+        assert_eq!(state.hud_preset(), Some(HudPreset::Competitive));
+        state.set_ingame(IngameSettings::default());
+        state.apply_hud_preset(HudPreset::Vanilla);
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn ingame_wide_fov_sync_lands_in_gameinfo_and_the_profile_once() {
+        let (_dir, mut state) = state();
+        assert_eq!(state.sync_ingame(), None, "nothing saved in game yet");
+        std::fs::write(
+            state.paths.cfg_dir.join("user_convars_0_slot0.vcfg"),
+            format!(
+                "\"config\" {{ \"convars\" {{ \"{}\" \"{}\" }} }}",
+                ingame::STASH_CONVAR,
+                ingame::stash_encode(2.49)
+            ),
+        )
+        .unwrap();
+        let status = state.sync_ingame().expect("synced");
+        assert!(
+            matches!(&status, Status::Info(s) if s.starts_with("Wide view set to ") && s.contains("100")),
+            "{status:?}"
+        );
+        assert_eq!(
+            state.current_value("r_aspectratio").as_deref(),
+            Some("2.49")
+        );
+        assert!(
+            state.live.gameinfo.contains("r_aspectratio"),
+            "written to gameinfo.gi"
+        );
+        assert_eq!(
+            state.known_gameinfo_sha,
+            sha256_hex(state.live.gameinfo.as_bytes())
+        );
+        assert!(
+            plan(&state).restart.is_empty() && !plan(&state).is_empty() || plan(&state).is_empty(),
+            "the file already holds the value: {:?}",
+            plan(&state)
+        );
+        assert!(
+            !state.is_dirty(),
+            "the profile was on disk, so the synced value is saved with it"
+        );
+        assert_eq!(state.sync_ingame(), None, "same value again: nothing to do");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # In-game settings rows (live dev-only ConVars)
 
-Status: research done, nothing built. Last update 2026-10-05.
+Status: Phases 2 and 3 built on the Mac (2026-10-05), untested in game; Phase 0 and the G-1 to G-7 checks in `docs/testing-windows.md` decide whether the settings control writes dev-only ConVars live. Last update 2026-10-05.
 
 ## Goal
 
@@ -52,15 +52,16 @@ Retest steps: rename to `pak50_dir.vpk`, put it in `game\citadel\addons`, make s
 
 ### Phase 2: a DeadTune row, rebuilt from the game's file
 
-- [ ] Use `hud::inject` to add one `CitadelSettingsSlider` row bound to `r_aspectratio` right after the stock FOV row, in the game's own current `popup_settings.vxml_c` (never replace it from a stale copy). Rebuild on every game update like the other HUD files.
-- [ ] Persistence without the invisible-menu trick: DeadTune already writes `r_aspectratio` to `gameinfo.gi` (Wide view). Our script saves in-game changes to an archived ConVar the game keeps; on its next run DeadTune reads that value from the user config and writes it into `gameinfo.gi`, and the Overview's Wide view slider shows it.
-- [ ] Credit: "Idea by Mixboat (Wide FOV Slider); rebuilt by DeadTune from your game files."
-- [ ] Launch guard covers it; System check lists other addons replacing `popup_settings`.
+- [x] `hud::ingame` adds a `PopupSettingsSettingsRow` with a `CitadelSettingsSlider` bound to `r_aspectratio` (0.010 to 3.200, snap 0.005, class `VideoPreview`, plain label "Wide FOV": labels starting with `#` need a localization token, plain text shows as is) right after the row holding `CameraFOV`, through a new `inject::Anchor::AfterParentOf` (the stock row has no id). `HudLayout.ingame` (serde default, skipped when vanilla) goes through the normal HUD pipeline, so the menu is rebuilt from the game's own file after every update. Proven against the build 25712201 snapshot (`DEADTUNE_GAME_SNAPSHOT`, test `ingame_rows_rebuild_the_real_settings_layout`): 1482 stock lines unchanged and in order, 15 lines added, `addons verify` accepts the pak.
+- [x] Persistence: `assets/ingame_settings.js` polls the slider and writes `citadel_ability_preview_path_debug_draw_dt` (archived `cl, a`, a debug-draw timestep the game never reads in play, and the one stash the mod has used in the field) as 10 plus the ratio, then `host_writeconfig`. `ingame::sync_wide_fov` reads `cfg/user_convars_*.vcfg` (`usercfg`) when DeadTune starts, writes `r_aspectratio` into `gameinfo.gi` losslessly with a backup, records the stash value so each value syncs once (a later DeadTune edit is never undone), and the GUI sets the profile's Wide view to match.
+- [x] Credit on the page: "Idea by Mixboat (Wide FOV Slider); rebuilt by DeadTune from your game files."
+- [x] System check (and `hud status`) warns about other addons that ship `popup_settings.vxml_c`. The launch guard's FATAL watch only runs during a performance-addon trial; the HUD pak (and so these rows) is outside it, as it is for the top bar and minimap layouts. Covering the HUD pak with the guard is a separate change.
 
 ### Phase 3: a DeadTune section (only if Phase 0 shows live writes work)
 
-- [ ] A "DeadTune" group in Settings > Advanced with live sliders for dev-only performance ConVars that today need a restart.
-- [ ] Test whether settings-control writes reach any `gameinfo_cannot_override` ConVar at runtime (unknown; probably not).
+- [x] Built ahead of Phase 0 on Simon's call: a `citadel_settings_deadtune` subsection appended to Settings > Advanced with 8 rows from the catalog (restart-class, dev-only, not cheat, not denylisted, not `gameinfo_ignored`, high or medium impact; sliders take min, max and snap from the catalog's range and step): shadow quality, ambient occlusion, fog quality, grass, prop draw distance, particle cap, small clutter props, bloom. The GUI's In-game settings page picks which rows appear. The subsection title comes from a localization token the game does not have, so the script sets it; if that fails the header reads `citadel_settings_deadtune` (check G-4).
+- [ ] Test whether settings-control writes reach any `gameinfo_cannot_override` ConVar at runtime (unknown; probably not). None of the 8 rows is one.
+- [ ] Phase 0 and G-1 to G-7 on Windows. If the control does not write dev-only ConVars live, both phases stay off by default and Wide view via `gameinfo.gi` remains the route.
 
 ## Risks
 

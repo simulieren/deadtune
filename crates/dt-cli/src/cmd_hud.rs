@@ -139,5 +139,12 @@ pub fn report_lines(env: &Env, paths: &GamePaths) -> Vec<String> {
             addon.display()
         ));
     }
+    for addon in doctor::settings_menu_conflicts(paths) {
+        lines.push(format!(
+            "Settings menu conflict: {} replaces {}",
+            addon.display(),
+            dt_core::hud::ingame::SETTINGS_LAYOUT
+        ));
+    }
     lines
 }

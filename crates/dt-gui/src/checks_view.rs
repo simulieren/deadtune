@@ -86,6 +86,7 @@ pub static INFO: &[CheckInfo] = &[
     info("HUD addon", Area::Addons, "HUD layout addon", true, "DeadTune's HUD addon should be installed and match your HUD settings."),
     info("HUD search path", Area::Addons, "Addon loading", false, "The game must be set up to load mods from its addons folder."),
     info("HUD conflicts", Area::Addons, "Other HUD mods", false, "Another mod that replaces the same HUD files would undo your layout."),
+    info("Settings menu mods", Area::Addons, "Other settings menu mods", false, "Another mod that replaces the game's settings menu would hide DeadTune's in-game settings rows."),
     info("Performance addons", Area::Addons, "Performance addons", true, "The performance addons you turned on."),
     info("Addons after update", Area::Addons, "Addons and game updates", false, "Addons are rebuilt after a game update so they keep working."),
     info("Addon files", Area::Addons, "Addon files", false, "Addon files DeadTune installed should not be changed by anything else."),

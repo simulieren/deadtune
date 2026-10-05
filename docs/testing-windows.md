@@ -165,6 +165,18 @@ The dots rebuild `hud_minimap.vxml_c` as a text layout with two includes and add
 - [ ] Try a hero with an extra bar (Rat King armour, a shield item) and note anything that overlaps.
 - [ ] With bytenode's Minimal Healthbar or budhud mod installed alongside, System check lists it under "Other HUD mods".
 
+### 7d. In-game settings page (experimental, docs/plans/ingame-settings/plan.md)
+
+The rows go into the game's own `popup_settings.vxml_c`, rebuilt as a text layout with one include (`panorama/scripts/deadtune/ingame_settings.vjs_c`); nothing of the stock menu is replaced. The Wide FOV slider writes `r_aspectratio` directly; our script copies every change into `citadel_ability_preview_path_debug_draw_dt` (archived, so the game saves it to `cfg\user_convars_*.vcfg`) as 10 plus the ratio, and DeadTune reads that back when it starts.
+
+- [ ] **G-1 Row appears**: In-game settings page, turn on "Wide FOV slider", Apply, launch through DeadTune (guard on). The game reaches the main menu; Settings > Game > Camera Settings shows a "Wide FOV" slider right under the game's FOV slider, 0.010 to 3.200. `console.log` has no `FATAL` and no line naming `popup_settings`. `tools\deadtune-cli.exe addons verify` prints `ok` for `pak77_dir.vpk`. If the menu is stock or the game fails to start, the text layout was refused: copy the console lines and note it.
+- [ ] **G-2 Live**: in a match or the hideout, drag the Wide FOV slider: the view widens or narrows while you drag (the menu goes see-through like the stock FOV slider). If nothing changes, open the console and run `r_aspectratio` with no value after dragging; note what it prints. That tells whether the settings control writes a dev-only ConVar at all (plan Phase 0).
+- [ ] **G-3 Saved**: set it to 2.400, close the menu, quit the game. `cfg\user_convars_0_slot0.vcfg` holds `"citadel_ability_preview_path_debug_draw_dt" "12.400"`. Start DeadTune: the status line says "Wide view set to ... from the in-game slider", the Overview's Wide view shows that value, `gameinfo.gi` has `r_aspectratio 2.4`, and System check is green. Start the game again: the wide view is already on at the main menu. Change Wide view in DeadTune afterwards (Apply): a DeadTune restart does not put the in-game value back.
+- [ ] **G-4 DeadTune group**: turn on a few rows (Shadow quality, Particle cap, Small clutter props), Apply, launch. Settings > Advanced ends with a "DeadTune" subsection (if the title reads `citadel_settings_deadtune` instead, the script's title fix did not take; note it). Drag Shadow quality from 3 to 0 in a match: shadows change live. Toggle Small clutter props: clutter disappears live. Note any row that does nothing live.
+- [ ] **G-5 Search**: the settings search box finds "Wide FOV" and "Shadow quality" (optional; our rows carry no search alias).
+- [ ] **G-6 Vanilla removes**: Reset all on the page (nothing else set on the HUD pages), Apply: `pak77_dir.vpk` is gone and the settings menu is stock.
+- [ ] **G-7 Another settings mod**: with Mixboat's Wide FOV Slider (or any mod replacing `popup_settings`) installed as `pakNN_dir.vpk`, System check warns under "Other settings menu mods"; note which menu the game shows.
+
 ### 8. Benchmark
 - [ ] **P0-7**: capture 3 identical 60 s runs with PresentMon, import each in Advanced > Bench. Variance under 3%? Note which CSV columns your PresentMon version writes (`MsBetweenPresents` or `FrameTime`).
 

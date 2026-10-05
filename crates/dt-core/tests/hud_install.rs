@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use dt_core::addons::verify;
 use dt_core::hud::apples_tunnels::{self, MINIMAP_LAYOUT};
+use dt_core::hud::ingame::{self, IngameSettings, SETTINGS_LAYOUT};
 use dt_core::hud::inject;
 use dt_core::hud::install::{self, ADDON_FILE, GAME_PAK, HudAction, HudError, InstalledState};
 use dt_core::hud::resource::{Resource, style_text};
@@ -13,6 +14,7 @@ use dt_core::hud::{
     Color, ElementEdit, ElementId, HudLayout, HudPatch, IconId, TopBarStyle, layout,
 };
 use dt_core::locate::{self, GamePaths};
+use dt_core::usercfg;
 
 const HUD: &str = "panorama/styles/hud.vcss_c";
 const MINIMAP: &str = "panorama/styles/hud_minimap.vcss_c";
@@ -36,6 +38,11 @@ impl Fake {
     }
 
     fn with_pak(pak: bool) -> Fake {
+        Fake::build(pak.then(|| inject::compiled_layout(&ingame::stand_in_layout())))
+    }
+
+    /// A game pak whose settings menu is `settings`; `None` means no game pak at all.
+    fn build(settings: Option<Vec<u8>>) -> Fake {
         let tmp = tempfile::tempdir().unwrap();
         let steamapps = tmp.path().join("steamapps");
         let root = steamapps.join("common/Deadlock");
@@ -52,8 +59,9 @@ impl Fake {
         )
         .unwrap();
         write_manifest(&steamapps.join("appmanifest_1422450.acf"), "20261004");
-        if pak {
+        if let Some(settings) = settings {
             let mut files = BTreeMap::new();
+            files.insert(SETTINGS_LAYOUT.to_string(), settings);
             files.insert(HUD.to_string(), vanilla_hud());
             // Any compiled stylesheet works as the minimap and top bar templates.
             files.insert(MINIMAP.to_string(), vanilla_hud());
@@ -484,6 +492,135 @@ fn layout_compiles_installs_and_vanilla_removes() {
     assert_eq!(plan.action, HudAction::Remove);
     install::execute(&plan, &fake.paths, &fake.state).unwrap();
     assert!(!fake.addon().exists());
+}
+
+fn ingame_rows() -> HudLayout {
+    HudLayout {
+        ingame: IngameSettings {
+            wide_fov: true,
+            performance: ["r_citadel_shadow_quality", "sc_clutter_enable"]
+                .map(String::from)
+                .into(),
+        },
+        ..HudLayout::default()
+    }
+}
+
+/// Installs the in-game settings rows against the settings layout in the fake pak and
+/// checks the rebuilt menu: the game's rows untouched and in order, ours in their places,
+/// the pak verifying against the game file, and vanilla removing it all.
+fn check_ingame_rows(fake: &Fake) -> String {
+    let hud = ingame_rows();
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    assert!(matches!(plan.action, HudAction::Write(_)));
+    assert!(plan.conflicts.is_empty());
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+
+    let addon = VpkDir::open(&fake.addon()).unwrap();
+    let mut entries: Vec<&str> = addon.entries.keys().map(String::as_str).collect();
+    entries.sort_unstable();
+    assert_eq!(entries, [SETTINGS_LAYOUT, ingame::OWN_SCRIPT]);
+    let game = VpkDir::open(&fake.paths.citadel_dir.join(GAME_PAK)).unwrap();
+    let original = inject::layout_text(&game.read(SETTINGS_LAYOUT).unwrap()).unwrap();
+    let rebuilt = inject::layout_text(&addon.read(SETTINGS_LAYOUT).unwrap()).unwrap();
+    assert!(rebuilt.starts_with("<!-- Rebuilt by DeadTune from the game's own panorama/layout/popups/popup_settings.vxml_c; adds s2r://panorama/scripts/deadtune/ingame_settings.vjs_c -->\n<root>\n"), "{}", &rebuilt[..200]);
+    assert!(inject::extends(&rebuilt, &original));
+    assert_eq!(
+        rebuilt.lines().count(),
+        original.lines().count() + 1 + 3 + 3 + 2 + 6
+    );
+    let fov = rebuilt.find("id=\"CameraFOV\"").unwrap();
+    let wide = rebuilt.find("id=\"DtWideFovRow\"").unwrap();
+    let next_stock_row = rebuilt[fov..]
+        .find("convar=\"citadel_camera_pitch_inverted\"")
+        .unwrap()
+        + fov;
+    assert!(
+        fov < wide && wide < next_stock_row,
+        "the Wide FOV row sits right after the stock FOV row"
+    );
+    let group = rebuilt.find("id=\"citadel_settings_deadtune\"").unwrap();
+    let advanced = rebuilt.find("id=\"citadel_settings_advanced\"").unwrap();
+    assert!(advanced < group);
+    assert!(rebuilt[group..].contains("convar=\"r_citadel_shadow_quality\""));
+    assert!(rebuilt[group..].contains("convar=\"sc_clutter_enable\""));
+    assert!(
+        !rebuilt.contains("r_grass_quality"),
+        "rows not picked stay out"
+    );
+
+    let script = Resource::parse(&addon.read(ingame::OWN_SCRIPT).unwrap()).unwrap();
+    assert!(
+        script.blocks[0]
+            .data
+            .starts_with(b"var DT_INGAME = { wideFov: true,")
+    );
+    let expect = verify::expect_for_hud(&fake.paths, &addon);
+    assert_eq!(expect.checks.len(), 1, "{expect:?}");
+    let verified = verify::verify(&addon, &expect);
+    assert!(verified.is_ok(), "{verified}");
+    match install::installed_state(&fake.paths, &fake.state).unwrap() {
+        InstalledState::Current(r) => assert_eq!(r.patched, [SETTINGS_LAYOUT, ingame::OWN_SCRIPT]),
+        other => panic!("expected Current, got {other:?}"),
+    }
+    let plan = install::plan(&fake.paths, &HudLayout::default(), &fake.state).unwrap();
+    assert_eq!(plan.action, HudAction::Remove);
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    assert!(!fake.addon().exists());
+    rebuilt
+}
+
+#[test]
+fn ingame_rows_rebuild_the_settings_layout() {
+    let rebuilt = check_ingame_rows(&Fake::new());
+    assert!(rebuilt.contains("<PopupSettingsSettingsRow id=\"DtWideFovRow\">"));
+}
+
+/// `DEADTUNE_GAME_SNAPSHOT=<dir>` points at a game file snapshot kept outside the repo
+/// (Valve's files): the real settings menu goes through the whole pipeline and the real
+/// saved ConVars through the reader. `DEADTUNE_GAME_SNAPSHOT_OUT=<file>` keeps the rebuilt
+/// menu's text.
+#[test]
+fn ingame_rows_rebuild_the_real_settings_layout() {
+    let Ok(dir) = std::env::var("DEADTUNE_GAME_SNAPSHOT") else {
+        return;
+    };
+    let dir = Path::new(&dir);
+    let raw = fs::read(dir.join("raw").join(SETTINGS_LAYOUT)).unwrap();
+    let decoded =
+        fs::read_to_string(dir.join("text/panorama/layout/popups/popup_settings.xml")).unwrap();
+    assert_eq!(
+        inject::layout_text(&raw).unwrap(),
+        decoded,
+        "the snapshot's own decode"
+    );
+    let rebuilt = check_ingame_rows(&Fake::build(Some(raw)));
+    let camera = rebuilt.find("id=\"citadel_settings_camera\"").unwrap();
+    let wide = rebuilt.find("id=\"DtWideFovRow\"").unwrap();
+    assert!(
+        camera < wide && wide - camera < 1200,
+        "inside Camera Settings: {}",
+        &rebuilt[camera..wide]
+    );
+    eprintln!(
+        "real popup_settings: {} lines decoded, {} lines rebuilt",
+        decoded.lines().count(),
+        rebuilt.lines().count()
+    );
+    if let Ok(out) = std::env::var("DEADTUNE_GAME_SNAPSHOT_OUT") {
+        fs::write(out, &rebuilt).unwrap();
+    }
+
+    let saved = usercfg::read_convars(&dir.join("raw/cfg")).unwrap();
+    assert_eq!(
+        saved.get("citadel_camera_hero_fov").map(String::as_str),
+        Some("75")
+    );
+    assert!(saved.len() > 50, "{}", saved.len());
+    assert!(
+        !saved.contains_key(ingame::STASH_CONVAR),
+        "never written by the mod on this machine"
+    );
 }
 
 #[test]

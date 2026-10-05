@@ -2,8 +2,9 @@
 //! fake install (`scripts/fake-install.sh`) can build every addon: the stylesheet as
 //! Sqooky's pak97 copied it, the game's empty particle, the Sinner's Sacrifice mask and
 //! model in their stock layout (made from the upstream pak like the unit tests do), a
-//! 2048 px stand-in for the scope overlay (the game's size), and the top bar's and minimap's stylesheets and
-//! layouts, and the HUD and health stylesheets (the HUD stylesheet standing in for every
+//! 2048 px stand-in for the scope overlay (the game's size), and the top bar's and minimap's
+//! stylesheets and layouts, a stand-in settings menu with the rows our in-game settings anchor
+//! on, and the HUD and health stylesheets (the HUD stylesheet standing in for every
 //! stylesheet).
 //!
 //! cargo run -p dt-core --example fake_pak01 -- <out pak01_dir.vpk>
@@ -16,6 +17,8 @@ use dt_core::addons::{native_blur, native_particles, native_scope, native_sinner
 use dt_core::hud::apples_tunnels::MINIMAP_LAYOUT;
 use dt_core::hud::elements::HUD_STYLE;
 use dt_core::hud::health_style::{HEALTH_CONTAINER_STYLE, HEALTH_STYLE};
+use dt_core::hud::ingame::{self, SETTINGS_LAYOUT};
+use dt_core::hud::inject;
 use dt_core::hud::minimap_colors::MINIMAP_STYLE;
 use dt_core::hud::resource::Resource;
 use dt_core::hud::topbar::{TOP_BAR_LAYOUT, TOP_BAR_STYLE};
@@ -121,6 +124,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         (
             MINIMAP_LAYOUT.to_string(),
             std::fs::read(here("tests/fixtures/hud/hud_minimap_vanilla.vxml_c"))?,
+        ),
+        (
+            SETTINGS_LAYOUT.to_string(),
+            inject::compiled_layout(&ingame::stand_in_layout()),
         ),
     ]);
     let mut files = files;

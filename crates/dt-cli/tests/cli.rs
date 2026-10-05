@@ -672,3 +672,95 @@ fn snapshot_take_list_and_diff() {
             .contains("no snapshot named 7")
     );
 }
+
+#[test]
+fn hud_icon_set_list_apply_reset() {
+    let fake = Fake::new();
+    let icon = "panorama/images/hud/minimap/objective_icon_psd.vtex_c";
+    let nolod = fs::read(repo(
+        "crates/dt-core/tests/fixtures/texture/emissive_1024_ati1n_nolod_1mip.vtex_c",
+    ))
+    .unwrap();
+    let hud = fs::read(repo("crates/dt-core/tests/fixtures/hud/hud_vanilla.vcss_c")).unwrap();
+    let files = BTreeMap::from([
+        ("panorama/styles/hud.vcss_c".to_string(), hud),
+        (icon.to_string(), nolod),
+    ]);
+    fs::write(
+        fake.game.join("game/citadel/pak01_dir.vpk"),
+        dt_core::hud::vpk::write(&files),
+    )
+    .unwrap();
+    let pixels = [0, 255, 0, 255].repeat(40 * 20);
+    let png = dt_core::texture::png::write(
+        &dt_core::texture::png::RgbaImage::new(40, 20, pixels).unwrap(),
+    )
+    .unwrap();
+    fs::write(fake.file("mine.png"), &png).unwrap();
+
+    assert!(
+        fake.ok(&["hud", "icon", "list", "--layout", "hud.toml"])
+            .contains("No icon overrides")
+    );
+    let out = fake.ok(&[
+        "hud", "icon", "set", icon, "mine.png", "--fit", "own", "--layout", "hud.toml",
+    ]);
+    assert!(out.contains("hud apply --layout hud.toml"), "{out}");
+    fs::remove_file(fake.file("mine.png")).unwrap();
+    let list = fake.ok(&["hud", "icon", "list", "--layout", "hud.toml"]);
+    assert!(
+        list.contains(icon) && list.contains("png, fit own"),
+        "{list}"
+    );
+
+    let addon = fake.game.join("game/citadel/addons/pak77_dir.vpk");
+    fake.ok(&["hud", "apply", "--layout", "hud.toml", "--yes"]);
+    let pak = dt_core::hud::vpk::VpkDir::open(&addon).unwrap();
+    let v = dt_core::texture::vtex::Vtex::parse(&pak.read(icon).unwrap()).unwrap();
+    assert_eq!((v.width, v.height, v.format.name()), (40, 20, "BGRA8888"));
+    let verified = fake.ok(&["addons", "verify"]);
+    assert!(
+        verified.contains("HUD layout (pak77_dir.vpk): ok"),
+        "{verified}"
+    );
+
+    let refused = fake.expect(
+        &[
+            "hud",
+            "icon",
+            "set",
+            "materials/x.vtex_c",
+            "hud.toml",
+            "--layout",
+            "hud.toml",
+        ],
+        1,
+    );
+    assert!(refused.contains("not a replaceable image"), "{refused}");
+    let bad_fit = fake.expect(
+        &[
+            "hud", "icon", "set", icon, "x.png", "--fit", "stretch", "--layout", "hud.toml",
+        ],
+        2,
+    );
+    assert!(bad_fit.contains("--fit is original or own"), "{bad_fit}");
+    assert!(
+        fake.expect(&["hud", "icon", "frob", "--layout", "hud.toml"], 2)
+            .contains("list, set, reset or reset-all")
+    );
+
+    assert!(
+        fake.ok(&["hud", "icon", "reset", icon, "--layout", "hud.toml"])
+            .contains("removed")
+    );
+    assert!(
+        fake.ok(&["hud", "icon", "reset", icon, "--layout", "hud.toml"])
+            .contains("no override")
+    );
+    fake.ok(&["hud", "icon", "reset-all", "--layout", "hud.toml"]);
+    fake.ok(&["hud", "apply", "--layout", "hud.toml", "--yes"]);
+    assert!(
+        !addon.exists(),
+        "a layout with nothing left removes the addon"
+    );
+}

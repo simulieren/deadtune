@@ -5,6 +5,8 @@
 //!   game's own compiled `hud.vcss_c` and shipped as one DeadTune-owned addon VPK.
 //!   Experimental minimap icon colours, marker sizes and map opacity take the same
 //!   path into `hud_minimap.vcss_c`.
+//! - Image overrides (`icons`) put the player's own PNG or SVG in place of any Panorama image,
+//!   encoded from the game's file into the same addon.
 //!
 //! Pipeline: `HudLayout` -> `layout::compile` -> `HudPatch` -> `install::plan`
 //! (reads the game's pak01, patches each style file via `resource`, rebuilds each
@@ -16,6 +18,7 @@ pub mod crc32;
 pub mod css;
 pub mod elements;
 pub mod health_style;
+pub mod icons;
 pub mod inject;
 pub mod install;
 pub mod kv3;

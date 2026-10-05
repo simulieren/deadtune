@@ -244,6 +244,9 @@ pub fn print_plan(plan: &ApplyPlan, diffs: bool) {
                 c.paths.join(", ")
             );
         }
+        for problem in &hud.icon_problems {
+            println!("HUD icon left out: {problem}");
+        }
     }
     if let Some(addons) = &plan.addons {
         for a in &addons.addons {

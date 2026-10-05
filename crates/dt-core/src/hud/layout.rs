@@ -8,6 +8,7 @@ use super::elements::{
     self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
 };
 use super::health_style::{HealthError, HealthStyle};
+use super::icons::IconOverride;
 use super::inject::LayoutEdit;
 use super::minimap_colors::{self, Color, IconId, MINIMAP_STYLE};
 use super::minimap_style::{MinimapStyle, StyleError};
@@ -73,6 +74,9 @@ pub struct HudLayout {
     /// Advanced: raw CSS appended after the generated rules, keyed by style file path
     /// (`panorama/styles/hud.vcss_c`). Must parse with balanced braces.
     pub extra_css: BTreeMap<String, String>,
+    /// The player's own images in place of the game's, by game path (`hud::icons`).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub icons: BTreeMap<String, IconOverride>,
 }
 
 /// Everything the addon changes, keyed by path inside the game VPK.
@@ -85,6 +89,8 @@ pub struct HudPatch {
     /// Our own plaintext scripts and stylesheets under `inject::SCRIPTS_DIR` and
     /// `inject::STYLES_DIR`.
     pub own_files: BTreeMap<String, String>,
+    /// Game images replaced by the player's own, encoded from the game's file at build time.
+    pub icons: BTreeMap<String, IconOverride>,
 }
 
 impl HudPatch {
@@ -92,6 +98,7 @@ impl HudPatch {
         self.styles.values().all(|css| css.is_empty())
             && self.layouts.values().all(LayoutEdit::is_empty)
             && self.own_files.is_empty()
+            && self.icons.is_empty()
     }
 
     /// Paths the addon will carry, in VPK order.
@@ -102,6 +109,7 @@ impl HudPatch {
             .map(|(path, _)| path.as_str())
             .chain(self.layouts.keys().map(String::as_str))
             .chain(self.own_files.keys().map(String::as_str))
+            .chain(self.icons.keys().map(String::as_str))
     }
 }
 
@@ -134,6 +142,7 @@ impl HudLayout {
             && self.health.is_vanilla()
             && self.apples_tunnels.is_vanilla()
             && self.extra_css.values().all(|c| c.trim().is_empty())
+            && self.icons.is_empty()
     }
 }
 
@@ -209,6 +218,7 @@ pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
         styles: files,
         layouts,
         own_files,
+        icons: layout.icons.clone(),
     })
 }
 

@@ -13,7 +13,6 @@ use dt_core::hud::icons::{self, IconOverride, Source};
 use dt_core::texture::adjust::{self, Adjust, AdjustKind, Blend, Rgb};
 use dt_core::texture::svg::{self, Palette};
 
-use crate::images::Picture;
 use crate::state::AppState;
 
 pub const SETTLE: Duration = Duration::from_millis(250);
@@ -464,29 +463,15 @@ impl AppState {
         self.edit_image(path, Adjust::Swap { from, to }, now);
     }
 
-    /// The picture of `path` as the player will see it, or `None` when it is the game's.
-    pub fn your_picture(&self, path: &str, side: u32) -> Option<Picture> {
-        let drafting = self
-            .images
-            .edit
-            .draft
-            .as_ref()
-            .is_some_and(|d| d.path == path);
-        let file = self.stored_image(path);
-        let adjust = self.shown_adjustments(path);
-        match (file, adjust.is_empty()) {
-            (Some(file), true) => Some(Picture::Mine { file, side }),
-            (None, true) => drafting.then(|| Picture::Game {
-                path: path.to_string(),
-                side,
-            }),
-            (file, false) => Some(Picture::Edited {
-                path: path.to_string(),
-                file,
-                adjust: adjust.to_vec(),
-                side,
-            }),
-        }
+    /// Whether `path` has an override or a draft, so the page shows "Game's" and "Yours".
+    pub fn is_edited(&self, path: &str) -> bool {
+        self.image_override(path).is_some()
+            || self
+                .images
+                .edit
+                .draft
+                .as_ref()
+                .is_some_and(|d| d.path == path)
     }
 
     fn lever_entry(&self, part: &str) -> Option<String> {
@@ -546,8 +531,8 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::images::render;
     use crate::images::tests::{ITEM, TEXTURE, TOP_BAR, loaded, my_png};
+    use crate::images::{Picture, render};
     use dt_core::hud::install::HudAction;
 
     const RED: Rgb = Rgb([255, 0, 0]);
@@ -780,7 +765,7 @@ mod tests {
         assert!(state.profile.hud.icons.is_empty());
         assert!(state.images.edit.draft.is_none());
         assert!(!state.can_undo() && !state.can_redo());
-        assert!(state.your_picture(TEXTURE, 64).is_none());
+        assert!(!state.is_edited(TEXTURE));
     }
 
     #[test]
@@ -812,36 +797,43 @@ mod tests {
     }
 
     #[test]
-    fn your_picture_follows_the_override_and_the_draft() {
+    fn the_preview_follows_the_override_and_the_draft() {
         let (_dir, mut state) = loaded();
-        assert_eq!(state.your_picture(ITEM, 64), None);
+        assert_eq!(
+            state.preview_picture(ITEM, 64),
+            Picture::Game {
+                path: ITEM.into(),
+                side: 64
+            }
+        );
+        assert!(!state.is_edited(ITEM));
         state.replace_image(ITEM, &my_png(4, 4));
         let file = state.stored_image(ITEM).unwrap();
         assert_eq!(
-            state.your_picture(ITEM, 64),
-            Some(Picture::Mine {
+            state.preview_picture(ITEM, 64),
+            Picture::Mine {
                 file: file.clone(),
                 side: 64
-            })
+            }
         );
         state.edit_image(ITEM, Adjust::Invert, Instant::now());
         assert_eq!(
-            state.your_picture(ITEM, 64),
-            Some(Picture::Edited {
+            state.preview_picture(ITEM, 64),
+            Picture::Edited {
                 path: ITEM.into(),
                 file: Some(file),
                 adjust: vec![Adjust::Invert],
                 side: 64
-            }),
+            },
             "the draft shows before it is committed"
         );
         state.edit_image(TEXTURE, tint(100), Instant::now());
-        let picture = state.your_picture(TEXTURE, 8).unwrap();
+        let picture = state.preview_picture(TEXTURE, 8);
         let source = state.image_library().unwrap().source.clone();
         let shown = render(&source, &picture).unwrap();
         assert_eq!(shown.image.pixel(0, 0), [0, 0, 0, 255], "blue tinted red");
         assert_eq!((shown.facts.width, shown.facts.height), (32, 16));
-        let mine = render(&source, &state.your_picture(ITEM, 8).unwrap()).unwrap();
+        let mine = render(&source, &state.preview_picture(ITEM, 8)).unwrap();
         assert_eq!(mine.image.pixel(0, 0), [0, 255, 255, 255], "red inverted");
     }
 
@@ -870,7 +862,7 @@ mod tests {
             "a swap keeps the source, so its colours stay"
         );
         let source = state.image_library().unwrap().source.clone();
-        let shown = render(&source, &state.your_picture(TOP_BAR, 10).unwrap()).unwrap();
+        let shown = render(&source, &state.preview_picture(TOP_BAR, 10)).unwrap();
         assert_eq!(shown.image.pixel(5, 1), [0x4d, 0x75, 0xc3, 255]);
         assert_eq!(shown.image.pixel(5, 8), [0, 0, 0, 255]);
     }

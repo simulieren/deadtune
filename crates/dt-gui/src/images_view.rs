@@ -353,12 +353,7 @@ fn folder_chips(ui: &mut Ui, state: &AppState, library: &Library, edits: &mut Ve
 }
 
 fn tile_picture(state: &AppState, entry: &ImageEntry, side: u32) -> Picture {
-    state
-        .your_picture(&entry.path, side)
-        .unwrap_or_else(|| Picture::Game {
-            path: entry.path.clone(),
-            side,
-        })
+    state.preview_picture(&entry.path, side)
 }
 
 fn grid(
@@ -556,9 +551,7 @@ fn tile(
 
 /// Asks for the selected image's large pictures first, ahead of the tiles.
 fn preview_pictures(state: &AppState, entry: &ImageEntry, thumbs: &mut Thumbs) {
-    if let Some(yours) = state.your_picture(&entry.path, PREVIEW_SIDE) {
-        thumbs.get(&yours);
-    }
+    thumbs.get(&state.preview_picture(&entry.path, PREVIEW_SIDE));
     thumbs.get(&game_preview(entry));
 }
 
@@ -728,7 +721,9 @@ fn selected(
     ui.add_space(6.0);
     let box_side = width.min((ui.ctx().content_rect().height() * 0.27).max(150.0));
     let over = state.image_override(&entry.path);
-    let yours = state.your_picture(&entry.path, PREVIEW_SIDE);
+    let yours = state
+        .is_edited(&entry.path)
+        .then(|| state.preview_picture(&entry.path, PREVIEW_SIDE));
     let facts = match &yours {
         Some(yours) => {
             let half = ((width - 10.0) / 2.0).min(box_side);

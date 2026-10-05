@@ -58,14 +58,23 @@ impl AppState {
         ImageSource::Chain(chain)
     }
 
-    /// The picture a preview shows for `game_path`: the player's replacement from
-    /// `profile.hud.icons` when there is one, else the game's own. Every preview goes
-    /// through here, so an edit to the override model shows in all of them.
+    /// The picture a preview shows for `game_path`: its override from `profile.hud.icons`
+    /// (the player's file, the game's image, or either with the colour edits on it, the
+    /// sliders' draft first), else the game's own. Every preview and the UI images page go
+    /// through here, so an edit shows in all of them; `icons::build` applies the same list.
     pub fn preview_picture(&self, game_path: &str, side: u32) -> Picture {
-        match self.stored_image(game_path) {
-            Some(file) => Picture::Mine { file, side },
-            None => Picture::Game {
+        let file = self.stored_image(game_path);
+        let adjust = self.shown_adjustments(game_path);
+        match (file, adjust.is_empty()) {
+            (Some(file), true) => Picture::Mine { file, side },
+            (None, true) => Picture::Game {
                 path: game_path.to_string(),
+                side,
+            },
+            (file, false) => Picture::Edited {
+                path: game_path.to_string(),
+                file,
+                adjust: adjust.to_vec(),
                 side,
             },
         }
@@ -188,8 +197,9 @@ pub fn with<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::images::tests::{ITEM, TEXTURE, install_images, my_png};
+    use crate::images::tests::{ITEM, TEXTURE, TOP_BAR, install_images, my_png};
     use crate::state::testutil;
+    use dt_core::texture::adjust::{Adjust, Rgb};
     use dt_core::texture::{RgbaImage, png};
 
     fn write_png(file: &std::path::Path, rgba: [u8; 4]) {
@@ -279,6 +289,46 @@ mod tests {
                 .unwrap()
                 .pixel(0, 0),
             [0, 0, 255, 255]
+        );
+    }
+
+    #[test]
+    fn previews_show_colour_edits() {
+        let (_dir, mut state) = testutil::state();
+        install_images(&state);
+        let source = state.preview_source();
+        let navy = Adjust::Tint {
+            color: Rgb([0, 0, 128]),
+            strength: 100,
+        };
+        state.adjust_images(&[TEXTURE.to_string()], navy);
+        assert!(matches!(
+            state.preview_picture(TEXTURE, 8),
+            Picture::Edited { file: None, .. }
+        ));
+        assert_eq!(
+            state
+                .preview_image(&source, TEXTURE, 8)
+                .unwrap()
+                .pixel(0, 0),
+            [0, 0, 128, 255],
+            "blue multiplied by navy"
+        );
+
+        let white = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 8 8\"><rect width=\"8\" height=\"8\" fill=\"#ffffff\"/></svg>";
+        state.replace_image(TOP_BAR, white.as_bytes());
+        let swap = Adjust::Swap {
+            from: Rgb::WHITE,
+            to: Rgb([255, 0, 0]),
+        };
+        state.adjust_images(&[TOP_BAR.to_string()], swap);
+        assert_eq!(
+            state
+                .preview_image(&source, TOP_BAR, 8)
+                .unwrap()
+                .pixel(4, 4),
+            [255, 0, 0, 255],
+            "the swap shows on the player's SVG"
         );
     }
 }

@@ -3626,6 +3626,123 @@ mod tests {
         assert!(matches!(state.status, Some(Status::Info(ref m)) if m.contains("started fine")));
     }
 
+    /// A pak01 holding a scope texture shaped like the game's: Tamara's header with the
+    /// dims patched, over a radial alpha vignette. 1536 px rather than the game's 2048
+    /// keeps the test quick while every offered size still shrinks it.
+    fn install_scope_original(state: &AppState) {
+        use dt_core::addons::native_scope::TEXTURE;
+        use dt_core::hud::resource::Resource;
+        use dt_core::hud::vpk::{self, VpkDir};
+        use dt_core::texture::Vtex;
+        let up = VpkDir::open(&upstream("Vindicta Scope Downscale", "pak89_dir.vpk"))
+            .unwrap()
+            .read(TEXTURE)
+            .unwrap();
+        let start = Vtex::parse(&up).unwrap().pixel_start();
+        let data_len = Resource::parse(&up)
+            .unwrap()
+            .block(b"DATA")
+            .unwrap()
+            .data
+            .len();
+        let mut original = up[..start].to_vec();
+        let dims = start - data_len + 20;
+        const SIDE: i32 = 1536;
+        let side = (SIDE as u16).to_le_bytes();
+        original[dims..dims + 4].copy_from_slice(&[side, side].concat());
+        for y in 0..SIDE {
+            for x in 0..SIDE {
+                let r = f64::from((2 * x - SIDE).pow(2) + (2 * y - SIDE).pow(2)).sqrt()
+                    / f64::from(SIDE);
+                original.extend_from_slice(&[0, 0, 0, (92.0 + 150.0 * r.min(1.0)) as u8]);
+            }
+        }
+        let files = BTreeMap::from([(TEXTURE.to_string(), original)]);
+        std::fs::write(
+            state
+                .paths
+                .citadel_dir
+                .join(dt_core::hud::install::GAME_PAK),
+            vpk::write(&files),
+        )
+        .unwrap();
+    }
+
+    fn scope_pak_side(state: &AppState) -> Option<u16> {
+        use dt_core::hud::vpk::VpkDir;
+        let pak = dt_core::hud::install::addons_dir(&state.paths).join("pak74_dir.vpk");
+        let bytes = VpkDir::open(&pak)
+            .ok()?
+            .read(addons::native_scope::TEXTURE)
+            .unwrap();
+        let v = dt_core::texture::Vtex::parse(&bytes).unwrap();
+        assert_eq!(v.width, v.height);
+        Some(v.width)
+    }
+
+    #[test]
+    fn scope_applies_verifies_goes_on_trial_and_removes_at_every_size() {
+        let (_dir, mut state) = state();
+        install_scope_original(&state);
+        state.set_addon_enabled(AddonId::VindictaScope, true);
+        let mut launched = SystemTime::now();
+        for side in [720u16, 1080, 1440] {
+            state.set_scope(addons::ScopeOptions { side });
+            assert!(
+                matches!(
+                    state.addon_action(AddonId::VindictaScope),
+                    Some(Action::Write(_))
+                ),
+                "{side}: {:?}",
+                state.addon_action(AddonId::VindictaScope)
+            );
+            state.apply().unwrap();
+            assert_eq!(scope_pak_side(&state), Some(side));
+            let reports = addons::verify::verify_installed(&state.paths, &state.store.root);
+            assert_eq!(reports.len(), 1);
+            assert!(
+                reports[0]
+                    .result
+                    .as_ref()
+                    .is_ok_and(|v| v.problems.is_empty()),
+                "{side}: {}",
+                reports[0]
+            );
+
+            launched += Duration::from_secs(60);
+            state.observe_game(true, Some(launched));
+            let trial = state.guard.trial.clone().expect("the new pak is on trial");
+            assert_eq!(
+                trial.changed.keys().collect::<Vec<_>>(),
+                [&AddonId::VindictaScope],
+                "{side}"
+            );
+            state.guard_lines.push("DEADTUNE_BOOT 0.9.0".into());
+            state.observe_game(true, Some(launched));
+            assert!(matches!(
+                state.guard.verdict(AddonId::VindictaScope),
+                Some(Verdict::Verified { .. })
+            ));
+            state.observe_game(false, None);
+        }
+
+        state.set_scope(addons::ScopeOptions { side: 2048 });
+        assert_eq!(
+            state.addon_action(AddonId::VindictaScope),
+            Some(&Action::Remove),
+            "a size not below the game's leaves nothing to install"
+        );
+        state.apply().unwrap();
+        assert_eq!(scope_pak_side(&state), None);
+
+        state.set_scope(addons::ScopeOptions::default());
+        state.apply().unwrap();
+        assert_eq!(scope_pak_side(&state), Some(1080));
+        assert_eq!(state.remove_addon_now(AddonId::VindictaScope), Ok(true));
+        assert_eq!(scope_pak_side(&state), None);
+        assert!(!state.profile.addons.is_enabled(AddonId::VindictaScope));
+    }
+
     #[test]
     fn injected_failure_drives_the_banner_without_a_game() {
         let (_dir, mut state) = state();

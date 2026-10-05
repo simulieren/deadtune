@@ -10,6 +10,7 @@ use super::facts::WindowsFacts;
 use crate::locate::GamePaths;
 
 pub fn gather(paths: Option<&GamePaths>) -> WindowsFacts {
+    let processes = system::process_names();
     WindowsFacts {
         gpus: gpu::gpus(),
         deadlock_gpu_preference: gpu::deadlock_gpu_preference(),
@@ -21,7 +22,9 @@ pub fn gather(paths: Option<&GamePaths>) -> WindowsFacts {
         hags: system::hags(),
         memory_integrity: system::memory_integrity(),
         memory: system::memory(),
-        overlays: Some(system::overlays()),
+        overlays: Some(super::parse::system::match_overlays(&processes)),
         game_drive: paths.and_then(|p| system::drive_kind(&p.game_root)),
+        game_drive_free_mib: paths.and_then(|p| system::free_mib(&p.game_root)),
+        shader_processing: Some(super::parse::system::shader_processing(&processes)),
     }
 }

@@ -15,6 +15,7 @@ pub mod locate;
 pub mod power;
 pub mod preset;
 pub mod profile;
+pub mod steamcfg;
 pub mod texture;
 pub mod update;
 pub mod video;

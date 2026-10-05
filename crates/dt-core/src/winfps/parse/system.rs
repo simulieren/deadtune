@@ -59,6 +59,13 @@ pub fn swap_effect_upgrade(settings: &str) -> Option<bool> {
     }
 }
 
+/// Whether Steam's shader pre-processing is among `process_names`.
+pub fn shader_processing<S: AsRef<str>>(process_names: &[S]) -> bool {
+    process_names
+        .iter()
+        .any(|n| n.as_ref().eq_ignore_ascii_case("fossilize_replay.exe"))
+}
+
 /// Display names of the known overlays among `process_names`, in `OVERLAYS` order.
 pub fn match_overlays<S: AsRef<str>>(process_names: &[S]) -> Vec<&'static str> {
     let mut out: Vec<&'static str> = Vec::new();
@@ -339,6 +346,8 @@ mod tests {
     fn overlay_matching() {
         let names = ["explorer.exe", "OBS64.EXE", "discord.exe", "Discord.exe"];
         assert_eq!(match_overlays(&names), vec!["Discord", "OBS Studio"]);
+        assert!(!shader_processing(&names));
+        assert!(shader_processing(&["steam.exe", "Fossilize_Replay.exe"]));
         assert!(match_overlays::<&str>(&[]).is_empty());
     }
 

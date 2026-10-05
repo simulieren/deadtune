@@ -26,6 +26,11 @@ pub struct WindowsFacts {
     pub overlays: Option<Vec<&'static str>>,
     /// Drive the Deadlock folder is on.
     pub game_drive: Option<DriveKind>,
+    /// Free space on that drive, in MiB.
+    pub game_drive_free_mib: Option<u64>,
+    /// Steam's background shader processing (`fossilize_replay.exe`) is running;
+    /// `None` when the process list was not read.
+    pub shader_processing: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

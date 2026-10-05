@@ -187,7 +187,7 @@ Each addon is one `game\citadel\addons\pakNN_dir.vpk` that DeadTune writes and r
 - [ ] A multi-file output (`pak78_dir.vpk` plus `pak78_000.vpk`) mounts. Half size on a full game should produce one.
 - [ ] Matchmaking still queues with the addon mounted (same question as **H0-4**).
 
-- [ ] Links open: an author credit opens the browser, and System check's "Open Windows Settings" opens the right Settings page (`ms-settings:` links).
+- [ ] Links open: an author credit opens the browser, and System check's "Open the Windows setting" opens the right Settings page (`ms-settings:` links).
 
 ### 12. Launch guard (addons tested on the next launch)
 
@@ -202,12 +202,20 @@ DeadTune remembers the set of addon paks (id plus sha256) that Deadlock last sta
 - [ ] **G-7 Safe mode**: the small menu beside Launch Deadlock > "Safe mode: launch without addons" removes every DeadTune pak (HUD too), other mods stay, the game starts clean; the button reads "Launch (safe mode)" until "Restore addons" from the same menu puts them back.
 - [ ] **G-8 Read-back**: `tools\deadtune-cli.exe addons verify` prints "ok" for every installed pak. Overwrite the last bytes of one pak with a hex editor: `addons verify` names the entry with "crc mismatch" and exits 1.
 
-### 13. Send the diagnostic report
+### 13. System check page
 
-Whenever something misbehaves, and once when everything works, press **Copy diagnostic report** on the System check page (or run `tools\deadtune-cli.exe doctor --report > report.txt`) and send the text along with your notes. It holds the DeadTune version, the `SearchPaths` block of `gameinfo.gi`, the files in `game\citadel\addons` with sizes and who owns each, DeadTune's addon and HUD records, the launch guard state, the last launch arguments, the last 80 lines of `console.log` and the read-back of every installed pak. It contains no account data; paths show your Windows user name.
+- [ ] The page opens with a summary ("Everything looks good" or "N things need your attention"), then a card per problem with "What to do", then every check grouped as Deadlock files, HUD and addons, Windows and hardware, DeadTune. "Check again" reruns; "Copy report" copies the diagnostic report.
+- [ ] **Steam launch options**: in Steam set Deadlock's launch options to `+fps_max 60`, press Check again: a warning names `+fps_max 60`. With only `+exec deadtune_boot` (or `-dx11`) it passes and shows the options. Clear them afterwards.
+- [ ] **Mods from other tools**: copy any mod pak into `game\citadel\addons` as `pak60_dir.vpk`: the row lists it; remove it again.
+- [ ] **Free disk space**: shows the free space on the game's drive; it warns under 10 GB (check the number against Explorer).
+- [ ] **Steam background work**: while Steam shows "Processing Vulkan shaders" (or `fossilize_replay.exe` runs in Task Manager) it warns; otherwise it passes.
+
+### 14. Send the diagnostic report
+
+Whenever something misbehaves, and once when everything works, press **Copy report** on the System check page (or run `tools\deadtune-cli.exe doctor --report > report.txt`) and send the text along with your notes. It holds the DeadTune version, the `SearchPaths` block of `gameinfo.gi`, the files in `game\citadel\addons` with sizes and who owns each, DeadTune's addon and HUD records, the launch guard state, the last launch arguments, the last 80 lines of `console.log` and the read-back of every installed pak. It contains no account data; paths show your Windows user name.
 
 ### 10. Developer checks (repo checkout on Windows)
 - [ ] `cargo test --workspace --all-features` passes, including the Windows-only `push_uses_crlf_on_windows`.
 - [ ] With `core.autocrlf=true`, a fresh clone still passes the catalog drift test.
 - [ ] `cargo test -p dt-core --features fetch -- --ignored fetch_latest` downloads every preset.
-- [ ] `tools\deadtune-cli.exe doctor` matches the GUI's Check setup; its y/N confirm prompt works in cmd and PowerShell.
+- [ ] `tools\deadtune-cli.exe doctor` matches the GUI's System check; its y/N confirm prompt works in cmd and PowerShell.

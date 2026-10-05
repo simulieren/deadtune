@@ -25,6 +25,8 @@ pub fn checks(facts: &WindowsFacts, today: Date) -> Vec<Check> {
         windowed_optimizations(facts.windowed_optimizations),
         hags(facts.hags),
         game_drive(facts.game_drive),
+        free_space(facts.game_drive_free_mib),
+        shader_processing(facts.shader_processing),
     ]
     .into_iter()
     .flatten()
@@ -351,6 +353,42 @@ fn game_drive(kind: Option<DriveKind>) -> Option<Check> {
             "Move the game to an SSD: Steam > Settings > Storage, pick the SSD, then move Deadlock.",
         ),
         DriveKind::Ssd => pass(NAME, "Deadlock is on an SSD"),
+    })
+}
+
+/// Below this, a game update or a new shader cache can run out of room.
+const LOW_SPACE_MIB: u64 = 10 * 1024;
+
+fn free_space(free_mib: Option<u64>) -> Option<Check> {
+    const NAME: &str = "Free disk space";
+    let free = free_mib?;
+    let gib = format!("{:.1} GB free on the game's drive", free as f64 / 1024.0);
+    Some(if free < LOW_SPACE_MIB {
+        with_link(
+            warn(
+                NAME,
+                format!(
+                    "{gib}. Game updates and shader caches need room, or they fail and cause stutter"
+                ),
+                "Free up at least 10 GB on that drive: empty the Recycle Bin, or use Storage Sense to clear temporary files.",
+            ),
+            "ms-settings:storagesense",
+        )
+    } else {
+        pass(NAME, gib)
+    })
+}
+
+fn shader_processing(running: Option<bool>) -> Option<Check> {
+    const NAME: &str = "Steam background work";
+    Some(if running? {
+        warn(
+            NAME,
+            "Steam is processing shaders in the background (fossilize_replay), which uses a lot of CPU",
+            "Let it finish before you play, or turn off background processing in Steam > Settings > Downloads > Shader pre-caching.",
+        )
+    } else {
+        pass(NAME, "Steam is not processing shaders")
     })
 }
 
@@ -732,6 +770,42 @@ mod tests {
     }
 
     #[test]
+    fn free_space_rules() {
+        let mut f = WindowsFacts {
+            game_drive_free_mib: Some(4 * 1024),
+            ..Default::default()
+        };
+        let c = only(&f);
+        assert_eq!(
+            (c.name, c.status, c.link),
+            (
+                "Free disk space",
+                CheckStatus::Warn,
+                Some("ms-settings:storagesense")
+            )
+        );
+        assert!(c.detail.starts_with("4.0 GB free"), "{}", c.detail);
+        f.game_drive_free_mib = Some(80 * 1024);
+        assert_eq!(only(&f).status, CheckStatus::Pass);
+    }
+
+    #[test]
+    fn shader_processing_rules() {
+        let mut f = WindowsFacts {
+            shader_processing: Some(true),
+            ..Default::default()
+        };
+        let c = only(&f);
+        assert_eq!(
+            (c.name, c.status),
+            ("Steam background work", CheckStatus::Warn)
+        );
+        assert!(c.fix.unwrap().contains("Shader pre-caching"));
+        f.shader_processing = Some(false);
+        assert_eq!(only(&f).status, CheckStatus::Pass);
+    }
+
+    #[test]
     fn checks_come_in_the_documented_order() {
         let f = WindowsFacts {
             gpus: vec![
@@ -761,6 +835,8 @@ mod tests {
             memory: vec![stick(None, None), stick(None, None)],
             overlays: Some(vec![]),
             game_drive: Some(DriveKind::Ssd),
+            game_drive_free_mib: Some(50_000),
+            shader_processing: Some(false),
             ..Default::default()
         };
         let names: Vec<_> = checks(&f, TODAY).iter().map(|c| c.name).collect();
@@ -779,6 +855,8 @@ mod tests {
                 "Windowed game optimizations",
                 "GPU scheduling",
                 "Game drive",
+                "Free disk space",
+                "Steam background work",
             ]
         );
     }

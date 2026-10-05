@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use dt_core::gi::GiError;
 use dt_core::gi_sections::section_values;
-use dt_core::practice::{self, Group, KEYS, PracticeMode, SECTION, STOCK};
+use dt_core::practice::{self, Group, KEYS, PracticeMode, RECORD_FILE, Record, SECTION, STOCK};
 
 const CLEAN: &str =
     include_str!("../../../research/configs/OptimizationLock/clean gameinfo.gi/gameinfo.gi");
@@ -51,6 +51,12 @@ fn outside_scene(text: &str) -> String {
     format!("{}{}", &text[..start], &text[end..])
 }
 
+fn with_sidelock_scene(text: &str) -> String {
+    let start = text.find("\tSceneSystem").unwrap();
+    let end = text.find("\tNavSystem").unwrap();
+    format!("{}{}\n{}", &text[..start], SIDELOCK_SCENE, &text[end..])
+}
+
 fn mode(shadows: bool, fog: bool, batching: bool) -> PracticeMode {
     PracticeMode {
         shadows,
@@ -63,6 +69,11 @@ fn all_modes() -> Vec<PracticeMode> {
     (0..8)
         .map(|bits| mode(bits & 1 != 0, bits & 2 != 0, bits & 4 != 0))
         .collect()
+}
+
+/// A first write with nothing recorded yet.
+fn fresh(text: &str, m: PracticeMode) -> (String, Record) {
+    practice::plan(text, m, &Record::default()).unwrap()
 }
 
 #[test]
@@ -91,23 +102,24 @@ fn stock_values_come_from_the_live_fixture() {
 }
 
 #[test]
-fn off_leaves_both_fixtures_byte_identical() {
-    for text in [STOCK, CLEAN] {
-        assert_eq!(
-            practice::apply(text, PracticeMode::default()).unwrap(),
-            text
-        );
-        let crlf = to_crlf(text);
-        assert_eq!(
-            practice::apply(&crlf, PracticeMode::default()).unwrap(),
-            crlf
-        );
+fn off_with_nothing_recorded_leaves_every_file_byte_identical() {
+    for text in [
+        STOCK.to_string(),
+        CLEAN.to_string(),
+        with_sidelock_scene(STOCK),
+        STOCK.replacen("CSMCascadeResolution 2048", "CSMCascadeResolution 1024", 1),
+    ] {
+        let (out, record) = fresh(&text, PracticeMode::default());
+        assert_eq!(out, text);
+        assert!(record.is_empty());
+        let crlf = to_crlf(&text);
+        assert_eq!(fresh(&crlf, PracticeMode::default()).0, crlf);
     }
 }
 
 #[test]
-fn all_on_changes_only_the_managed_lines() {
-    let on = practice::apply(STOCK, PracticeMode::ALL_ON).unwrap();
+fn all_on_changes_only_the_managed_lines_and_records_what_they_held() {
+    let (on, record) = fresh(STOCK, PracticeMode::ALL_ON);
     assert_eq!(touched_keys(STOCK, &on), managed_keys(|_| true));
     assert_eq!(on.lines().count(), STOCK.lines().count() + 3);
     let without_inserts: String = on
@@ -145,6 +157,12 @@ fn all_on_changes_only_the_managed_lines() {
         "other sections untouched"
     );
     assert_eq!(practice::detect(&on).unwrap(), PracticeMode::ALL_ON);
+
+    for k in &KEYS {
+        assert_eq!(record.prior(k.key), Some(k.stock), "{}", k.key);
+    }
+    assert_eq!(record.values.len(), 10);
+    assert_eq!(record.absent.len(), 3);
 }
 
 #[test]
@@ -152,7 +170,7 @@ fn each_group_touches_only_its_own_keys() {
     for group in Group::ALL {
         let mut m = PracticeMode::default();
         m.set(group, true);
-        let out = practice::apply(STOCK, m).unwrap();
+        let (out, record) = fresh(STOCK, m);
         assert_eq!(
             touched_keys(STOCK, &out),
             managed_keys(|k| k.group == group),
@@ -162,37 +180,87 @@ fn each_group_touches_only_its_own_keys() {
         let added = out.lines().count() - STOCK.lines().count();
         assert_eq!(added, if group == Group::Batching { 3 } else { 0 });
         assert_eq!(practice::detect(&out).unwrap(), m);
+        let recorded: BTreeSet<&str> = record
+            .values
+            .keys()
+            .chain(&record.absent)
+            .map(String::as_str)
+            .collect();
+        assert_eq!(recorded, managed_keys(|k| k.group == group));
     }
 }
 
 #[test]
-fn reapplying_is_idempotent_and_off_restores_stock_byte_for_byte() {
+fn reapplying_is_idempotent_and_off_restores_the_prior_values_byte_for_byte() {
     for m in all_modes() {
         for text in [STOCK, CLEAN] {
-            let once = practice::apply(text, m).unwrap();
-            let twice = practice::apply(&once, m).unwrap();
+            let (once, record) = fresh(text, m);
+            let (twice, again) = practice::plan(&once, m, &record).unwrap();
             assert_eq!(once, twice, "{m:?}");
+            assert_eq!(record, again, "{m:?}");
             assert_eq!(practice::detect(&once).unwrap(), m);
+            let (off, cleared) = practice::plan(&once, PracticeMode::default(), &record).unwrap();
+            assert_eq!(off, text, "{m:?}");
+            assert!(cleared.is_empty(), "{m:?}");
             assert_eq!(practice::restore_stock(&once).unwrap(), text, "{m:?}");
         }
     }
 }
 
 #[test]
+fn off_restores_the_players_own_values_not_stock() {
+    let custom = STOCK
+        .replacen("CSMCascadeResolution 2048", "CSMCascadeResolution 1024", 1)
+        .replacen(
+            "\t\tCubemapFog 1\n",
+            "\t\tCubemapFog 1\n\t\tLayerBatchThresholdFullsort 5 // mine\n",
+            1,
+        );
+    let (on, record) = fresh(&custom, PracticeMode::ALL_ON);
+    assert_eq!(record.prior("CSMCascadeResolution"), Some(Some("1024")));
+    assert_eq!(record.prior("LayerBatchThresholdFullsort"), Some(Some("5")));
+    assert_eq!(
+        record.prior("DisableLateAllocatedTransformBuffer"),
+        Some(None)
+    );
+    assert!(
+        on.contains("\t\tLayerBatchThresholdFullsort 20 // mine\n"),
+        "{on}"
+    );
+    let (off, cleared) = practice::plan(&on, PracticeMode::default(), &record).unwrap();
+    assert_eq!(off, custom);
+    assert!(cleared.is_empty());
+
+    let (shadows_off, partial) = practice::plan(&on, mode(false, true, true), &record).unwrap();
+    assert!(shadows_off.contains("\t\tCSMCascadeResolution 1024\n"));
+    assert!(shadows_off.contains("\t\tVolumetricFog 0\n"));
+    assert_eq!(partial.prior("CSMCascadeResolution"), None);
+    assert_eq!(partial.prior("VolumetricFog"), Some(Some("1")));
+    assert_ne!(
+        practice::restore_stock(&on).unwrap(),
+        custom,
+        "ranked-safe means stock"
+    );
+}
+
+#[test]
 fn crlf_files_stay_crlf() {
     let crlf = to_crlf(STOCK);
-    let on = practice::apply(&crlf, PracticeMode::ALL_ON).unwrap();
-    assert_eq!(
-        on,
-        to_crlf(&practice::apply(STOCK, PracticeMode::ALL_ON).unwrap())
-    );
+    let (on, record) = fresh(&crlf, PracticeMode::ALL_ON);
+    assert_eq!(on, to_crlf(&fresh(STOCK, PracticeMode::ALL_ON).0));
     assert!(!on.replace("\r\n", "").contains('\n'));
     assert_eq!(practice::restore_stock(&on).unwrap(), crlf);
+    assert_eq!(
+        practice::plan(&on, PracticeMode::default(), &record)
+            .unwrap()
+            .0,
+        crlf
+    );
 }
 
 #[test]
 fn quoted_values_in_the_older_clean_copy_keep_their_quotes() {
-    let on = practice::apply(CLEAN, PracticeMode::ALL_ON).unwrap();
+    let (on, record) = fresh(CLEAN, PracticeMode::ALL_ON);
     assert!(
         on.contains("CSMCascadeResolution           \"0\"\n"),
         "{on}"
@@ -200,14 +268,31 @@ fn quoted_values_in_the_older_clean_copy_keep_their_quotes() {
     assert!(on.contains("LayerBatchThresholdFullsort \"20\"\n"), "{on}");
     assert_eq!(practice::detect(&on).unwrap(), PracticeMode::ALL_ON);
     assert_eq!(practice::restore_stock(&on).unwrap(), CLEAN);
+    assert_eq!(
+        practice::plan(&on, PracticeMode::default(), &record)
+            .unwrap()
+            .0,
+        CLEAN
+    );
 }
 
 #[test]
-fn sidelocks_own_layout_reads_as_all_on_and_restores_to_stock_values() {
-    let start = STOCK.find("\tSceneSystem").unwrap();
-    let end = STOCK.find("\tNavSystem").unwrap();
-    let sidelock = format!("{}{}\n{}", &STOCK[..start], SIDELOCK_SCENE, &STOCK[end..]);
+fn sidelocks_own_values_stay_theirs_until_ranked_safe() {
+    let sidelock = with_sidelock_scene(STOCK);
     assert_eq!(practice::detect(&sidelock).unwrap(), PracticeMode::ALL_ON);
+
+    let (on, record) = fresh(&sidelock, PracticeMode::ALL_ON);
+    assert_eq!(
+        on, sidelock,
+        "already the practice values: nothing to write"
+    );
+    assert!(
+        record.is_empty(),
+        "the player's own values are not ours to restore"
+    );
+    let (off, _) = practice::plan(&sidelock, PracticeMode::default(), &record).unwrap();
+    assert_eq!(off, sidelock, "off never touches keys we did not write");
+
     let restored = practice::restore_stock(&sidelock).unwrap();
     assert_eq!(
         practice::detect(&restored).unwrap(),
@@ -234,22 +319,36 @@ fn a_file_without_the_section_is_left_alone_when_off_and_refused_when_on() {
     let start = STOCK.find("\tSceneSystem").unwrap();
     let end = STOCK.find("\tNavSystem").unwrap();
     let without = format!("{}{}", &STOCK[..start], &STOCK[end..]);
+    assert_eq!(fresh(&without, PracticeMode::default()).0, without);
+    assert_eq!(practice::restore_stock(&without).unwrap(), without);
     assert_eq!(
-        practice::apply(&without, PracticeMode::default()).unwrap(),
-        without
-    );
-    assert_eq!(
-        practice::apply(&without, mode(true, false, false)),
+        practice::plan(&without, mode(true, false, false), &Record::default()),
         Err(GiError::NoSection(SECTION.into()))
     );
     assert_eq!(practice::detect(&without).unwrap(), PracticeMode::default());
 }
 
 #[test]
+fn record_round_trips_through_its_file_and_an_empty_one_removes_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("data");
+    assert_eq!(Record::load(&root).unwrap(), Record::default());
+    let (_, record) = fresh(STOCK, mode(true, false, true));
+    record.save(&root).unwrap();
+    let text = std::fs::read_to_string(root.join(RECORD_FILE)).unwrap();
+    assert!(text.contains("CSMCascadeResolution = \"2048\""), "{text}");
+    assert!(text.contains("absent = ["), "{text}");
+    assert_eq!(Record::load(&root).unwrap(), record);
+    Record::default().save(&root).unwrap();
+    assert!(!root.join(RECORD_FILE).exists());
+    Record::default().save(&root).unwrap();
+}
+
+#[test]
 fn drift_separates_practice_keys_from_other_tools_leftovers() {
     assert_eq!(practice::matchmaking_drift(STOCK).unwrap(), Vec::new());
 
-    let on = practice::apply(STOCK, mode(false, true, false)).unwrap();
+    let (on, _) = fresh(STOCK, mode(false, true, false));
     let drift = practice::matchmaking_drift(&on).unwrap();
     let keys: Vec<&str> = drift.iter().map(|d| d.key.as_str()).collect();
     assert_eq!(

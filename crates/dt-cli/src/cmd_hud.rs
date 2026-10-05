@@ -48,6 +48,7 @@ fn reconcile(env: &Env, args: &Args, layout: &HudLayout) -> CliResult {
         denied: Vec::new(),
         hud: Some(hud),
         addons: None,
+        practice_record: None,
     };
     let plan = apply::plan(
         &paths,

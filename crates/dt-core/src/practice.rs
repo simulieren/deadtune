@@ -4,6 +4,11 @@
 //! the sections in [`MATCHMAKING_SECTIONS`], so this is for bots, sandbox and unranked play;
 //! ranked-safe puts the stock values back.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::io;
+use std::path::Path;
+
+use crate::backup::atomic_write;
 use crate::gi::GiError;
 use crate::gi_sections::{self, KeyEdit, SectionEdits};
 
@@ -157,32 +162,119 @@ impl PracticeMode {
     }
 }
 
-/// Every managed key: its practice value for a group that is on, its stock value otherwise.
-pub fn edits(mode: PracticeMode) -> SectionEdits {
-    KEYS.iter()
-        .map(|k| {
-            let edit = match (mode.get(k.group), k.stock) {
-                (true, _) => KeyEdit::Set(k.practice.to_string()),
-                (false, Some(stock)) => KeyEdit::Set(stock.to_string()),
-                (false, None) => KeyEdit::Remove,
-            };
-            (k.key.to_string(), edit)
-        })
-        .collect()
+pub const RECORD_FILE: &str = "practice.toml";
+
+/// What each managed key held before DeadTune wrote its practice value, so turning a group
+/// off puts that back. Keys DeadTune never wrote are not here and are never touched.
+/// Lives at `<data dir>/practice.toml` next to the other records.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Record {
+    #[serde(default)]
+    pub values: BTreeMap<String, String>,
+    /// Keys the file did not have before DeadTune added them.
+    #[serde(default)]
+    pub absent: BTreeSet<String>,
 }
 
-/// Writes `mode` into the SceneSystem section. A file without one is left alone when the mode
-/// is off (nothing to restore) and refused when it is on.
-pub fn apply(text: &str, mode: PracticeMode) -> Result<String, GiError> {
-    if mode.is_off() && gi_sections::section_values(text, SECTION)?.is_none() {
+impl Record {
+    /// `Some(Some(v))` was present, `Some(None)` was absent, `None` was never written by us.
+    pub fn prior(&self, key: &str) -> Option<Option<&str>> {
+        if self.absent.contains(key) {
+            return Some(None);
+        }
+        self.values.get(key).map(|v| Some(v.as_str()))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty() && self.absent.is_empty()
+    }
+
+    fn remember(&mut self, key: &str, prior: Option<&str>) {
+        match prior {
+            Some(v) => {
+                self.values.insert(key.to_string(), v.to_string());
+            }
+            None => {
+                self.absent.insert(key.to_string());
+            }
+        }
+    }
+
+    fn forget(&mut self, key: &str) {
+        self.values.remove(key);
+        self.absent.remove(key);
+    }
+
+    /// A missing file is an empty record.
+    pub fn load(root: &Path) -> io::Result<Record> {
+        match std::fs::read_to_string(root.join(RECORD_FILE)) {
+            Ok(text) => toml::from_str(&text).map_err(io::Error::other),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Record::default()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// An empty record removes the file.
+    pub fn save(&self, root: &Path) -> io::Result<()> {
+        let path = root.join(RECORD_FILE);
+        if self.is_empty() {
+            return match std::fs::remove_file(&path) {
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            };
+        }
+        std::fs::create_dir_all(root)?;
+        let text = toml::to_string(self).map_err(io::Error::other)?;
+        atomic_write(&path, text.as_bytes())
+    }
+}
+
+/// `mode` written into the SceneSystem section, and the record to keep once it is on disk.
+/// A group that is on gets its practice values, remembering what each key held unless the
+/// file already had the practice value (then it is the player's own and stays theirs). A
+/// group that is off puts back what the record holds for its keys and forgets them; keys
+/// with no record are left exactly as they are. A file without the section is left alone
+/// when the mode is off and refused when it is on.
+pub fn plan(text: &str, mode: PracticeMode, record: &Record) -> Result<(String, Record), GiError> {
+    let Some(live) = gi_sections::section_values(text, SECTION)? else {
+        if mode.is_off() {
+            return Ok((text.to_string(), record.clone()));
+        }
+        return Err(GiError::NoSection(SECTION.to_string()));
+    };
+    let mut next = record.clone();
+    let mut edits = SectionEdits::new();
+    for k in &KEYS {
+        let current = live.get(k.key).map(String::as_str);
+        if mode.get(k.group) {
+            if next.prior(k.key).is_none() && current != Some(k.practice) {
+                next.remember(k.key, current);
+            }
+            edits.insert(k.key.to_string(), KeyEdit::Set(k.practice.to_string()));
+        } else if let Some(prior) = next.prior(k.key) {
+            let edit = prior.map_or(KeyEdit::Remove, |v| KeyEdit::Set(v.to_string()));
+            edits.insert(k.key.to_string(), edit);
+            next.forget(k.key);
+        }
+    }
+    Ok((gi_sections::edit_section(text, SECTION, &edits)?, next))
+}
+
+/// Stock values for every managed key, whoever wrote them: the ranked-safe action.
+pub fn restore_stock(text: &str) -> Result<String, GiError> {
+    if gi_sections::section_values(text, SECTION)?.is_none() {
         return Ok(text.to_string());
     }
-    gi_sections::edit_section(text, SECTION, &edits(mode))
-}
-
-/// Stock values for every managed key: one call back to queueable.
-pub fn restore_stock(text: &str) -> Result<String, GiError> {
-    apply(text, PracticeMode::default())
+    let edits: SectionEdits = KEYS
+        .iter()
+        .map(|k| {
+            let edit = k
+                .stock
+                .map_or(KeyEdit::Remove, |stock| KeyEdit::Set(stock.to_string()));
+            (k.key.to_string(), edit)
+        })
+        .collect();
+    gi_sections::edit_section(text, SECTION, &edits)
 }
 
 /// A group reads as on when every one of its keys holds the practice value.

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use dt_core::doctor::{Check, CheckStatus, hud_conflicts, run};
 use dt_core::locate::{GamePaths, from_game_root};
-use dt_core::practice::{self, PracticeMode};
+use dt_core::practice::{self, PracticeMode, Record};
 
 fn repo(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -213,8 +213,25 @@ fn practice_mode_and_other_tools_section_edits_warn_about_matchmaking() {
     fs::write(&fake.paths.gameinfo, practice::STOCK).unwrap();
     assert_eq!(row(&fake).detail, "stock");
 
-    let on = practice::apply(practice::STOCK, PracticeMode::ALL_ON).unwrap();
+    let (on, record) =
+        practice::plan(practice::STOCK, PracticeMode::ALL_ON, &Record::default()).unwrap();
     fs::write(&fake.paths.gameinfo, &on).unwrap();
+    let check = row(&fake);
+    assert_eq!(check.status, CheckStatus::Warn);
+    assert!(
+        check.detail.starts_with("matchmaking may refuse to queue"),
+        "same values but no record means another tool wrote them: {check:?}"
+    );
+    assert!(
+        check
+            .fix
+            .as_deref()
+            .unwrap()
+            .contains("Ranked-safe mode resets")
+    );
+    assert!(check.fix.as_deref().unwrap().contains("Verify integrity"));
+
+    record.save(&fake.data()).unwrap();
     let check = row(&fake);
     assert_eq!(check.status, CheckStatus::Warn);
     assert!(
@@ -224,6 +241,7 @@ fn practice_mode_and_other_tools_section_edits_warn_about_matchmaking() {
         "{check:?}"
     );
     assert!(check.fix.as_deref().unwrap().contains("Ranked-safe"));
+    Record::default().save(&fake.data()).unwrap();
 
     let foreign = practice::STOCK.replacen(
         "\t\tVulkanMutableSwapchain 1\n",

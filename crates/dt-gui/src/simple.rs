@@ -1303,7 +1303,9 @@ fn practice_card(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
         ui.label(
             RichText::new(
                 "Bigger FPS gains from the game's own rendering setup, beyond the settings above. \
-                 Method from the SideLock config. Takes effect next time you start Deadlock.",
+                 Method from the SideLock config. Takes effect next time you start Deadlock. \
+                 Switching off puts back what was there before; Ranked-safe mode resets all of it \
+                 to the game's own values.",
             )
             .color(WEAK),
         );

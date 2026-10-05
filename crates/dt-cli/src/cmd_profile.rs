@@ -106,7 +106,7 @@ pub fn practice(_: &env::Env, args: &Args) -> CliResult {
         );
     }
     println!(
-        "Run `deadtune-cli apply --profile {}` to write it; takes effect next launch.",
+        "Run `deadtune-cli apply --profile {}` to write it; takes effect next launch. Off puts back what the keys held before; ranked-safe resets them to stock.",
         path.display()
     );
     Ok(())

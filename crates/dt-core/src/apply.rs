@@ -64,6 +64,8 @@ pub struct Target {
     pub hud: Option<HudPlan>,
     /// The performance addon paks to write or remove, from [`addons_plan`].
     pub addons: Option<AddonsPlan>,
+    /// What the practice record should hold once `gameinfo` is on disk; `None` leaves it.
+    pub practice_record: Option<practice::Record>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -87,6 +89,7 @@ pub struct ApplyPlan {
     pub video_changes: BTreeMap<String, String>,
     pub hud: Option<HudPlan>,
     pub addons: Option<AddonsPlan>,
+    pub practice_record: Option<practice::Record>,
 }
 
 impl ApplyPlan {
@@ -202,21 +205,36 @@ pub fn addons_plan(
     Ok((!plan.addons.is_empty()).then_some(plan))
 }
 
+/// What the store contributes to a profile target: the HUD and addon plans and the practice
+/// record. `Default` is a bare convar-only target.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Extras {
+    pub hud: Option<HudPlan>,
+    pub addons: Option<AddonsPlan>,
+    pub practice: practice::Record,
+}
+
 /// Base ConVars block swapped into the live gameinfo (so SearchPaths edits survive), then the
 /// profile's convar overrides minus denylisted names; base video settings + profile video edits.
 /// Denylisted convars the base sets away from the vanilla preset go back to the vanilla value,
 /// or are commented out when vanilla does not set them: presets carry some of them.
 /// When the HUD or addons plan needs it, `Game citadel/addons` is added to SearchPaths.
-/// The profile's practice mode is written into SceneSystem last; off means stock values.
+/// The profile's practice mode is written into SceneSystem last: groups that are on get
+/// their values, groups that are off get back what `practice` recorded, and keys DeadTune
+/// never wrote stay as they are.
 pub fn target(
     live_gameinfo: &str,
     live_video: Option<&str>,
     base: &BaseTexts,
     profile: &Profile,
     catalog: &Catalog,
-    hud: Option<HudPlan>,
-    addons: Option<AddonsPlan>,
+    extras: Extras,
 ) -> Result<Target, ApplyError> {
+    let Extras {
+        hud,
+        addons,
+        practice,
+    } = extras;
     let (denied, allowed): (Overrides, Overrides) = profile
         .overrides()
         .into_iter()
@@ -244,7 +262,7 @@ pub fn target(
     {
         gameinfo = searchpaths::ensure_addons(&gameinfo).map_err(HudError::from)?;
     }
-    let gameinfo = practice::apply(&gameinfo, profile.practice)?;
+    let (gameinfo, practice_record) = practice::plan(&gameinfo, profile.practice, &practice)?;
     let video = live_video
         .map(|live| {
             let swapped = match &base.video {
@@ -260,6 +278,7 @@ pub fn target(
         denied: refused.into_iter().collect(),
         hud,
         addons,
+        practice_record: Some(practice_record),
     })
 }
 
@@ -283,6 +302,7 @@ pub fn plan(
             .collect(),
         hud: target.hud.clone(),
         addons: target.addons.clone(),
+        practice_record: target.practice_record.clone(),
         ..ApplyPlan::default()
     };
 
@@ -336,7 +356,8 @@ fn file_write(path: &Path, before: &str, after: &str) -> Option<FileWrite> {
 }
 
 /// Ranked-safe target: the original (or vanilla preset) ConVars block and stock values for the
-/// SceneSystem keys practice mode owns, video.txt untouched.
+/// SceneSystem keys practice mode knows, whoever wrote them; video.txt and the practice
+/// record untouched, so leaving ranked-safe returns to the profile's state.
 /// Pass `hud_plan(paths, &HudLayout::default(), store)` as `hud` and
 /// `addons_plan(paths, &AddonsConfig::default(), store)` as `addons` to remove our addons too;
 /// SearchPaths is left as is, so a `Game citadel/addons` line stays (harmless, see `execute`).
@@ -356,6 +377,7 @@ pub fn ranked_safe_target(
         denied: Vec::new(),
         hud,
         addons,
+        practice_record: None,
     })
 }
 
@@ -403,6 +425,9 @@ pub fn execute(
     let mut addons_changed = false;
     if let Some(addons) = &plan.addons {
         addons_changed = addons_install::execute(addons, paths, &store.root)?;
+    }
+    if let Some(record) = &plan.practice_record {
+        record.save(&store.root)?;
     }
     // A mounted search path whose directory is missing is a state we cannot vouch for in
     // game, so the addons dir outlives our addons.

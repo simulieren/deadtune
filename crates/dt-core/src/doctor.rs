@@ -129,7 +129,7 @@ fn game_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
     match std::fs::read_to_string(&paths.gameinfo) {
         Ok(text) => {
             checks.push(pass("Read gameinfo.gi", format!("{} bytes", text.len())));
-            gameinfo_checks(&text, checks);
+            gameinfo_checks(&text, data_dir, checks);
         }
         Err(e) => checks.push(fail("Read gameinfo.gi", e.to_string(), VERIFY_FILES)),
     }
@@ -243,7 +243,7 @@ fn addon_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
     }
 }
 
-fn gameinfo_checks(text: &str, checks: &mut Vec<Check>) {
+fn gameinfo_checks(text: &str, data_dir: &Path, checks: &mut Vec<Check>) {
     let eol = match gi::detect_eol(text) {
         Eol::CrLf => "Windows (CRLF)",
         Eol::Lf => "Unix (LF)",
@@ -279,12 +279,12 @@ fn gameinfo_checks(text: &str, checks: &mut Vec<Check>) {
         ),
         Err(e) => fail("Read convars", e.to_string(), VERIFY_FILES),
     });
-    checks.push(matchmaking_check(text));
+    checks.push(matchmaking_check(text, data_dir));
 }
 
-/// Edits outside the ConVars block that the matchmaking check refuses: practice mode's own
-/// keys, and anything else another tool left in those sections.
-fn matchmaking_check(text: &str) -> Check {
+/// Edits outside the ConVars block that the matchmaking check refuses: the practice values
+/// DeadTune wrote (per its record), and anything another tool left in those sections.
+fn matchmaking_check(text: &str, data_dir: &Path) -> Check {
     const NAME: &str = "Matchmaking sections";
     let drift = match practice::matchmaking_drift(text) {
         Ok(drift) => drift,
@@ -293,35 +293,44 @@ fn matchmaking_check(text: &str) -> Check {
     if drift.is_empty() {
         return pass(NAME, "stock");
     }
-    let (managed, foreign): (Vec<_>, Vec<_>) = drift.iter().partition(|d| d.managed());
-    let mut sections: Vec<&str> = foreign.iter().map(|d| d.section).collect();
-    sections.dedup();
-    let foreign_note = match foreign.len() {
-        0 => String::new(),
-        n => format!("; {n} other edit(s) in {}", sections.join(", ")),
-    };
-    if !managed.is_empty() {
-        return warn(
-            NAME,
-            format!(
-                "Practice mode on: matchmaking may refuse to queue ({} SceneSystem key(s) off stock{foreign_note})",
-                managed.len()
-            ),
-            "Practice mode is on, so matchmaking may refuse to queue. Turn on Ranked-safe mode (Safety & setup) or switch Practice mode off (Performance) and Apply before queueing.",
-        );
-    }
-    let keys: Vec<String> = foreign
+    let record = practice::Record::load(data_dir).unwrap_or_default();
+    let (ours, others): (Vec<_>, Vec<_>) = drift
+        .iter()
+        .partition(|d| d.managed() && record.prior(&d.key).is_some());
+    let other_keys: Vec<String> = others
         .iter()
         .map(|d| format!("{}/{}", d.section, d.key))
         .collect();
+    let other_note = match others.len() {
+        0 => String::new(),
+        _ => format!("not Valve's stock values: {}", other_keys.join(", ")),
+    };
+    if !ours.is_empty() {
+        let fix = if others.is_empty() {
+            "Practice mode is on, so matchmaking may refuse to queue. Turn on Ranked-safe mode (Safety & setup) or switch Practice mode off (Performance) and Apply before queueing.".to_string()
+        } else {
+            format!(
+                "Practice mode is on and another tool changed these sections too, so matchmaking may refuse to queue. Ranked-safe mode resets practice mode's shadow, fog and batching keys; for the rest: {VERIFY_FILES}"
+            )
+        };
+        let detail = if others.is_empty() {
+            format!(
+                "Practice mode on: matchmaking may refuse to queue ({} SceneSystem key(s))",
+                ours.len()
+            )
+        } else {
+            format!(
+                "Practice mode on: matchmaking may refuse to queue ({} SceneSystem key(s); {other_note})",
+                ours.len()
+            )
+        };
+        return warn(NAME, detail, &fix);
+    }
     warn(
         NAME,
-        format!(
-            "matchmaking may refuse to queue: not Valve's stock values: {}",
-            keys.join(", ")
-        ),
+        format!("matchmaking may refuse to queue: {other_note}"),
         &format!(
-            "Another tool (SideLock, for example) changed these sections, so matchmaking may refuse to queue. Ranked-safe mode does not touch them. {VERIFY_FILES}"
+            "Another tool (SideLock, for example) changed these sections, so matchmaking may refuse to queue. DeadTune leaves them alone on Apply. Ranked-safe mode resets the shadow, fog and batching keys; for the rest: {VERIFY_FILES}"
         ),
     )
 }
@@ -495,6 +504,7 @@ pub fn report(
             "launch guard (guard.toml)",
             crate::addons::guard::RECORD_FILE,
         ),
+        ("practice record (practice.toml)", practice::RECORD_FILE),
     ] {
         section(&mut out, title);
         match std::fs::read_to_string(data_dir.join(file)) {

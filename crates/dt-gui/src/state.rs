@@ -914,8 +914,11 @@ impl AppState {
                     &base.texts,
                     &self.profile,
                     self.catalog,
-                    hud,
-                    addons,
+                    apply::Extras {
+                        hud,
+                        addons,
+                        practice: practice::Record::load(&self.store.root).unwrap_or_default(),
+                    },
                 ),
                 Err(e) => {
                     self.preview = Err(e.clone());
@@ -2348,11 +2351,48 @@ mod tests {
         let names = &state.pending_restart.as_ref().unwrap().names;
         assert!(names.contains(&"SceneSystem/VolumetricFog".to_string()));
 
+        let record = practice::Record::load(&state.store.root).unwrap();
+        assert_eq!(record.prior("VolumetricFog"), Some(Some("1")));
+
         state.toggle_ranked_safe().unwrap();
         assert!(state.live.practice.is_off(), "ranked-safe restored stock");
         assert_eq!(state.profile.practice, fog, "the profile remembers it");
+        assert_eq!(
+            practice::Record::load(&state.store.root).unwrap(),
+            record,
+            "ranked-safe leaves the record"
+        );
         state.toggle_ranked_safe().unwrap();
         assert_eq!(state.live.practice, fog);
+
+        let stock = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../research/configs/OptimizationLock/clean gameinfo.gi/gameinfo.gi"
+        ))
+        .unwrap();
+        state.set_practice(PracticeMode::default());
+        state.apply().unwrap();
+        assert_eq!(state.live.gameinfo, stock, "off restored the prior values");
+        assert!(!state.store.root.join(practice::RECORD_FILE).exists());
+
+        let theirs = stock.replacen(
+            "VolumetricFog                     \"1\"",
+            "VolumetricFog                     \"0\"",
+            1,
+        );
+        std::fs::write(&state.paths.gameinfo, &theirs).unwrap();
+        state.live = LiveFiles::read(&state.paths).unwrap();
+        state.known_gameinfo_sha = sha256_hex(state.live.gameinfo.as_bytes());
+        state.set_convar(LIVE, "90".into()).unwrap();
+        state.apply().unwrap();
+        assert!(
+            state
+                .live
+                .gameinfo
+                .contains("VolumetricFog                     \"0\""),
+            "a value DeadTune never wrote stays"
+        );
+        assert!(state.live.practice.is_off(), "one key is not the fog group");
 
         state.set_practice(PracticeMode::default());
         state.apply().unwrap();

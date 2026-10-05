@@ -165,14 +165,18 @@ pub fn profile_plan(
     let base = apply::resolve_base(profile)?;
     let hud = apply::hud_plan(paths, &profile.hud, &store)?;
     let addons = apply::addons_plan(paths, &profile.addons, &store)?;
+    let practice = dt_core::practice::Record::load(&store.root)?;
     let target = apply::target(
         &live,
         live_video.as_deref(),
         &base,
         profile,
         catalog,
-        hud,
-        addons,
+        apply::Extras {
+            hud,
+            addons,
+            practice,
+        },
     )?;
     let ctx = ApplyContext {
         in_sandbox,

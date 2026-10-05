@@ -281,7 +281,7 @@ fn the_real_original_builds_installs_verifies_and_removes_at_every_size() {
         assert_eq!(
             event,
             Some(Event::Started {
-                changed: vec![AddonId::VindictaScope]
+                changed: vec![AddonId::VindictaScope.into()]
             }),
             "{side}: the launch guard puts the new pak on trial"
         );
@@ -295,7 +295,7 @@ fn the_real_original_builds_installs_verifies_and_removes_at_every_size() {
         assert_eq!(
             event,
             Some(Event::Passed {
-                ids: vec![AddonId::VindictaScope]
+                ids: vec![AddonId::VindictaScope.into()]
             })
         );
         assert!(guard.is_verified(AddonId::VindictaScope, &installed[0].sha256));

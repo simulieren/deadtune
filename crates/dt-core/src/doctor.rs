@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::addons::guard::{self, Guard, Pak, PakState};
 use crate::backup::{BackupStore, FileKind};
 use crate::bridge::netcon::{DEFAULT_PORT, NetconBridge};
 use crate::gi::{self, Eol, Overrides};
@@ -427,6 +428,7 @@ fn hud_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
             "DeadTune could not read its HUD record. Press Remove on the HUD tab, then Apply again.",
         ),
     });
+    checks.extend(hud_launch_test(paths, data_dir));
 
     if let Ok(text) = std::fs::read_to_string(&paths.gameinfo) {
         checks.push(match searchpaths::has_addons(&text) {
@@ -599,6 +601,17 @@ pub fn report(
         }
     }
 
+    section(&mut out, "launch guard, per pak");
+    let lines = Guard::load(data_dir)
+        .map(|g| g.report(&guard::installed_paks(paths, data_dir)))
+        .unwrap_or_else(|e| vec![format!("unreadable: {e}")]);
+    if lines.is_empty() {
+        out.push_str("nothing installed or tested\n");
+    }
+    for line in lines {
+        let _ = writeln!(out, "{line}");
+    }
+
     section(&mut out, "installed pak read-back");
     let reports = crate::addons::verify::verify_installed(paths, data_dir);
     if reports.is_empty() {
@@ -636,6 +649,28 @@ pub fn report(
         None => out.push_str("no console.log found (launch with -condebug)\n"),
     }
     out
+}
+
+pub const HUD_LAUNCH_TEST: &str = "HUD launch test";
+
+/// What the launch guard knows about the HUD pak; no row while it knows nothing.
+fn hud_launch_test(paths: &GamePaths, data_dir: &Path) -> Option<Check> {
+    let guard = Guard::load(data_dir).ok()?;
+    let installed = guard::installed_paks(paths, data_dir);
+    let sha = installed
+        .iter()
+        .find(|p| p.id == Pak::Hud)
+        .map(|p| p.sha256.as_str());
+    let state = guard.state_of(Pak::Hud, sha)?;
+    Some(match state {
+        PakState::Broke { .. } => warn(
+            HUD_LAUNCH_TEST,
+            state.describe(),
+            "DeadTune's HUD changes stopped the game from starting, so they were turned off. \
+             Your settings are kept; press Try again on the HUD page, or turn off the newest HUD change.",
+        ),
+        _ => pass(HUD_LAUNCH_TEST, state.describe()),
+    })
 }
 
 fn section(out: &mut String, title: &str) {
@@ -757,6 +792,45 @@ mod tests {
         assert_eq!(
             (check.status, check.detail.as_str()),
             (CheckStatus::Pass, "1 mod: pak60_dir.vpk")
+        );
+    }
+
+    #[test]
+    fn the_hud_launch_test_shows_in_the_check_and_the_report() {
+        use crate::addons::guard::{Guard, Pak, Verdict};
+        let (steam, paths) = fake_install("4242");
+        let data = steam.path().join("data");
+        let mut checks = Vec::new();
+        hud_checks(&paths, &data, &mut checks);
+        assert!(!checks.iter().any(|c| c.name == HUD_LAUNCH_TEST));
+
+        let mut guard = Guard::default();
+        guard.verdicts.insert(
+            Pak::Hud,
+            Verdict::Failed {
+                at: 1_800_000_000,
+                fatal: Some("FATAL ERROR: x".into()),
+                sha256: Some("bad".into()),
+            },
+        );
+        guard.save(&data).unwrap();
+        let mut checks = Vec::new();
+        hud_checks(&paths, &data, &mut checks);
+        let check = checks.iter().find(|c| c.name == HUD_LAUNCH_TEST).unwrap();
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(
+            check.detail.starts_with("stopped the game from starting"),
+            "{}",
+            check.detail
+        );
+        assert!(check.fix.as_deref().unwrap().contains("Try again"));
+
+        let text = report(Some(&paths), &data, "9.9.9", &[]);
+        assert!(
+            text.contains(
+                "== launch guard, per pak ==\nDeadTune's HUD changes: stopped the game from starting"
+            ),
+            "{text}"
         );
     }
 

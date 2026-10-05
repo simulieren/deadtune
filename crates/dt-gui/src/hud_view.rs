@@ -5,6 +5,7 @@
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+use dt_core::addons::guard::PakState;
 use dt_core::hud::elements::{self, ElementId, ElementSpec};
 use dt_core::hud::layout::{self, ElementEdit, OFFSET_LIMIT, PreviewRect, Visibility};
 use eframe::egui::epaint::Mesh;
@@ -84,7 +85,8 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
     }
 }
 
-pub fn hud_error(ui: &mut Ui, state: &AppState) {
+/// Why HUD changes are not reaching the game, and what the launch guard knows about them.
+pub fn hud_error(ui: &mut Ui, state: &mut AppState) {
     if let Some(e) = state.hud_error() {
         ui.colored_label(
             WARN,
@@ -92,6 +94,34 @@ pub fn hud_error(ui: &mut Ui, state: &AppState) {
         )
         .on_hover_text(e);
     }
+    if state.hud_held() {
+        ui.horizontal_wrapped(|ui| {
+            ui.colored_label(
+                WARN,
+                "These HUD changes stopped the game from starting, so DeadTune is leaving them out. \
+                 Change a HUD setting, or try them again.",
+            );
+            if !state.ctx.game_running && ui.small_button("Try again").clicked() {
+                state.retry_hud();
+            }
+        });
+        return;
+    }
+    let line = match state.hud_trial_state() {
+        Some(PakState::OnTrial) => {
+            "Deadlock is testing these HUD changes on this launch.".to_string()
+        }
+        Some(PakState::Untried) => {
+            "Tested on the next launch; if Deadlock fails to start, DeadTune turns them off."
+                .to_string()
+        }
+        Some(PakState::Verified { at }) if at > 0 => format!(
+            "Deadlock started fine with these HUD changes on {}.",
+            crate::addons_view::date(at)
+        ),
+        _ => return,
+    };
+    ui.label(RichText::new(line).small().color(WEAK));
 }
 
 /// What the HUD layout does to `id`, for the page that styles it: hidden there means the

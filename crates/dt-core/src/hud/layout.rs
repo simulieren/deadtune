@@ -140,17 +140,66 @@ pub enum LayoutError {
     ExtraCss(String, CssError),
 }
 
+/// A part of the HUD a layout can change, named for the player.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum HudFeature {
+    Layout,
+    MinimapColors,
+    MinimapStyle,
+    TopBar,
+    HealthBar,
+    ApplesTunnels,
+    IngameSettings,
+    CustomCss,
+    Images,
+}
+
+impl HudFeature {
+    pub fn label(self) -> &'static str {
+        match self {
+            HudFeature::Layout => "layout",
+            HudFeature::MinimapColors => "minimap colours",
+            HudFeature::MinimapStyle => "minimap style",
+            HudFeature::TopBar => "top bar",
+            HudFeature::HealthBar => "health bar",
+            HudFeature::ApplesTunnels => "apples and tunnels",
+            HudFeature::IngameSettings => "in-game settings rows",
+            HudFeature::CustomCss => "custom CSS",
+            HudFeature::Images => "UI images",
+        }
+    }
+}
+
 impl HudLayout {
     pub fn is_vanilla(&self) -> bool {
-        self.elements.values().all(|e| *e == ElementEdit::default())
-            && self.minimap_colors.is_empty()
-            && self.minimap.is_vanilla()
-            && self.top_bar.is_vanilla()
-            && self.health.is_vanilla()
-            && self.apples_tunnels.is_vanilla()
-            && self.ingame.is_vanilla()
-            && self.extra_css.values().all(|c| c.trim().is_empty())
-            && self.icons.is_empty()
+        self.features().is_empty()
+    }
+
+    /// The parts this layout changes, in `HudFeature` order.
+    pub fn features(&self) -> Vec<HudFeature> {
+        [
+            (
+                HudFeature::Layout,
+                self.elements.values().any(|e| *e != ElementEdit::default()),
+            ),
+            (HudFeature::MinimapColors, !self.minimap_colors.is_empty()),
+            (HudFeature::MinimapStyle, !self.minimap.is_vanilla()),
+            (HudFeature::TopBar, !self.top_bar.is_vanilla()),
+            (HudFeature::HealthBar, !self.health.is_vanilla()),
+            (HudFeature::ApplesTunnels, !self.apples_tunnels.is_vanilla()),
+            (HudFeature::IngameSettings, !self.ingame.is_vanilla()),
+            (
+                HudFeature::CustomCss,
+                self.extra_css.values().any(|c| !c.trim().is_empty()),
+            ),
+            (HudFeature::Images, !self.icons.is_empty()),
+        ]
+        .into_iter()
+        .filter_map(|(feature, on)| on.then_some(feature))
+        .collect()
     }
 }
 
@@ -391,6 +440,34 @@ mod tests {
             .get(HUD_STYLE)
             .cloned()
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn features_name_each_part_the_layout_changes() {
+        assert!(HudLayout::default().features().is_empty());
+        let mut l = layout(&[(
+            ElementId::Minimap,
+            ElementEdit {
+                opacity_pct: 50,
+                ..edit()
+            },
+        )]);
+        l.minimap_colors
+            .insert(IconId::EnemyHero, Color([1, 2, 3, 255]));
+        l.extra_css
+            .insert(HUD_STYLE.into(), "#X{opacity:0;}".into());
+        assert_eq!(
+            l.features(),
+            [
+                HudFeature::Layout,
+                HudFeature::MinimapColors,
+                HudFeature::CustomCss
+            ]
+        );
+        assert!(!l.is_vanilla());
+        assert_eq!(HudFeature::MinimapColors.label(), "minimap colours");
+        let blank = layout(&[(ElementId::Minimap, edit())]);
+        assert!(blank.features().is_empty() && blank.is_vanilla());
     }
 
     #[test]

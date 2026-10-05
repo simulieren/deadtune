@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Instant, SystemTime};
 
-use dt_core::addons::guard::{self, Event as GuardEvent, Guard, Verdict};
+use dt_core::addons::guard::{self, Event as GuardEvent, Guard, Pak, PakState, Verdict};
 use dt_core::addons::install::{Action, AddonsPlan, InstalledState};
 use dt_core::addons::textures::Progress;
 use dt_core::addons::{self, AddonId, AddonsConfig};
@@ -25,7 +25,7 @@ use dt_core::hud::apples_tunnels::{ApplesTunnels, DOT_SIZE_RANGE, RADIUS_RANGE};
 use dt_core::hud::elements::ElementId;
 use dt_core::hud::health_style::HealthStyle;
 use dt_core::hud::ingame::{self, IngameSettings};
-use dt_core::hud::install::HudPlan;
+use dt_core::hud::install::{HudAction, HudPlan};
 use dt_core::hud::layout::{ElementEdit, HudLayout};
 use dt_core::hud::minimap_colors::{self, Color, IconId};
 use dt_core::hud::minimap_style::{
@@ -434,17 +434,6 @@ impl Default for TopBarPreview {
             dead_hero: true,
         }
     }
-}
-
-/// What an addon card says about the launch guard's experience with it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Badge {
-    /// The game started with this exact pak.
-    Verified { at: u64 },
-    /// Installed, but no launch has been through with it yet.
-    Untried,
-    /// A launch with it failed and DeadTune removed it.
-    Broke { at: u64, fatal: Option<String> },
 }
 
 /// Starting layouts on the HUD tab. Each is plain `HudLayout` values, so a user
@@ -1002,8 +991,14 @@ impl AppState {
             }
         };
         // A HUD that cannot be built (missing game archive, foreign addon) must not block
-        // convar changes; the HUD tab shows the reason instead.
-        let hud = hud.unwrap_or(None);
+        // convar changes; the HUD tab shows the reason instead. The exact build that broke
+        // the last launch stays out until the player asks to try it again.
+        let hud = hud.unwrap_or(None).map(|mut plan| {
+            if self.guard.holds_back(&plan) {
+                plan.action = HudAction::Nothing;
+            }
+            plan
+        });
         let config = if self.without_addons() {
             &AddonsConfig::default()
         } else {
@@ -1394,7 +1389,7 @@ impl AppState {
         self.guard_tick(running, started_at, SystemTime::now());
     }
 
-    /// One guard step per game poll; a verdict removes failed addons or marks good ones.
+    /// One guard step per game poll; a verdict rolls back failed paks or marks good ones.
     pub fn guard_tick(&mut self, running: bool, started_at: Option<SystemTime>, now: SystemTime) {
         let installed = guard::installed_paks(&self.paths, &self.store.root);
         let lines = std::mem::take(&mut self.guard_lines);
@@ -1408,32 +1403,23 @@ impl AppState {
         let Some(event) = event else {
             return;
         };
-        let names = |ids: &[AddonId]| {
-            ids.iter()
-                .map(|id| addons::info(*id).name)
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
         match event {
             GuardEvent::Started { changed } => {
-                self.status = Some(Status::Info(format!(
-                    "Testing on this launch: {}. If Deadlock fails to start, DeadTune removes them.",
-                    names(&changed)
-                )));
+                self.status = Some(Status::Info(trial_started_message(&changed)));
             }
             GuardEvent::Passed { ids } => {
+                self.keep_verified_hud();
                 self.status = Some(Status::Info(format!(
                     "Deadlock started fine with {}.",
-                    names(&ids)
+                    guard::names(&ids)
                 )));
                 self.install_candidate();
             }
             GuardEvent::Failed { ids, .. } => {
-                self.rollback_addons(&ids);
-                self.status = Some(Status::Error(format!(
-                    "Deadlock didn't start with {}. DeadTune removed them.",
-                    names(&ids)
-                )));
+                self.rollback_paks(&ids);
+                if let Some(failure) = &self.guard.failure {
+                    self.status = Some(Status::Error(failure.message().headline));
+                }
                 self.install_candidate();
             }
         }
@@ -1446,23 +1432,42 @@ impl AppState {
         }
     }
 
-    /// Deletes the paks of `ids` (only files DeadTune's record names) and switches them off in
-    /// the profile, on disk too, so no later Apply puts them back unasked.
-    fn rollback_addons(&mut self, ids: &[AddonId]) {
-        guard::rollback(&mut self.guard, ids, &self.paths, &self.store.root);
-        for id in ids {
-            self.profile.addons.set_enabled(*id, false);
+    fn keep_verified_hud(&mut self) {
+        if let Err(e) = guard::keep_verified_hud(&self.guard, &self.paths, &self.store.root) {
+            self.status = Some(Status::Error(format!(
+                "keeping a copy of the HUD that worked: {e}"
+            )));
         }
-        let dir = self.profiles_dir();
-        if let Some(saved) = &mut self.saved {
-            for id in ids {
-                saved.addons.set_enabled(*id, false);
+    }
+
+    /// Rolls back the paks of `ids` (only files DeadTune's records name). Failed addons are
+    /// switched off in the profile, on disk too, so no later Apply puts them back unasked;
+    /// the HUD settings stay, and Apply holds back the exact build that failed.
+    fn rollback_paks(&mut self, ids: &[Pak]) {
+        guard::rollback(&mut self.guard, ids, &self.paths, &self.store.root);
+        let addons: Vec<AddonId> = ids
+            .iter()
+            .filter_map(|p| match p {
+                Pak::Addon(id) => Some(*id),
+                Pak::Hud => None,
+            })
+            .collect();
+        if !addons.is_empty() {
+            for id in &addons {
+                self.profile.addons.set_enabled(*id, false);
             }
-            if let Err(e) = profiles::save(&dir, saved) {
-                self.status = Some(Status::Error(format!("saving the profile: {e}")));
+            let dir = self.profiles_dir();
+            if let Some(saved) = &mut self.saved {
+                for id in &addons {
+                    saved.addons.set_enabled(*id, false);
+                }
+                if let Err(e) = profiles::save(&dir, saved) {
+                    self.status = Some(Status::Error(format!("saving the profile: {e}")));
+                }
             }
         }
         self.addons_cache = None;
+        self.hud_cache = None;
         self.refresh_preview();
     }
 
@@ -1483,19 +1488,46 @@ impl AppState {
 
     /// Switches the sequence's next suspect on and installs it for the next launch.
     fn install_candidate(&mut self) {
-        let Some(id) = self.guard.candidate() else {
-            return;
-        };
-        self.profile.addons.set_enabled(id, true);
-        self.addons_cache = None;
+        match self.guard.candidate() {
+            Some(Pak::Addon(id)) => {
+                self.profile.addons.set_enabled(id, true);
+                self.addons_cache = None;
+                self.refresh_preview();
+                let name = addons::info(id).name;
+                self.status = Some(match self.apply() {
+                    Ok(_) => Status::Info(format!(
+                        "{name} is on and installed. Start Deadlock to test it; DeadTune reports the result."
+                    )),
+                    Err(e) => Status::Error(format!("Couldn't install {name} for its test: {e}")),
+                });
+            }
+            Some(Pak::Hud) => self.reinstall_hud(),
+            None => {}
+        }
+    }
+
+    /// "Try again" for the HUD: lets the build that failed back in and installs it.
+    pub fn retry_hud(&mut self) {
+        self.reinstall_hud();
+        self.save_guard();
+    }
+
+    fn reinstall_hud(&mut self) {
+        self.guard.retry(Pak::Hud);
+        self.hud_cache = None;
         self.refresh_preview();
-        let name = addons::info(id).name;
         self.status = Some(match self.apply() {
-            Ok(_) => Status::Info(format!(
-                "{name} is on and installed. Start Deadlock to test it; DeadTune reports the result."
-            )),
-            Err(e) => Status::Error(format!("Couldn't install {name} for its test: {e}")),
+            Ok(_) => Status::Info(
+                "DeadTune's HUD changes are back on. Start Deadlock to test them; DeadTune reports the result."
+                    .into(),
+            ),
+            Err(e) => Status::Error(format!("Couldn't put the HUD changes back: {e}")),
         });
+    }
+
+    /// True when Apply is holding back the HUD build that stopped the last launch.
+    pub fn hud_held(&self) -> bool {
+        matches!(&self.hud_cache, Some((_, Ok(Some(plan)))) if self.guard.holds_back(plan))
     }
 
     pub fn dismiss_guard_failure(&mut self) {
@@ -1504,37 +1536,36 @@ impl AppState {
     }
 
     /// What the launch guard knows about an addon's pak.
-    pub fn addon_badge(&self, id: AddonId, installed: Option<&InstalledState>) -> Option<Badge> {
+    pub fn addon_badge(&self, id: AddonId, installed: Option<&InstalledState>) -> Option<PakState> {
         let sha = match installed {
             Some(InstalledState::Current(r) | InstalledState::Stale(r)) => Some(r.sha256.as_str()),
             _ => None,
         };
-        match (sha, self.guard.verdict(id)) {
-            (Some(sha), verdict) if self.guard.is_verified(id, sha) => Some(Badge::Verified {
-                at: match verdict {
-                    Some(Verdict::Verified { at }) => *at,
-                    _ => 0,
-                },
-            }),
-            (None, Some(Verdict::Failed { at, fatal })) => Some(Badge::Broke {
-                at: *at,
-                fatal: fatal.clone(),
-            }),
-            (Some(_), _) => Some(Badge::Untried),
-            (None, _) => None,
-        }
+        self.guard.state_of(id, sha)
+    }
+
+    /// What the launch guard knows about the installed HUD pak.
+    pub fn hud_trial_state(&self) -> Option<PakState> {
+        let installed = guard::installed_paks(&self.paths, &self.store.root);
+        let sha = installed
+            .iter()
+            .find(|p| p.id == Pak::Hud)
+            .map(|p| p.sha256.as_str());
+        self.guard.state_of(Pak::Hud, sha)
     }
 
     /// Screenshot lever and test hook: a failed trial for `ids` with `fatal` captured, as if
     /// the game had just died with them installed.
-    pub fn inject_trial_failure(&mut self, ids: Vec<AddonId>, fatal: Option<String>) {
+    pub fn inject_trial_failure(&mut self, ids: Vec<Pak>, fatal: Option<String>) {
         let now = guard::unix(SystemTime::now());
+        let installed = guard::installed_paks(&self.paths, &self.store.root);
         self.guard.failure = Some(guard::Failure {
             ids: ids.clone(),
             fatal: fatal.clone(),
             at: now,
             removed: Vec::new(),
             kept: Vec::new(),
+            hud: None,
         });
         for id in &ids {
             self.guard.verdicts.insert(
@@ -1542,11 +1573,36 @@ impl AppState {
                 Verdict::Failed {
                     at: now,
                     fatal: fatal.clone(),
+                    sha256: installed
+                        .iter()
+                        .find(|p| p.id == *id)
+                        .map(|p| p.sha256.clone()),
                 },
             );
         }
-        self.rollback_addons(&ids);
+        self.rollback_paks(&ids);
         self.save_guard();
+    }
+
+    /// Screenshot lever: a trial running for `ids`, as if the game had just started with them.
+    pub fn inject_trial_started(&mut self, ids: Vec<Pak>) {
+        let installed = guard::installed_paks(&self.paths, &self.store.root);
+        let changed: guard::PakSet = ids
+            .iter()
+            .map(|id| {
+                let sha = installed
+                    .iter()
+                    .find(|p| p.id == *id)
+                    .map(|p| p.sha256.clone());
+                (*id, sha.unwrap_or_default())
+            })
+            .collect();
+        self.guard.trial = Some(guard::Trial {
+            loaded: changed.clone(),
+            changed,
+            launched_at: guard::unix(SystemTime::now()),
+        });
+        self.status = Some(Status::Info(trial_started_message(&ids)));
     }
 
     /// Screenshot lever: every installed pak counts as started with.
@@ -1558,6 +1614,7 @@ impl AppState {
                 .verdicts
                 .insert(pak.id, Verdict::Verified { at: now });
         }
+        self.keep_verified_hud();
         self.save_guard();
     }
 
@@ -2460,6 +2517,13 @@ impl AppState {
             self.on_changes(&changes);
         }
     }
+}
+
+fn trial_started_message(changed: &[Pak]) -> String {
+    format!(
+        "Testing on this launch: {}. If Deadlock fails to start, DeadTune turns them off.",
+        guard::names(changed)
+    )
 }
 
 #[cfg(test)]
@@ -3817,7 +3881,7 @@ mod tests {
                 AddonId::SoulContainer,
                 state.addon_states().get(&AddonId::SoulContainer)
             ),
-            Some(Badge::Untried)
+            Some(PakState::OnTrial)
         ));
         state.guard_lines.push(
             "FATAL ERROR: Unable to read default keybinding configuration user_keys_default".into(),
@@ -3840,12 +3904,12 @@ mod tests {
             "profile on disk updated"
         );
         let failure = state.guard.failure.clone().expect("banner shows");
-        assert_eq!(failure.ids, [AddonId::SoulContainer]);
+        assert_eq!(failure.ids, [Pak::Addon(AddonId::SoulContainer)]);
         assert_eq!(failure.removed, ["pak75_dir.vpk"]);
         assert!(failure.fatal.as_deref().unwrap().starts_with("FATAL ERROR"));
         assert!(matches!(
             state.addon_badge(AddonId::SoulContainer, None),
-            Some(Badge::Broke { fatal: Some(_), .. })
+            Some(PakState::Broke { fatal: Some(_), .. })
         ));
         assert!(matches!(state.status, Some(Status::Error(ref m)) if m.contains("didn't start")));
         assert_eq!(
@@ -3869,7 +3933,7 @@ mod tests {
         let states = state.addon_states();
         assert!(matches!(
             state.addon_badge(AddonId::SoulContainer, states.get(&AddonId::SoulContainer)),
-            Some(Badge::Verified { .. })
+            Some(PakState::Verified { .. })
         ));
         assert!(state.profile.addons.is_enabled(AddonId::SoulContainer));
         assert!(matches!(state.status, Some(Status::Info(ref m)) if m.contains("started fine")));
@@ -3963,7 +4027,7 @@ mod tests {
             let trial = state.guard.trial.clone().expect("the new pak is on trial");
             assert_eq!(
                 trial.changed.keys().collect::<Vec<_>>(),
-                [&AddonId::VindictaScope],
+                [&Pak::Addon(AddonId::VindictaScope)],
                 "{side}"
             );
             state.guard_lines.push("DEADTUNE_BOOT 0.9.0".into());
@@ -3997,7 +4061,10 @@ mod tests {
         let (_dir, mut state) = state();
         state.set_addon_enabled(AddonId::BlurDisabler, true);
         state.inject_trial_failure(
-            vec![AddonId::BlurDisabler, AddonId::ParticleDisabler],
+            vec![
+                AddonId::BlurDisabler.into(),
+                AddonId::ParticleDisabler.into(),
+            ],
             Some("FATAL ERROR: test".into()),
         );
         let failure = state.guard.failure.as_ref().unwrap();
@@ -4005,10 +4072,10 @@ mod tests {
         assert!(!state.profile.addons.is_enabled(AddonId::BlurDisabler));
         assert!(matches!(
             state.addon_badge(AddonId::ParticleDisabler, None),
-            Some(Badge::Broke { .. })
+            Some(PakState::Broke { .. })
         ));
         state.start_one_at_a_time();
-        assert_eq!(state.guard.candidate(), Some(AddonId::BlurDisabler));
+        assert_eq!(state.guard.candidate(), Some(AddonId::BlurDisabler.into()));
         assert!(
             state.profile.addons.is_enabled(AddonId::BlurDisabler),
             "first suspect back on"
@@ -4046,5 +4113,159 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("-condebug"), "launch args: {text}");
+    }
+
+    fn hud_pak(state: &AppState) -> PathBuf {
+        dt_core::hud::install::addons_dir(&state.paths).join(dt_core::hud::install::ADDON_FILE)
+    }
+
+    /// A game pak holding the real vanilla HUD stylesheet, so layout edits build.
+    fn with_game_hud(state: &AppState) {
+        use dt_core::hud::vpk;
+        let vanilla = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../dt-core/tests/fixtures/hud/hud_vanilla.vcss_c"
+        ))
+        .unwrap();
+        let files = BTreeMap::from([(dt_core::hud::elements::HUD_STYLE.to_string(), vanilla)]);
+        std::fs::write(
+            state
+                .paths
+                .citadel_dir
+                .join(dt_core::hud::install::GAME_PAK),
+            vpk::write(&files),
+        )
+        .unwrap();
+    }
+
+    fn apply_minimap_opacity(state: &mut AppState, pct: u8) -> Vec<u8> {
+        state.set_hud_element(
+            ElementId::Minimap,
+            ElementEdit {
+                opacity_pct: pct,
+                ..ElementEdit::default()
+            },
+        );
+        state.apply().unwrap();
+        std::fs::read(hud_pak(state)).unwrap()
+    }
+
+    fn launch_with(state: &mut AppState, after: u64, line: &str) {
+        let launched = SystemTime::now() + Duration::from_secs(after);
+        state.observe_game(true, Some(launched));
+        state.guard_lines.push(line.into());
+        state.observe_game(true, Some(launched));
+    }
+
+    const FATAL: &str =
+        "FATAL ERROR: Unable to read default keybinding configuration user_keys_default";
+
+    #[test]
+    fn a_failed_hud_trial_restores_the_last_hud_that_worked_and_keeps_the_settings() {
+        let (_dir, mut state) = state();
+        with_game_hud(&state);
+        let good = apply_minimap_opacity(&mut state, 50);
+        assert_eq!(state.hud_trial_state(), Some(PakState::Untried));
+        launch_with(&mut state, 5, "DEADTUNE_BOOT 0.12.0");
+        assert!(matches!(
+            state.hud_trial_state(),
+            Some(PakState::Verified { .. })
+        ));
+        state.observe_game(false, None);
+
+        let bad = apply_minimap_opacity(&mut state, 40);
+        assert_ne!(good, bad);
+        launch_with(&mut state, 10, FATAL);
+
+        assert_eq!(std::fs::read(hud_pak(&state)).unwrap(), good);
+        assert_eq!(
+            state.hud_edit(ElementId::Minimap).opacity_pct,
+            40,
+            "settings kept"
+        );
+        let failure = state.guard.failure.clone().expect("banner shows");
+        assert_eq!(failure.ids, [Pak::Hud]);
+        assert_eq!(
+            failure.hud.as_ref().map(|h| h.features.clone()),
+            Some(vec![dt_core::hud::HudFeature::Layout])
+        );
+        assert!(
+            matches!(state.status, Some(Status::Error(ref m)) if m.contains("put back the last HUD that worked")),
+            "{:?}",
+            state.status
+        );
+        assert!(state.hud_held());
+        state.observe_game(false, None);
+        state.apply().unwrap();
+        assert_eq!(
+            std::fs::read(hud_pak(&state)).unwrap(),
+            good,
+            "an unrelated Apply does not put the broken HUD back"
+        );
+
+        state.retry_hud();
+        assert_eq!(std::fs::read(hud_pak(&state)).unwrap(), bad);
+        assert!(!state.hud_held());
+        assert_eq!(state.hud_trial_state(), Some(PakState::Untried));
+    }
+
+    #[test]
+    fn a_failed_hud_trial_with_no_hud_that_worked_turns_the_hud_off() {
+        let (_dir, mut state) = state();
+        with_game_hud(&state);
+        apply_minimap_opacity(&mut state, 50);
+        launch_with(&mut state, 5, FATAL);
+        assert!(!hud_pak(&state).exists());
+        assert_eq!(
+            state.hud_edit(ElementId::Minimap).opacity_pct,
+            50,
+            "settings kept"
+        );
+        assert!(matches!(
+            state.status,
+            Some(Status::Error(ref m)) if m == "DeadTune's HUD changes stopped the game from starting, so they were turned off."
+        ));
+        assert!(state.hud_held());
+        assert!(matches!(
+            state.hud_trial_state(),
+            Some(PakState::Broke { .. })
+        ));
+    }
+
+    #[test]
+    fn a_failed_launch_with_an_addon_and_the_hud_rolls_back_both() {
+        let (_dir, mut state) = state();
+        with_game_hud(&state);
+        let addon = with_soul_container_installed(&mut state);
+        apply_minimap_opacity(&mut state, 50);
+        launch_with(&mut state, 5, FATAL);
+        assert!(!addon.exists());
+        assert!(!hud_pak(&state).exists());
+        assert!(!state.profile.addons.is_enabled(AddonId::SoulContainer));
+        let failure = state.guard.failure.clone().unwrap();
+        assert_eq!(failure.ids, [Pak::Addon(AddonId::SoulContainer), Pak::Hud]);
+        state.start_one_at_a_time();
+        assert_eq!(
+            state.guard.candidate(),
+            Some(Pak::Addon(AddonId::SoulContainer))
+        );
+        assert!(addon.exists(), "first suspect back for its test");
+        assert!(!hud_pak(&state).exists(), "the HUD waits its turn");
+    }
+
+    #[test]
+    fn safe_mode_takes_the_hud_out_and_a_launch_in_it_is_no_trial() {
+        let (_dir, mut state) = state();
+        with_game_hud(&state);
+        apply_minimap_opacity(&mut state, 50);
+        state.toggle_safe_mode().unwrap();
+        assert!(!hud_pak(&state).exists());
+        let launched = SystemTime::now() + Duration::from_secs(5);
+        state.observe_game(true, Some(launched));
+        assert!(state.guard.trial.is_none());
+        state.observe_game(false, None);
+        state.toggle_safe_mode().unwrap();
+        assert!(hud_pak(&state).exists());
+        assert_eq!(state.hud_trial_state(), Some(PakState::Untried));
     }
 }

@@ -875,3 +875,117 @@ fn verify_rejects_an_icon_that_is_not_our_encoding() {
     let verified = verify::verify(&bad, &verify::expect_for_hud(&fake.game(), &bad));
     assert!(!verified.is_ok(), "a truncated icon fails");
 }
+
+fn installed_sha(fake: &Fake) -> String {
+    dt_core::backup::sha256_hex(&fs::read(fake.addon()).unwrap())
+}
+
+fn kept_files(fake: &Fake) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(fake.state.join(install::VERIFIED_DIR))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_failed_hud_rolls_back_to_the_kept_verified_copy() {
+    let fake = Fake::new();
+    fake.install(patch(CSS));
+    let good = installed_sha(&fake);
+    install::keep_verified(&fake.paths, &fake.state, &good).unwrap();
+    assert_eq!(
+        kept_files(&fake),
+        [format!("{good}.toml"), format!("{good}.vpk")]
+    );
+
+    fake.install(patch("#Chat{opacity:0;}"));
+    let bad = installed_sha(&fake);
+    assert_ne!(good, bad);
+    assert_eq!(
+        install::roll_back(&fake.paths, &fake.state).unwrap(),
+        install::HudRollback::Restored
+    );
+    assert_eq!(installed_sha(&fake), good);
+    match install::installed_state(&fake.paths, &fake.state).unwrap() {
+        InstalledState::Current(r) => assert_eq!(r.sha256, good),
+        other => panic!("expected the restored pak to be ours and current, got {other:?}"),
+    }
+
+    fake.install(patch("#Chat{opacity:0.5;}"));
+    let newer = installed_sha(&fake);
+    install::keep_verified(&fake.paths, &fake.state, &newer).unwrap();
+    assert_eq!(
+        kept_files(&fake),
+        [format!("{newer}.toml"), format!("{newer}.vpk")],
+        "one kept copy at most"
+    );
+}
+
+#[test]
+fn keep_verified_ignores_a_sha_that_is_not_on_disk() {
+    let fake = Fake::new();
+    fake.install(patch(CSS));
+    install::keep_verified(&fake.paths, &fake.state, "0000").unwrap();
+    assert!(!fake.state.join(install::VERIFIED_DIR).exists());
+}
+
+#[test]
+fn a_failed_hud_with_no_kept_copy_is_removed() {
+    let fake = Fake::new();
+    fake.install(patch(CSS));
+    assert_eq!(
+        install::roll_back(&fake.paths, &fake.state).unwrap(),
+        install::HudRollback::Removed
+    );
+    assert!(!fake.addon().exists());
+    assert!(!fake.record().exists());
+    assert_eq!(
+        install::installed_state(&fake.paths, &fake.state).unwrap(),
+        InstalledState::None
+    );
+}
+
+#[test]
+fn a_kept_copy_from_an_older_game_build_is_not_restored() {
+    let fake = Fake::new();
+    fake.install(patch(CSS));
+    install::keep_verified(&fake.paths, &fake.state, &installed_sha(&fake)).unwrap();
+    write_manifest(fake.paths.appmanifest.as_ref().unwrap(), "20261005");
+    fake.install(patch("#Chat{opacity:0;}"));
+    assert_eq!(
+        install::roll_back(&fake.paths, &fake.state).unwrap(),
+        install::HudRollback::Removed
+    );
+    assert!(!fake.addon().exists());
+}
+
+#[test]
+fn roll_back_refuses_a_foreign_file() {
+    let fake = Fake::new();
+    fs::create_dir_all(fake.addon().parent().unwrap()).unwrap();
+    fs::write(fake.addon(), b"someone else's addon").unwrap();
+    assert!(matches!(
+        install::roll_back(&fake.paths, &fake.state),
+        Err(HudError::Foreign(_))
+    ));
+    assert_eq!(fs::read(fake.addon()).unwrap(), b"someone else's addon");
+}
+
+#[test]
+fn the_record_names_the_features_the_pak_carries() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    hud.elements.insert(
+        ElementId::Minimap,
+        ElementEdit {
+            opacity_pct: 50,
+            ..ElementEdit::default()
+        },
+    );
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    let record = install::read_record(&fake.state).unwrap().unwrap();
+    assert_eq!(record.features, [dt_core::hud::HudFeature::Layout]);
+}

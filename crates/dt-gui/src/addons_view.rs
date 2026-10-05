@@ -12,8 +12,10 @@ use dt_core::addons::{Factor, ScopeOptions, TextureCategory, TextureDownscale};
 use eframe::egui::{self, Align, Color32, Layout, RichText, Ui, vec2};
 
 use crate::simple::{caption, card_title, switch};
-use crate::state::{AppState, Badge, Status};
+use crate::state::{AppState, Status};
 use crate::theme::{self, ACCENT, BAD, GOOD, WARN, WEAK};
+use dt_core::addons::guard::{Pak, PakState};
+use dt_core::hud::install::HudRollback;
 
 /// Width kept free on the right of a card's header for the status line and badge.
 const STATUS_COLUMN: f32 = 250.0;
@@ -237,7 +239,7 @@ fn status(
     }
 }
 
-fn date(at: u64) -> String {
+pub fn date(at: u64) -> String {
     chrono::DateTime::<chrono::Local>::from(
         std::time::UNIX_EPOCH + std::time::Duration::from_secs(at),
     )
@@ -246,12 +248,18 @@ fn date(at: u64) -> String {
 }
 
 /// The launch guard's badge on a card: green once a launch proved the pak, red once one failed.
-fn badge(ui: &mut Ui, badge: Option<Badge>) {
+fn badge(ui: &mut Ui, badge: Option<PakState>) {
     let Some(badge) = badge else {
         return;
     };
     let (color, text, hover) = match badge {
-        Badge::Verified { at } => (
+        PakState::OnTrial => (
+            ACCENT,
+            "Testing on this launch".to_string(),
+            "Deadlock is starting with this pak now; if it fails to start, DeadTune removes it."
+                .to_string(),
+        ),
+        PakState::Verified { at } => (
             GOOD,
             "Verified in game".to_string(),
             if at == 0 {
@@ -260,13 +268,13 @@ fn badge(ui: &mut Ui, badge: Option<Badge>) {
                 format!("Deadlock started with this exact pak on {}.", date(at))
             },
         ),
-        Badge::Untried => (
+        PakState::Untried => (
             WEAK,
             "Not tried in game yet".to_string(),
             "Tested on the next launch; if Deadlock fails to start, DeadTune removes it."
                 .to_string(),
         ),
-        Badge::Broke { at, fatal } => (
+        PakState::Broke { at, fatal } => (
             BAD,
             "Broke game start, removed".to_string(),
             match fatal {
@@ -291,20 +299,10 @@ pub fn guard_banner(ui: &mut Ui, state: &mut AppState) {
     let Some(failure) = state.guard.failure.clone() else {
         return;
     };
-    let names: Vec<&str> = failure
-        .ids
-        .iter()
-        .map(|id| addons::info(*id).name)
-        .collect();
+    let message = failure.message();
     ui.horizontal_wrapped(|ui| {
-        ui.colored_label(
-            BAD,
-            RichText::new(format!("Deadlock didn't start with {}.", names.join(", "))).strong(),
-        );
-        ui.label(
-            "DeadTune removed them, so the game will start normally now. \
-             Turn them back on one at a time to find the culprit.",
-        );
+        ui.colored_label(BAD, RichText::new(message.headline).strong());
+        ui.label(message.advice);
     });
     if let Some(line) = &failure.fatal {
         ui.label(RichText::new(line).monospace().size(11.5).color(WEAK));
@@ -316,7 +314,18 @@ pub fn guard_banner(ui: &mut Ui, state: &mut AppState) {
         {
             state.status = Some(Status::Error(format!("launch: {e}")));
         }
-        if failure.ids.len() > 1 && state.guard.sequence.is_none() {
+        if failure.ids == [Pak::Hud] && !state.ctx.game_running {
+            if ui
+                .button("Try the HUD again")
+                .on_hover_text(
+                    "Installs the HUD changes that failed once more. If Deadlock fails to start \
+                     again, DeadTune turns them off again.",
+                )
+                .clicked()
+            {
+                state.retry_hud();
+            }
+        } else if failure.ids.len() > 1 && state.guard.sequence.is_none() {
             if ui
                 .button("Enable one at a time")
                 .on_hover_text(
@@ -330,8 +339,8 @@ pub fn guard_banner(ui: &mut Ui, state: &mut AppState) {
         } else if let Some(id) = state.guard.candidate() {
             ui.label(
                 RichText::new(format!(
-                    "Testing one at a time: {} is on for the next launch.",
-                    addons::info(id).name
+                    "Testing one at a time: {} on for the next launch.",
+                    id.name()
                 ))
                 .color(ACCENT),
             );
@@ -360,16 +369,45 @@ pub fn guard_banner(ui: &mut Ui, state: &mut AppState) {
                 .small()
                 .color(WEAK),
         );
-        let removed = if failure.removed.is_empty() {
-            "nothing (already gone)".to_string()
-        } else {
-            failure.removed.join(", ")
-        };
-        ui.label(
-            RichText::new(format!("Removed from game/citadel/addons: {removed}"))
+        let restored = failure
+            .hud
+            .as_ref()
+            .is_some_and(|h| h.rollback == HudRollback::Restored);
+        if !(restored && failure.removed.is_empty()) {
+            let removed = if failure.removed.is_empty() {
+                "nothing (already gone)".to_string()
+            } else {
+                failure.removed.join(", ")
+            };
+            ui.label(
+                RichText::new(format!("Removed from game/citadel/addons: {removed}"))
+                    .small()
+                    .color(WEAK),
+            );
+        }
+        if restored {
+            ui.label(
+                RichText::new(format!(
+                    "Put back in game/citadel/addons: {}, the last HUD the game started with",
+                    dt_core::hud::install::ADDON_FILE
+                ))
                 .small()
                 .color(WEAK),
-        );
+            );
+        }
+        if let Some(hud) = &failure.hud
+            && !hud.features.is_empty()
+        {
+            let parts: Vec<&str> = hud.features.iter().map(|f| f.label()).collect();
+            ui.label(
+                RichText::new(format!(
+                    "HUD parts in the version that failed: {}",
+                    parts.join(", ")
+                ))
+                .small()
+                .color(WEAK),
+            );
+        }
         for kept in &failure.kept {
             ui.label(
                 RichText::new(format!("Left in place: {kept}"))

@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use dt_core::addons::clutter;
 use dt_core::bridge::ack::PushStatus;
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::catalog::{CatalogEntry, Impact, Kind};
@@ -1677,6 +1678,9 @@ fn setting_row(
                         .color(WARN),
                 )
                 .on_hover_text("Ignored: the engine flags this gameinfo_cannot_override, so Deadlock skips it in gameinfo.gi. If it is cheat-flagged, the console still takes it in hideout or sandbox.");
+            }
+            if name == clutter::FADE_CONVAR && clutter::fade_hides_effects(&value) {
+                ui.label(RichText::new(clutter::FADE_WARNING).small().color(WARN));
             }
             if changed {
                 let was = friendly::display(row.control, &preset);

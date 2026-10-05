@@ -10391,7 +10391,7 @@ apply = "live_cheat"
 impact = "medium"
 denylist = false
 gameinfo_ignored = false
-notes = "Scale on the distance at which objects fade in and out. -1 is the engine default."
+notes = "Scale on the distance at which objects fade in and out. -1 is the engine default. Low values (Graves' wall marker needs 4 or lower) also hide jump pad wind past a few metres."
 
 [sc_fade_distance_scale_override.presets]
 sqooky = "100"

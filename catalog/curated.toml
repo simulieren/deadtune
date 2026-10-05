@@ -224,7 +224,7 @@ notes = "LOD scale. -1 is the engine default; lower values switch to cheaper mod
 range = [-1, 200]
 step = 5
 impact = "medium"
-notes = "Scale on the distance at which objects fade in and out. -1 is the engine default."
+notes = "Scale on the distance at which objects fade in and out. -1 is the engine default. Low values (Graves' wall marker needs 4 or lower) also hide jump pad wind past a few metres."
 
 [r_size_cull_threshold]
 range = [0, 2]

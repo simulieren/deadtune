@@ -12,6 +12,19 @@ use crate::hud::vpk::VpkDir;
 /// The Graves pack hides her wall marker unless objects fade at this distance scale or less.
 pub const FADE_CONVAR: &str = "sc_fade_distance_scale_override";
 pub const FADE_MAX: i64 = 4;
+/// Below this scale distant effects that fade with range, such as jump pad wind, vanish.
+/// Confirmed in game for 4 and 5; 100 is the lowest value presets use and is assumed safe.
+pub const FADE_SAFE_MIN: f64 = 100.0;
+pub const FADE_WARNING: &str = "Low values hide jump pad wind and other effects that fade with distance. The game default is -1 (Auto), which keeps them.";
+
+/// True when the fade distance scale is low enough to hide effects past a few metres.
+/// -1 (the engine default) and anything that does not parse are left alone.
+pub fn fade_hides_effects(value: &str) -> bool {
+    value
+        .trim()
+        .parse::<f64>()
+        .is_ok_and(|v| (0.0..FADE_SAFE_MIN).contains(&v))
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Paths {
@@ -47,7 +60,7 @@ pub static GROUPS: [ClutterGroup; 4] = [
         label: "Graves effects",
         detail: "Most of Graves' ambient, weapon and ability particles; what you need to play against her stays.",
         warning: Some(
-            "Her grave wall marker only shows with object fade distance (sc_fade_distance_scale_override) at 4 or lower.",
+            "Her grave wall marker only shows with object fade distance (sc_fade_distance_scale_override) at 4 or lower, which also hides jump pad wind past a few metres.",
         ),
         paths: Paths::List(include_str!("clutter/graves.txt")),
     },
@@ -107,6 +120,16 @@ mod tests {
     use crate::hud::vpk;
 
     const EMPTY: &[u8] = include_bytes!("../../tests/fixtures/particles/empty.vpcf_c");
+
+    #[test]
+    fn low_fade_scales_hide_effects_and_the_default_does_not() {
+        for v in ["0", "4", "5", "99.9"] {
+            assert!(fade_hides_effects(v), "{v}");
+        }
+        for v in ["-1", "100", "180", "", "nope"] {
+            assert!(!fade_hides_effects(v), "{v}");
+        }
+    }
 
     fn game() -> VpkDir {
         let files: BTreeMap<String, Vec<u8>> = [

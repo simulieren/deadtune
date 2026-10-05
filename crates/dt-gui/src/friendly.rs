@@ -387,7 +387,7 @@ pub const ROWS: &[Row] = &[
     entry(
         "sc_fade_distance_scale_override",
         "Fade-in distance",
-        "How early objects fade in as you approach.",
+        "How early objects fade in as you approach. Auto (-1) is the game default.",
         slider(Unit::Scale, &[(-1.0, "Auto")]),
     ),
     entry(

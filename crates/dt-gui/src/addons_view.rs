@@ -637,6 +637,11 @@ fn graves_fade_hint(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
             edits.push(Edit::GravesFade);
         }
     });
+    ui.label(
+        RichText::new("Setting it to 4 also hides jump pad wind past a few metres.")
+            .small()
+            .color(WEAK),
+    );
 }
 
 fn blur_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {

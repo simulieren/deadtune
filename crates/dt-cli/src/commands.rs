@@ -109,10 +109,18 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "ranked-safe",
         usage: "ranked-safe [--dry-run] [--yes]",
-        summary: "restore the stock ConVars block and remove the HUD addon",
+        summary: "restore the stock ConVars block and SceneSystem values, remove the HUD addon",
         values: &[],
         switches: &["dry-run", "yes"],
         run: cmd_apply::ranked_safe,
+    },
+    Command {
+        name: "practice",
+        usage: "practice on|off [--shadows] [--fog] [--batching] --profile <file>",
+        summary: "SceneSystem shortcuts for bots, sandbox and unranked (matchmaking may refuse to queue)",
+        values: &["profile"],
+        switches: &["shadows", "fog", "batching"],
+        run: cmd_profile::practice,
     },
     Command {
         name: "restore",

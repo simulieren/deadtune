@@ -198,6 +198,41 @@ fn diff_prints_plan_and_unified_diff_without_writing() {
 }
 
 #[test]
+fn practice_mode_edits_the_profile_applies_and_ranked_safe_restores() {
+    let fake = Fake::new();
+    let stock = read(&fake.gameinfo());
+    let out = fake.ok(&["practice", "on", "--fog", "--profile", "laptop.toml"]);
+    assert!(out.contains("shadows off, fog on, batching off"), "{out}");
+    assert!(out.contains("refuse to find matches"), "{out}");
+    assert!(read(&fake.file("laptop.toml")).contains("[practice]\n"));
+    assert!(
+        fake.ok(&["profile", "show", "laptop.toml"])
+            .contains("practice shadows off, fog on, batching off")
+    );
+
+    let diff = fake.ok(&["diff", "--profile", "laptop.toml"]);
+    assert!(diff.contains("practice mode"), "{diff}");
+    assert!(diff.contains("SceneSystem/VolumetricFog"), "{diff}");
+    fake.ok(&["apply", "--profile", "laptop.toml", "--yes"]);
+    let applied = read(&fake.gameinfo());
+    assert!(
+        applied.contains("VolumetricFog                     \"0\""),
+        "{applied}"
+    );
+    assert!(applied.contains("CSMCascadeResolution           \"2048\""));
+
+    let out = fake.ok(&["ranked-safe", "--yes"]);
+    assert!(out.contains("Wrote gameinfo.gi"), "{out}");
+    assert_eq!(read(&fake.gameinfo()), stock, "stock byte for byte");
+
+    let out = fake.ok(&["practice", "off", "--profile", "laptop.toml"]);
+    assert!(out.contains("shadows off, fog off, batching off"), "{out}");
+    assert!(!read(&fake.file("laptop.toml")).contains("practice"));
+    let out = fake.expect(&["practice", "maybe", "--profile", "laptop.toml"], 2);
+    assert!(out.contains("expected on or off"), "{out}");
+}
+
+#[test]
 fn apply_needs_yes_without_a_terminal() {
     let fake = Fake::new();
     let before = read(&fake.gameinfo());

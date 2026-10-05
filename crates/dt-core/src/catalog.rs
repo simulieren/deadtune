@@ -174,8 +174,10 @@ fn entries_from_csv(csv: &str) -> Result<BTreeMap<String, CatalogEntry>, Catalog
     let default_col = col("engine_default")?;
     let desc_col = col("engine_description")?;
     let comment_col = col("preset_comment(first seen)")?;
+    // Remote presets have no column: their values may not be redistributed.
     let preset_cols = crate::preset::all()
         .iter()
+        .filter(|p| p.pinned().is_some())
         .map(|p| Ok((p.id, col(p.id.key())?)))
         .collect::<Result<Vec<_>, CatalogError>>()?;
 

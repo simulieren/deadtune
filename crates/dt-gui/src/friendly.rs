@@ -684,7 +684,7 @@ pub fn preset_blurb(id: PresetId) -> Option<&'static str> {
         PresetId::BootMaxfps => Some("Max FPS, looks worse."),
         PresetId::OptilockPotato => Some("Potato mode: max FPS for very old hardware."),
         PresetId::KaizExtremelow => Some("Absolute minimum: max FPS, looks rough."),
-        PresetId::SqookyTest => None,
+        PresetId::SqookyTest | PresetId::SideLock => None,
     }
 }
 

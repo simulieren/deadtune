@@ -15,7 +15,8 @@ use crate::gi::{self, GiError, Override, Overrides};
 use crate::hud::install::{self as hud_install, HudAction, HudError, HudPlan, InstalledState};
 use crate::hud::{HudLayout, searchpaths};
 use crate::locate::GamePaths;
-use crate::preset::{self, PresetId};
+use crate::preset::remote::{self, RemoteError};
+use crate::preset::{self, Source};
 use crate::profile::{BaseRef, Profile};
 use crate::video::{self, VideoError};
 
@@ -148,18 +149,25 @@ pub enum ApplyError {
     Stale(PathBuf),
     #[error("base file {0}: {1}")]
     Base(PathBuf, std::io::Error),
+    #[error("{0}")]
+    Remote(#[from] RemoteError),
 }
 
-/// Pinned preset text, or the file for `BaseRef::File` (which carries no video.txt).
-pub fn resolve_base(profile: &Profile) -> Result<BaseTexts, ApplyError> {
+/// Embedded preset text, a remote preset's cached gameinfo.gi under `presets_dir` (see
+/// [`preset::cache_dir`]), or the file for `BaseRef::File`. Remote presets and files carry no
+/// video.txt. Only the ConVars block of the gameinfo is ever used ([`target`]).
+pub fn resolve_base(profile: &Profile, presets_dir: &Path) -> Result<BaseTexts, ApplyError> {
     match &profile.base {
-        BaseRef::Preset(id) => {
-            let info = preset::info(*id);
-            Ok(BaseTexts {
-                gameinfo: info.pinned_gameinfo.to_string(),
-                video: info.pinned_video.map(str::to_string),
-            })
-        }
+        BaseRef::Preset(id) => match &preset::info(*id).source {
+            Source::Pinned(p) => Ok(BaseTexts {
+                gameinfo: p.gameinfo.to_string(),
+                video: p.video.map(str::to_string),
+            }),
+            Source::Remote(r) => Ok(BaseTexts {
+                gameinfo: remote::read(r, &remote::dir(r, presets_dir))?,
+                video: None,
+            }),
+        },
         BaseRef::File(path) => Ok(BaseTexts {
             gameinfo: fs::read_to_string(path).map_err(|e| ApplyError::Base(path.clone(), e))?,
             video: None,
@@ -217,7 +225,7 @@ pub fn target(
         .into_iter()
         .partition(|(name, _)| catalog.is_denied(name));
     let swapped = gi::replace_convars_block(live_gameinfo, &base.gameinfo)?;
-    let stock = gi::effective_values(preset::info(PresetId::Vanilla).pinned_gameinfo)?;
+    let stock = gi::effective_values(preset::vanilla_gameinfo())?;
     let base_denied: Overrides = gi::effective_values(&swapped)?
         .into_iter()
         .filter(|(name, value)| catalog.is_denied(name) && stock.get(name) != Some(value))
@@ -337,7 +345,7 @@ pub fn ranked_safe_target(
 ) -> Result<Target, ApplyError> {
     let stock = match store.original(FileKind::GameInfo) {
         Some(entry) => fs::read_to_string(&entry.path)?,
-        None => preset::info(PresetId::Vanilla).pinned_gameinfo.to_string(),
+        None => preset::vanilla_gameinfo().to_string(),
     };
     Ok(Target {
         gameinfo: gi::replace_convars_block(live_gameinfo, &stock)?,

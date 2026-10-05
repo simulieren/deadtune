@@ -89,7 +89,7 @@ pub fn status(env: &Env, args: &Args) -> CliResult {
 pub fn presets(_: &Env, args: &Args) -> CliResult {
     args.positionals::<0>("no positional arguments")?;
     for p in preset::all() {
-        let video = if p.pinned_video.is_some() {
+        let video = if p.pinned().is_some_and(|x| x.video.is_some()) {
             "  +video.txt"
         } else {
             ""

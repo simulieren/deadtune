@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Instant, SystemTime};
 
@@ -30,7 +30,7 @@ use dt_core::hud::minimap_style::{
 };
 use dt_core::launch::{self, LaunchOptions};
 use dt_core::locate::GamePaths;
-use dt_core::preset::PresetId;
+use dt_core::preset::{self, PresetId};
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 use dt_core::watch::{self, Change, Watcher};
 
@@ -65,8 +65,8 @@ pub struct Base {
 }
 
 impl Base {
-    fn resolve(profile: &Profile) -> Result<Base, String> {
-        let texts = apply::resolve_base(profile).map_err(|e| e.to_string())?;
+    fn resolve(profile: &Profile, presets_dir: &Path) -> Result<Base, String> {
+        let texts = apply::resolve_base(profile, presets_dir).map_err(|e| e.to_string())?;
         let values = gi::effective_values(&texts.gameinfo).map_err(|e| e.to_string())?;
         Ok(Base { texts, values })
     }
@@ -666,7 +666,7 @@ impl AppState {
         };
         let mut state = AppState {
             known_gameinfo_sha: sha256_hex(live.gameinfo.as_bytes()),
-            base: Base::resolve(&profile),
+            base: Base::resolve(&profile, &preset::cache_dir(&data_dir)),
             conlog: LogTail::for_game(&paths),
             conlog_polled: None,
             guard: Guard::load(&store.root).unwrap_or_default(),
@@ -1026,7 +1026,7 @@ impl AppState {
 
     pub fn revert_all(&mut self) {
         self.profile = self.saved.clone().unwrap_or_else(default_profile);
-        self.base = Base::resolve(&self.profile);
+        self.base = Base::resolve(&self.profile, &self.presets_dir());
         self.refresh_preview();
     }
 
@@ -1127,9 +1127,14 @@ impl AppState {
         self.refresh_preview();
     }
 
+    /// Downloaded and imported remote presets.
+    pub fn presets_dir(&self) -> PathBuf {
+        preset::cache_dir(&self.data_dir)
+    }
+
     pub fn set_base(&mut self, base: BaseRef) {
         self.profile.base = base;
-        self.base = Base::resolve(&self.profile);
+        self.base = Base::resolve(&self.profile, &self.presets_dir());
         self.refresh_preview();
     }
 
@@ -1933,7 +1938,7 @@ impl AppState {
             self.settings.last_profile = Some(profile.name.clone());
         }
         self.profile = profile;
-        self.base = Base::resolve(&self.profile);
+        self.base = Base::resolve(&self.profile, &self.presets_dir());
         self.settings.source = TargetSource::Profile;
         self.reload_bench();
         self.refresh_preview();

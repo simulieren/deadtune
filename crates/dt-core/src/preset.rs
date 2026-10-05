@@ -1,5 +1,10 @@
-//! Known community presets. Pinned copies are embedded; the `fetch` feature refreshes
-//! them from upstream GitHub into the cache dir.
+//! Known community presets. GPL presets are embedded; presets whose licence forbids
+//! redistribution are [`Remote`]: the player downloads or imports the author's file
+//! (see [`remote`]).
+
+use std::path::{Path, PathBuf};
+
+pub mod remote;
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
@@ -14,6 +19,8 @@ pub enum PresetId {
     BootMaxfps,
     OptilockRecommended,
     OptilockPotato,
+    #[serde(rename = "sidelock")]
+    SideLock,
 }
 
 impl PresetId {
@@ -28,6 +35,7 @@ impl PresetId {
             PresetId::BootMaxfps => "boot_maxfps",
             PresetId::OptilockRecommended => "optilock_recommended",
             PresetId::OptilockPotato => "optilock_potato",
+            PresetId::SideLock => "sidelock",
         }
     }
 }
@@ -37,10 +45,82 @@ pub struct PresetInfo {
     pub id: PresetId,
     pub label: &'static str,
     pub author: &'static str,
+    pub source: Source,
+}
+
+#[derive(Clone, Debug)]
+pub enum Source {
+    Pinned(Pinned),
+    Remote(Remote),
+}
+
+/// A GPL preset embedded in the binary.
+#[derive(Clone, Debug)]
+pub struct Pinned {
     pub upstream_gameinfo: &'static str,
     pub upstream_video: Option<&'static str>,
-    pub pinned_gameinfo: &'static str,
-    pub pinned_video: Option<&'static str>,
+    pub gameinfo: &'static str,
+    pub video: Option<&'static str>,
+}
+
+/// A preset we may link to but not ship. Only its gameinfo.gi ConVars block is used.
+#[derive(Clone, Copy, Debug)]
+pub struct Remote {
+    pub id: PresetId,
+    /// The mod page people see.
+    pub page: &'static str,
+    /// GameBanana's ProfilePage API for the same mod; its `_aFiles` lists the downloads.
+    pub api: &'static str,
+    pub licence: &'static str,
+    /// sha256 of the gameinfo.gi DeadTune was checked against.
+    pub sha256: &'static str,
+}
+
+impl PresetInfo {
+    pub fn pinned(&self) -> Option<&Pinned> {
+        match &self.source {
+            Source::Pinned(p) => Some(p),
+            Source::Remote(_) => None,
+        }
+    }
+
+    pub fn remote(&self) -> Option<&Remote> {
+        match &self.source {
+            Source::Remote(r) => Some(r),
+            Source::Pinned(_) => None,
+        }
+    }
+
+    /// Where the preset comes from, for credits.
+    pub fn source_url(&self) -> &'static str {
+        match &self.source {
+            Source::Pinned(p) => p.upstream_gameinfo,
+            Source::Remote(r) => r.page,
+        }
+    }
+}
+
+pub const CACHE_DIR: &str = "presets";
+
+/// Downloaded and imported remote presets, one folder per preset. The GUI and the CLI both
+/// pass their data dir, so an import in one shows up in the other.
+pub fn cache_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join(CACHE_DIR)
+}
+
+/// The stock ConVars block the denylist resets to.
+pub fn vanilla_gameinfo() -> &'static str {
+    info(PresetId::Vanilla)
+        .pinned()
+        .expect("vanilla is embedded")
+        .gameinfo
+}
+
+/// The [`Remote`] entry of a remote preset; panics for an embedded one.
+pub fn remote(id: PresetId) -> &'static Remote {
+    info(id)
+        .remote()
+        .expect("remote() is only called for remote presets")
 }
 
 macro_rules! sqooky {
@@ -81,20 +161,22 @@ const fn preset(
         id,
         label,
         author,
-        upstream_gameinfo: gameinfo.0,
-        pinned_gameinfo: gameinfo.1,
-        upstream_video: match video {
-            Some(v) => Some(v.0),
-            None => None,
-        },
-        pinned_video: match video {
-            Some(v) => Some(v.1),
-            None => None,
-        },
+        source: Source::Pinned(Pinned {
+            upstream_gameinfo: gameinfo.0,
+            gameinfo: gameinfo.1,
+            upstream_video: match video {
+                Some(v) => Some(v.0),
+                None => None,
+            },
+            video: match video {
+                Some(v) => Some(v.1),
+                None => None,
+            },
+        }),
     }
 }
 
-static PRESETS: [PresetInfo; 8] = [
+static PRESETS: [PresetInfo; 9] = [
     preset(
         PresetId::Vanilla,
         "Vanilla",
@@ -175,6 +257,19 @@ static PRESETS: [PresetInfo; 8] = [
             "OptiLock%20Potato%20Config/video.txt"
         )),
     ),
+    PresetInfo {
+        id: PresetId::SideLock,
+        label: "SideLock",
+        author: "hitmeupwhenyourelonely",
+        source: Source::Remote(Remote {
+            id: PresetId::SideLock,
+            page: "https://gamebanana.com/mods/722944",
+            api: "https://gamebanana.com/apiv11/Mod/722944/ProfilePage",
+            licence: "CC BY-NC-ND 4.0",
+            // gameinfo.gi in cfg.zip v1.0.0, gamebanana.com/dl/1833750, added 2026-10-01.
+            sha256: "a895885ad0fb71d203b8b2506c32ffd90be2adb4f04c1c4f78b9027ea05e057c",
+        }),
+    },
 ];
 
 pub fn all() -> &'static [PresetInfo] {
@@ -197,12 +292,12 @@ pub enum FetchError {
     Io(#[from] std::io::Error),
 }
 
-/// Downloads the preset's current upstream gameinfo.gi and stores it as
+/// Downloads an embedded preset's current upstream gameinfo.gi and stores it as
 /// `<cache_dir>/<key>/gameinfo.gi`.
 #[cfg(feature = "fetch")]
-pub fn fetch_latest(id: PresetId, cache_dir: &std::path::Path) -> Result<String, FetchError> {
+pub fn fetch_latest(pinned: &Pinned, cache_dir: &Path, id: PresetId) -> Result<String, FetchError> {
     fetch_into(
-        info(id).upstream_gameinfo,
+        pinned.upstream_gameinfo,
         &cache_dir.join(id.key()).join("gameinfo.gi"),
     )
 }
@@ -210,17 +305,18 @@ pub fn fetch_latest(id: PresetId, cache_dir: &std::path::Path) -> Result<String,
 /// Same as [`fetch_latest`] for video.txt; `None` for presets that ship without one.
 #[cfg(feature = "fetch")]
 pub fn fetch_latest_video(
+    pinned: &Pinned,
+    cache_dir: &Path,
     id: PresetId,
-    cache_dir: &std::path::Path,
 ) -> Result<Option<String>, FetchError> {
-    info(id)
+    pinned
         .upstream_video
         .map(|url| fetch_into(url, &cache_dir.join(id.key()).join("video.txt")))
         .transpose()
 }
 
 #[cfg(feature = "fetch")]
-fn fetch_into(url: &str, path: &std::path::Path) -> Result<String, FetchError> {
+fn fetch_into(url: &str, path: &Path) -> Result<String, FetchError> {
     let text = ureq::get(url).call()?.body_mut().read_to_string()?;
     let dir = path.parent().expect("cache path has a parent");
     std::fs::create_dir_all(dir)?;
@@ -235,7 +331,7 @@ fn fetch_into(url: &str, path: &std::path::Path) -> Result<String, FetchError> {
 mod tests {
     use super::*;
 
-    const ALL_IDS: [PresetId; 8] = [
+    const ALL_IDS: [PresetId; 9] = [
         PresetId::Vanilla,
         PresetId::Sqooky,
         PresetId::SqookyTest,
@@ -244,7 +340,12 @@ mod tests {
         PresetId::BootMaxfps,
         PresetId::OptilockRecommended,
         PresetId::OptilockPotato,
+        PresetId::SideLock,
     ];
+
+    fn pinned() -> impl Iterator<Item = (PresetId, &'static Pinned)> {
+        all().iter().filter_map(|p| p.pinned().map(|x| (p.id, x)))
+    }
 
     #[test]
     fn every_id_has_exactly_one_info() {
@@ -256,52 +357,44 @@ mod tests {
 
     #[test]
     fn pinned_gameinfo_has_a_convars_block() {
-        for p in all() {
+        for (id, p) in pinned() {
             assert!(
-                p.pinned_gameinfo.contains("ConVars"),
-                "{:?} pinned gameinfo lacks ConVars",
-                p.id
+                p.gameinfo.contains("ConVars"),
+                "{id:?} pinned gameinfo lacks ConVars"
             );
         }
     }
 
     #[test]
     fn video_is_pinned_exactly_where_upstream_has_one() {
-        for p in all() {
-            assert_eq!(
-                p.pinned_video.is_some(),
-                p.upstream_video.is_some(),
-                "{:?}",
-                p.id
-            );
-            if let Some(v) = p.pinned_video {
-                assert!(
-                    v.contains("setting."),
-                    "{:?} video.txt has no settings",
-                    p.id
-                );
+        for (id, p) in pinned() {
+            assert_eq!(p.video.is_some(), p.upstream_video.is_some(), "{id:?}");
+            if let Some(v) = p.video {
+                assert!(v.contains("setting."), "{id:?} video.txt has no settings");
             }
         }
-        assert!(info(PresetId::OptilockPotato).pinned_video.is_some());
-        assert!(info(PresetId::KaizMinspec).pinned_video.is_none());
+        let video = |id| info(id).pinned().unwrap().video;
+        assert!(video(PresetId::OptilockPotato).is_some());
+        assert!(video(PresetId::KaizMinspec).is_none());
     }
 
     #[test]
     fn extremelow_is_a_different_file_from_minspec() {
+        let gameinfo = |id| info(id).pinned().unwrap().gameinfo;
         assert_ne!(
-            info(PresetId::KaizMinspec).pinned_gameinfo,
-            info(PresetId::KaizExtremelow).pinned_gameinfo
+            gameinfo(PresetId::KaizMinspec),
+            gameinfo(PresetId::KaizExtremelow)
         );
         assert!(
             info(PresetId::KaizExtremelow)
-                .upstream_gameinfo
+                .source_url()
                 .ends_with("gameinfoextremelow.gi")
         );
     }
 
     #[test]
     fn upstream_urls_are_raw_github_without_unescaped_spaces() {
-        for p in all() {
+        for (_, p) in pinned() {
             for url in std::iter::once(p.upstream_gameinfo).chain(p.upstream_video) {
                 assert!(
                     url.starts_with("https://raw.githubusercontent.com/"),
@@ -312,19 +405,36 @@ mod tests {
         }
     }
 
+    #[test]
+    fn sidelock_is_remote_with_credit_licence_and_a_pinned_hash() {
+        let info = info(PresetId::SideLock);
+        assert!(info.pinned().is_none(), "CC BY-NC-ND: never embedded");
+        assert_eq!(info.author, "hitmeupwhenyourelonely");
+        let r = remote(PresetId::SideLock);
+        assert_eq!(r.id, PresetId::SideLock);
+        assert_eq!(r.licence, "CC BY-NC-ND 4.0");
+        assert_eq!(info.source_url(), "https://gamebanana.com/mods/722944");
+        assert!(
+            r.api
+                .starts_with("https://gamebanana.com/apiv11/Mod/722944/")
+        );
+        assert_eq!(r.sha256.len(), 64);
+        assert!(r.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
+    }
+
     #[cfg(feature = "fetch")]
     #[test]
     #[ignore = "network"]
     fn fetch_latest_downloads_and_caches_every_preset() {
         let dir = tempfile::tempdir().unwrap();
-        for p in all() {
-            let text = fetch_latest(p.id, dir.path()).unwrap();
-            assert!(text.contains("ConVars"), "{:?}", p.id);
+        for (id, p) in pinned() {
+            let text = fetch_latest(p, dir.path(), id).unwrap();
+            assert!(text.contains("ConVars"), "{id:?}");
             let cached =
-                std::fs::read_to_string(dir.path().join(p.id.key()).join("gameinfo.gi")).unwrap();
+                std::fs::read_to_string(dir.path().join(id.key()).join("gameinfo.gi")).unwrap();
             assert_eq!(cached, text);
             assert_eq!(
-                fetch_latest_video(p.id, dir.path()).unwrap().is_some(),
+                fetch_latest_video(p, dir.path(), id).unwrap().is_some(),
                 p.upstream_video.is_some()
             );
         }

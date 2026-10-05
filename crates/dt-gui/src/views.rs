@@ -980,7 +980,7 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
                     ui.label(RichText::new(info.label).strong());
                     ui.label(RichText::new(format!("by {}", info.author)).color(WEAK));
                     if info.id != PresetId::Vanilla {
-                        ui.label(RichText::new(info.upstream_gameinfo).small().color(WEAK));
+                        ui.label(RichText::new(info.source_url()).small().color(WEAK));
                     } else {
                         ui.label("");
                     }

@@ -23,6 +23,8 @@ steamlocate = "2.1.1"
 notify = "8.2"
 sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 ureq = { version = "3", optional = true }
+# Already linked by ureq and png; reads cfg.zip for remote presets.
+flate2 = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Power", "Win32_Foundation", "Win32_System_Registry", "Win32_Graphics_Gdi", "Win32_Devices_DeviceAndDriverInstallation"] }

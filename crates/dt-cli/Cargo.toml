@@ -13,8 +13,13 @@ path = "src/main.rs"
 default = []
 fetch = ["dt-core/fetch"]
 
+[build-dependencies]
+embed-resource = "3"
+
 [dependencies]
-dt-core.workspace = true
+# `svg` draws the PNG next to each vector icon in `images export-all`: +574 KB on
+# deadtune-cli.exe (3.37 to 3.93 MB, measured 2026-10-05); the GUI already links it.
+dt-core = { workspace = true, features = ["svg"] }
 anyhow.workspace = true
 # Already linked through dt-core; only `hud --layout` files need it here.
 toml.workspace = true

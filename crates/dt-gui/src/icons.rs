@@ -276,36 +276,30 @@ pub fn shapes(icon: Icon, rect: Rect, color: Color32) -> Vec<Shape> {
         .collect()
 }
 
-/// DeadTune's mark on a 64-unit grid: a brass diamond with dial notches and a keyhole cut
-/// in `cut`, the colour behind it. Original art; it borrows only the game's era, not its logo.
+/// DeadTune's mark (see [`crate::mark`]) in `fill`, its cuts in `cut`, the colour behind it.
 pub fn mark_shapes(rect: Rect, fill: Color32, cut: Color32) -> Vec<Shape> {
+    use crate::mark::{self, GRID, Ink, Part};
     let side = rect.width().min(rect.height());
-    let scale = side / 64.0;
+    let scale = side / GRID;
     let origin = rect.center() - eframe::egui::vec2(side, side) / 2.0;
-    let at = |x: f32, y: f32| origin + eframe::egui::vec2(x, y) * scale;
-    let notch = Stroke::new((1.6 * scale).max(1.2), cut);
-    vec![
-        Shape::convex_polygon(
-            vec![at(32.0, 3.0), at(61.0, 32.0), at(32.0, 61.0), at(3.0, 32.0)],
-            fill,
-            Stroke::NONE,
-        ),
-        Shape::line_segment([at(32.0, 3.0), at(32.0, 13.0)], notch),
-        Shape::line_segment([at(3.0, 32.0), at(13.0, 32.0)], notch),
-        Shape::line_segment([at(61.0, 32.0), at(51.0, 32.0)], notch),
-        Shape::line_segment([at(32.0, 61.0), at(32.0, 51.0)], notch),
-        Shape::circle_filled(at(32.0, 27.0), 6.5 * scale, cut),
-        Shape::convex_polygon(
-            vec![
-                at(28.2, 30.0),
-                at(35.8, 30.0),
-                at(38.0, 44.0),
-                at(26.0, 44.0),
-            ],
-            cut,
-            Stroke::NONE,
-        ),
-    ]
+    let at = |(x, y): (f32, f32)| origin + eframe::egui::vec2(x, y) * scale;
+    mark::layers()
+        .into_iter()
+        .map(|(ink, part)| {
+            let color = match ink {
+                Ink::Brass => fill,
+                Ink::Cut => cut,
+            };
+            match part {
+                Part::Circle { center, radius } => {
+                    Shape::circle_filled(at(center), radius * scale, color)
+                }
+                Part::Polygon(pts) => {
+                    Shape::convex_polygon(pts.into_iter().map(at).collect(), color, Stroke::NONE)
+                }
+            }
+        })
+        .collect()
 }
 
 /// The mark followed by the two-tone wordmark, as every view's header shows it.

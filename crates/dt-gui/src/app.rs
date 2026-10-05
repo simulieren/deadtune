@@ -319,6 +319,13 @@ impl App {
                 if std::env::var("DEADTUNE_FAKE_SNAPSHOT").is_ok_and(|v| v == "running") {
                     state.inject_snapshot_running();
                 }
+                // `DEADTUNE_SNAPSHOT_IMAGES=hud` picks the Game files page's image scope.
+                if let Some(scope) = std::env::var("DEADTUNE_SNAPSHOT_IMAGES")
+                    .ok()
+                    .and_then(|v| dt_core::snapshot::ImageScope::parse(&v))
+                {
+                    state.settings.snapshots.selection.images = scope;
+                }
                 // Screenshot lever: `DEADTUNE_SET=fps_max=144,r_shadows=true` edits after loading.
                 if let Ok(list) = std::env::var("DEADTUNE_SET") {
                     for (name, value) in list.split(',').filter_map(|kv| kv.split_once('=')) {
@@ -399,7 +406,8 @@ impl App {
         state.poll_checks();
         state.poll_build();
         state.poll_snapshot();
-        if state.snapshot_job.is_some() {
+        state.poll_images_export();
+        if state.snapshot_job.is_some() || state.images_export_running() {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
         if state.poll_update() {
@@ -536,13 +544,24 @@ fn find_section(name: &str) -> Option<Section> {
 /// previews a snapshot's images instead of the game's, `DEADTUNE_IMAGES_FOLDER=hud/top_bar`
 /// opens a folder, `DEADTUNE_IMAGES_SEARCH=ping` searches, `DEADTUNE_IMAGES_SELECT=<part of
 /// a path>` selects the first match, `DEADTUNE_IMAGES_SET=<part of a path>=<file>,...`
-/// replaces images with files, `DEADTUNE_IMAGES_ZOOM=1` shows the preview at 1:1.
+/// replaces images with files, `DEADTUNE_IMAGES_ZOOM=1` shows the preview at 1:1,
+/// `DEADTUNE_IMAGES_EXPORT=running` shows "Save all images" mid-way and `=done` (or `=zip`)
+/// runs it for real first.
 fn images_levers(state: &mut AppState) {
     let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
     let mut used = false;
     if let Some(dir) = var("DEADTUNE_IMAGES_FROM") {
         state.images.from = Some(PathBuf::from(dir));
         used = true;
+    }
+    match var("DEADTUNE_IMAGES_EXPORT").as_deref() {
+        Some("running") => state.inject_images_export_running(),
+        Some(how @ ("done" | "zip")) => {
+            state.images.export_all.zip = how == "zip";
+            state.start_images_export(None);
+            state.wait_images_export();
+        }
+        _ => {}
     }
     state.images.folder = var("DEADTUNE_IMAGES_FOLDER");
     if let Some(query) = var("DEADTUNE_IMAGES_SEARCH") {

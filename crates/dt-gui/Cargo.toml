@@ -15,7 +15,7 @@ remote = ["dep:tiny_http"]
 fetch = ["dt-core/fetch"]
 
 [dependencies]
-dt-core.workspace = true
+dt-core = { workspace = true, features = ["svg"] }
 anyhow.workspace = true
 serde.workspace = true
 toml.workspace = true

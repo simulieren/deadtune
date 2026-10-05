@@ -21,6 +21,7 @@ use dt_core::bridge::boot::BootCfg;
 use dt_core::bridge::conlog::LogTail;
 use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::gi::{self, Override};
+use dt_core::hud::apples_tunnels::{ApplesTunnels, DOT_SIZE_RANGE, RADIUS_RANGE};
 use dt_core::hud::elements::ElementId;
 use dt_core::hud::health_style::HealthStyle;
 use dt_core::hud::install::HudPlan;
@@ -1732,6 +1733,7 @@ impl AppState {
         let set = &self.profile.convars.set;
         self.profile.hud.minimap_colors.len()
             + self.profile.hud.minimap.changed_count()
+            + self.profile.hud.apples_tunnels.changed_count()
             + ENEMY_UI_COLOR
                 .iter()
                 .chain([&CUSTOM_UI_COLORS])
@@ -1745,11 +1747,13 @@ impl AppState {
         let minimap = std::mem::take(&mut self.profile.hud.minimap);
         let top_bar = std::mem::take(&mut self.profile.hud.top_bar);
         let health = std::mem::take(&mut self.profile.hud.health);
+        let apples_tunnels = self.profile.hud.apples_tunnels;
         self.profile.hud = HudLayout {
             minimap_colors,
             minimap,
             top_bar,
             health,
+            apples_tunnels,
             ..preset.layout()
         };
         self.refresh_preview();
@@ -1764,6 +1768,7 @@ impl AppState {
                 minimap: self.profile.hud.minimap.clone(),
                 top_bar: self.profile.hud.top_bar.clone(),
                 health: self.profile.hud.health.clone(),
+                apples_tunnels: self.profile.hud.apples_tunnels,
                 ..p.layout()
             } == self.profile.hud
         })
@@ -1815,6 +1820,20 @@ impl AppState {
     pub fn set_map_opacity(&mut self, pct: u8) {
         self.profile.hud.minimap.map_opacity_pct =
             pct.clamp(*MAP_OPACITY_RANGE.start(), *MAP_OPACITY_RANGE.end());
+        self.refresh_preview();
+    }
+
+    /// Replaces the apples and tunnels options; sizes and radius are clamped to their ranges.
+    pub fn set_apples_tunnels(&mut self, mut style: ApplesTunnels) {
+        for dots in [&mut style.apples, &mut style.tunnels] {
+            dots.size_px = dots
+                .size_px
+                .clamp(*DOT_SIZE_RANGE.start(), *DOT_SIZE_RANGE.end());
+        }
+        style.tunnel_radius_pct = style
+            .tunnel_radius_pct
+            .clamp(*RADIUS_RANGE.start(), *RADIUS_RANGE.end());
+        self.profile.hud.apples_tunnels = style;
         self.refresh_preview();
     }
 
@@ -3140,6 +3159,27 @@ mod tests {
         assert_eq!(state.hud_preset(), Some(HudPreset::Competitive));
         state.apply_hud_preset(HudPreset::Vanilla);
         assert_eq!(state.hud_preset(), Some(HudPreset::Vanilla));
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn apples_and_tunnels_clamp_count_and_survive_layout_presets() {
+        let (_dir, mut state) = state();
+        let mut style = ApplesTunnels::default();
+        style.apples.on = true;
+        style.apples.size_px = 40;
+        style.tunnel_radius_pct = 1;
+        state.set_apples_tunnels(style);
+        let stored = state.profile.hud.apples_tunnels;
+        assert_eq!(stored.apples.size_px, 12);
+        assert_eq!(stored.tunnel_radius_pct, 5);
+        assert_eq!(state.minimap_changed_count(), 1);
+        assert!(state.is_dirty());
+        state.apply_hud_preset(HudPreset::Competitive);
+        assert_eq!(state.profile.hud.apples_tunnels, stored);
+        assert_eq!(state.hud_preset(), Some(HudPreset::Competitive));
+        state.set_apples_tunnels(ApplesTunnels::default());
+        state.apply_hud_preset(HudPreset::Vanilla);
         assert!(!state.is_dirty());
     }
 

@@ -3,6 +3,7 @@
 mod addons_view;
 mod advanced;
 mod app;
+mod apples_view;
 mod bench;
 mod chart;
 mod checks_view;

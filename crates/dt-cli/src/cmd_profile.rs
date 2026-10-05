@@ -90,6 +90,18 @@ pub fn show(_: &env::Env, args: &Args) -> CliResult {
             }
         );
     }
+    let map = &p.hud.apples_tunnels;
+    if map.changed_count() > 0 {
+        let on: Vec<&str> = [
+            (map.apples.on, "apple spots"),
+            (map.tunnels.on, "tunnel entrances"),
+            (map.clear_switching, "clear tunnel switching"),
+        ]
+        .into_iter()
+        .filter_map(|(on, name)| on.then_some(name))
+        .collect();
+        println!("hud      minimap: {}", on.join(", "));
+    }
     Ok(())
 }
 

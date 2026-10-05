@@ -93,6 +93,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     if !SHOW_PREVIEW {
         official(ui, state, &mut actions);
         map_style(ui, state, &mut actions);
+        crate::apples_view::card(ui, state);
         icons(ui, state, &mut actions);
     } else if ui.available_width() >= 760.0 {
         ui.horizontal_top(|ui| {
@@ -102,6 +103,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
                 ui.set_width(left);
                 official(ui, state, &mut actions);
                 map_style(ui, state, &mut actions);
+                crate::apples_view::card(ui, state);
                 icons(ui, state, &mut actions);
             });
             ui.add_space(gap - ui.spacing().item_spacing.x);
@@ -114,6 +116,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
         preview_card(ui, state);
         official(ui, state, &mut actions);
         map_style(ui, state, &mut actions);
+        crate::apples_view::card(ui, state);
         icons(ui, state, &mut actions);
     }
     for action in actions {

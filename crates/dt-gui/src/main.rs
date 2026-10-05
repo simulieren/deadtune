@@ -14,6 +14,8 @@ mod health_view;
 mod hud_view;
 mod icons;
 mod images;
+mod images_export;
+mod images_export_view;
 mod images_view;
 mod ingame_view;
 mod launch_view;

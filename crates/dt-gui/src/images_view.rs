@@ -103,6 +103,7 @@ fn body(
     edits: &mut Vec<Edit>,
 ) -> Option<String> {
     toolbar(ui, state, library, edits);
+    export_all_strip(ui, state, library);
     let mut replace_path = std::mem::take(&mut state.images.replace_path);
     let target = draw_body(ui, state, library, thumbs, &mut replace_path, edits);
     state.images.replace_path = replace_path;
@@ -180,6 +181,12 @@ fn toolbar(ui: &mut Ui, state: &mut AppState, library: &Library, edits: &mut Vec
             );
         });
     });
+}
+
+fn export_all_strip(ui: &mut Ui, state: &mut AppState, library: &Library) {
+    ui.add_space(4.0);
+    let folder = state.images.folder.clone();
+    crate::images_export_view::strip(ui, state, Some(&library.source), folder.as_deref());
 }
 
 fn search(ui: &mut Ui, query: &mut String) {

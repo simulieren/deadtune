@@ -201,7 +201,7 @@ pub(crate) mod tests {
 
     /// A minimal vtex_c: 8-byte RED2, a DATA block with the given header fields and
     /// extra-data entries, then `pixels` as they are.
-    fn plain_vtex(
+    pub fn plain_vtex(
         width: u16,
         height: u16,
         format: u8,

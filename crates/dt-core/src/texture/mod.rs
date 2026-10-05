@@ -5,8 +5,11 @@
 //! restores full quality.
 
 pub mod addon;
+pub mod encode;
+pub mod png;
 pub mod resample;
 pub mod select;
+pub mod svg;
 pub mod vtex;
 
 pub use addon::{AddonError, Progress, Stats, build_texture_addon};

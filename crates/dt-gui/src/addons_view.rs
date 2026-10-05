@@ -17,6 +17,9 @@ use crate::theme::{self, ACCENT, BAD, GOOD, WARN, WEAK};
 
 /// Width kept free on the right of a card's header for the status line and badge.
 const STATUS_COLUMN: f32 = 250.0;
+/// Below this card width the status column shrinks so the description keeps room.
+const NARROW_CARD: f32 = 700.0;
+const STATUS_COLUMN_NARROW: f32 = 150.0;
 
 enum Edit {
     Enable(AddonId, bool),
@@ -404,17 +407,19 @@ fn card(
             ui.vertical(|ui| {
                 // A wrapped description would otherwise take the whole row and squeeze the
                 // status column on the right into one character per line.
-                ui.set_max_width(ui.available_width() - STATUS_COLUMN);
+                let status = if ui.available_width() < NARROW_CARD {
+                    STATUS_COLUMN_NARROW
+                } else {
+                    STATUS_COLUMN
+                };
+                ui.set_max_width(ui.available_width() - status);
                 ui.spacing_mut().item_spacing.y = 2.0;
-                ui.horizontal(|ui| {
-                    card_title(ui, info.name);
-                    ui.add_space(4.0);
-                    ui.hyperlink_to(
-                        RichText::new(info.credit()).small().color(WEAK),
-                        info.credit_url,
-                    )
-                    .on_hover_text(info.credit_url);
-                });
+                card_title(ui, info.name);
+                ui.hyperlink_to(
+                    RichText::new(info.credit()).small().color(WEAK),
+                    info.credit_url,
+                )
+                .on_hover_text(info.credit_url);
                 ui.label(RichText::new(info.description).color(WEAK));
                 ui.label(
                     RichText::new(format!("Gains: {}", info.benefit))

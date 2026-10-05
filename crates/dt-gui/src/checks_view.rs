@@ -366,6 +366,9 @@ fn section_caption(ui: &mut Ui, text: &str) {
     ui.add_space(4.0);
 }
 
+/// Room the summary text leaves for Check again and Copy report.
+const SUMMARY_BUTTONS: f32 = 220.0;
+
 fn summary(ui: &mut Ui, state: &mut AppState) {
     let running = state.checks_running();
     theme::card().show(ui, |ui| {
@@ -376,6 +379,7 @@ fn summary(ui: &mut Ui, state: &mut AppState) {
                     ui.add(egui::Spinner::new().size(36.0).color(ACCENT));
                     ui.add_space(8.0);
                     ui.vertical(|ui| {
+                        ui.set_max_width(ui.available_width() - SUMMARY_BUTTONS);
                         ui.label(RichText::new("Checking your setup…").size(18.0).family(theme::semibold()).color(TEXT));
                         ui.label(RichText::new("Reading the game files and your Windows settings. Nothing is changed.").color(WEAK));
                     });
@@ -386,6 +390,7 @@ fn summary(ui: &mut Ui, state: &mut AppState) {
                     ui.add_space(8.0);
                     let passed = checks.iter().filter(|c| c.status == CheckStatus::Pass).count();
                     ui.vertical(|ui| {
+                        ui.set_max_width(ui.available_width() - SUMMARY_BUTTONS);
                         ui.label(RichText::new(text).size(18.0).family(theme::semibold()).color(TEXT));
                         let when = state
                             .checks_at

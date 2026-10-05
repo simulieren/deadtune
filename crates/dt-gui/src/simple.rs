@@ -12,7 +12,7 @@ use dt_core::preset::{self, PresetId};
 use dt_core::profile::BaseRef;
 use eframe::egui::{
     self, Align, Align2, Color32, CornerRadius, FontId, Layout, Margin, Rect, RichText, Sense,
-    Stroke, StrokeKind, Ui, vec2,
+    Stroke, StrokeKind, Ui, Vec2, vec2,
 };
 
 use crate::friendly::{self, Control, human_error};
@@ -498,8 +498,8 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     search_box(ui, &mut state.ui.query);
     ui.add_space(6.0);
     let searching = !state.ui.query.trim().is_empty();
-    // Measured height of the two group headings with their spacing.
-    let headings = 76.0;
+    // Measured height of the three group headings with their spacing.
+    let headings = 114.0;
     let rows = Section::ALL.len() as f32;
     let row_height = ((ui.available_height() - headings) / rows - 2.0).clamp(26.0, 30.0);
     let shown = state.ui.section;
@@ -523,8 +523,9 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
             ui.spacing_mut().item_spacing.y = 2.0;
             for (i, section) in Section::ALL.into_iter().enumerate() {
                 let heading = match i {
-                    1 => Some("Settings"),
-                    6 => Some("More"),
+                    1 => Some("Graphics"),
+                    6 => Some("HUD & mods"),
+                    11 => Some("Tools"),
                     _ => None,
                 };
                 if let Some(heading) = heading {
@@ -1135,35 +1136,48 @@ fn hero(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
         });
         ui.add_space(4.0);
         let gap = 10.0;
-        let n = friendly::GOALS.len() as f32;
-        let width = ((ui.available_width() - gap * (n - 1.0)) / n - 0.5).floor();
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for (id, title, sub) in friendly::GOALS {
-                let selected = state.profile.base == BaseRef::Preset(*id);
-                if goal_card(ui, width, selected, title, sub) {
-                    edits.push(Edit::Base(*id));
+        let all = friendly::GOALS.len();
+        let per_row = if ui.available_width() >= GOAL_MIN_WIDTH * all as f32 {
+            all
+        } else {
+            2
+        };
+        let width =
+            ((ui.available_width() - gap * (per_row as f32 - 1.0)) / per_row as f32 - 0.5).floor();
+        let height = friendly::GOALS
+            .iter()
+            .map(|(_, _, sub)| goal_sub(ui, sub, width).size().y)
+            .fold(0.0, f32::max)
+            + 40.0;
+        let spacing = ui.spacing().item_spacing.y;
+        ui.spacing_mut().item_spacing.y = gap;
+        for goals in friendly::GOALS.chunks(per_row) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for (id, title, sub) in goals {
+                    let selected = state.profile.base == BaseRef::Preset(*id);
+                    if goal_card(ui, vec2(width, height), selected, title, sub) {
+                        edits.push(Edit::Base(*id));
+                    }
                 }
+            });
+        }
+        ui.spacing_mut().item_spacing.y = spacing;
+        ui.add_space(2.0);
+        let (name, blurb) = match &state.profile.base {
+            BaseRef::Preset(id) => {
+                let info = preset::info(*id);
+                (
+                    format!("{} by {}", info.label, info.author),
+                    friendly::preset_blurb(*id).unwrap_or(""),
+                )
             }
-        });
-        ui.add_space(8.0);
+            BaseRef::File(_) => (
+                "My original settings".to_string(),
+                "Your files as they were before DeadTune.",
+            ),
+        };
         ui.horizontal(|ui| {
-            let (name, blurb) = match &state.profile.base {
-                BaseRef::Preset(id) => {
-                    let info = preset::info(*id);
-                    (
-                        format!("{} by {}", info.label, info.author),
-                        friendly::preset_blurb(*id).unwrap_or(""),
-                    )
-                }
-                BaseRef::File(_) => (
-                    "My original settings".to_string(),
-                    "Your files as they were before DeadTune.",
-                ),
-            };
-            ui.label(RichText::new("Preset:").color(WEAK));
-            ui.label(RichText::new(name).strong());
-            ui.label(RichText::new(blurb).color(WEAK));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let combo = egui::ComboBox::from_id_salt("all_presets")
                     .selected_text("All presets")
@@ -1198,8 +1212,13 @@ fn hero(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 if state.ui.open_presets {
                     egui::Popup::open_id(ui.ctx(), combo.response.id.with("popup"));
                 }
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.label(RichText::new("Preset:").color(WEAK));
+                    ui.add(egui::Label::new(RichText::new(name).strong()).truncate());
+                });
             });
         });
+        ui.add(egui::Label::new(RichText::new(blurb).color(WEAK)).wrap());
         if let BaseRef::Preset(id) = state.profile.base
             && preset::info(id).remote().is_some()
         {
@@ -1305,8 +1324,23 @@ fn remote_preset_panel(ui: &mut Ui, state: &mut AppState, id: PresetId, edits: &
     }
 }
 
-fn goal_card(ui: &mut Ui, width: f32, selected: bool, title: &str, sub: &str) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 56.0), Sense::click());
+/// Below this a goal card's subtitle wraps to three lines, so the cards go two by two.
+const GOAL_MIN_WIDTH: f32 = 160.0;
+
+/// A goal card's subtitle, centred and wrapped to the card.
+fn goal_sub(ui: &Ui, sub: &str, width: f32) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple(
+        sub.to_string(),
+        FontId::proportional(11.5),
+        WEAK,
+        width - 16.0,
+    );
+    job.halign = Align::Center;
+    ui.painter().layout_job(job)
+}
+
+fn goal_card(ui: &mut Ui, size: Vec2, selected: bool, title: &str, sub: &str) -> bool {
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let painter = ui.painter();
     let (fill, stroke) = if selected {
         (ACCENT.gamma_multiply(0.14), Stroke::new(2.0, ACCENT))
@@ -1323,19 +1357,14 @@ fn goal_card(ui: &mut Ui, width: f32, selected: bool, title: &str, sub: &str) ->
         StrokeKind::Inside,
     );
     painter.text(
-        rect.center() - vec2(0.0, 9.0),
+        rect.center_top() + vec2(0.0, 19.0),
         Align2::CENTER_CENTER,
         title,
         FontId::proportional(15.5),
         if selected { ACCENT } else { TEXT },
     );
-    painter.text(
-        rect.center() + vec2(0.0, 10.0),
-        Align2::CENTER_CENTER,
-        sub,
-        FontId::proportional(11.5),
-        WEAK,
-    );
+    let galley = goal_sub(ui, sub, rect.width());
+    painter.galley(rect.center_top() + vec2(0.0, 30.0), galley, WEAK);
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()

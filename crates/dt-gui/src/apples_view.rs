@@ -153,7 +153,7 @@ fn dots_row(ui: &mut Ui, label: &str, note: &str, current: Dots, next: &mut Dots
     });
     ui.horizontal(|ui| {
         ui.add_space(46.0);
-        ui.label(RichText::new(note).size(11.5).color(WEAK));
+        ui.add(egui::Label::new(RichText::new(note).size(11.5).color(WEAK)).wrap());
     });
 }
 

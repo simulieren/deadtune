@@ -1,6 +1,6 @@
 # UI image overrides
 
-Status: write side built (core, CLI, verify) and read side built (decoders, snapshot image scope, CLI export), both proven on the fake install and the research mod textures only; the GUI page is built (seen on the fake install and a 2706-file stand-in snapshot). In-game checks are `docs/testing-windows.md` sections 19 (GF-10), 20 and 21. Last update 2026-10-05.
+Status: write side built (core, CLI, verify) and read side built (decoders, snapshot image scope, CLI export), both proven on the fake install and the research mod textures only; the GUI page is built (seen on the fake install and a 2706-file stand-in snapshot). In-game checks are `docs/testing-windows.md` sections 19 (GF-10), 20 and 21. Colour edits (tint, colorize, overlay, sliders, SVG palette swaps, bulk, undo) added 2026-10-05.
 
 ## Goal
 
@@ -26,18 +26,31 @@ Only single-mip `NO_LOD` 2D textures are accepted, which is how every `panorama/
 
 A PNG for a vector path cannot become a texture: Panorama resolves `file://{images}/x.svg` to the `.vsvg_c`. `svg::png_in_svg` wraps the PNG as an SVG with an embedded `data:image/png` image sized to the game's view box. Whether Panorama's SVG renderer draws embedded rasters is unknown, so the override is marked experimental (`IconOverride::PngInSvg`) and Windows test IC-6 settles it.
 
-**Model.** `HudLayout::icons` maps a game path to an `IconOverride`:
+**Model.** `HudLayout::icons` maps a game path to an `IconOverride`: a source plus an ordered list of colour adjustments, replayed on the source at every build.
 
 ```rust
+pub struct IconOverride {
+    #[serde(flatten)] pub source: Source,     // tagged `input`
+    #[serde(default)] pub adjust: Vec<Adjust>, // skipped when empty
+}
 #[serde(tag = "input", rename_all = "snake_case")]
-pub enum IconOverride {
-    Png { image_sha256: String, fit: Fit },   // .vtex_c
-    Svg { image_sha256: String },             // .vsvg_c
-    PngInSvg { image_sha256: String },        // .vsvg_c, experimental
+pub enum Source {
+    Game,                                      // the game's own image, decoded at build time
+    Png { image_sha256: String, fit: Fit },    // .vtex_c
+    Svg { image_sha256: String },              // .vsvg_c
+    PngInSvg { image_sha256: String },         // .vsvg_c, experimental
+}
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Adjust {                              // texture::adjust
+    Tint { color, strength }, Colorize { color, strength }, Overlay { color, blend, opacity },
+    Hue { degrees }, Saturation { percent }, Brightness { percent }, Contrast { percent },
+    Opacity { percent }, Invert, Swap { from, to },
 }
 ```
 
-It lives in the profile like every other HUD choice, so presets, Vanilla, ranked-safe and HUD removal cover it with no new paths. The image itself is copied to `<data>/icons/<sha256>.png|svg`, so the source file can be deleted. Stored images are never deleted on reset: another profile may use them.
+Profiles from before adjustments carry only the `input` fields and load unchanged. An override whose source is `Game` with no adjustments is nothing, so the setters drop it from the map; a list has one slot per kind (tint, colorize and overlay share the colour slot; each swapped colour has its own), and an identity operation (strength 0, hue 0, opacity 100) removes its slot. `texture::adjust::apply_all` runs the list on an `RgbaImage` (alpha untouched except by `Opacity`); `texture::svg::adjust` maps every colour in an SVG's text through the same per-colour arithmetic (`adjust_rgb`), so a vector icon stays a vector: `svg::palette` lists the colours it names (fill, stroke, stop-color and friends as attributes, `style` attributes and `<style>` CSS; hex, `rgb()`, `rgba()` and the 148 CSS names; `currentColor` noted), `svg::map_colors`/`remap` rewrite only those tokens and leave every other byte alone. `Opacity` on an SVG multiplies the root's `opacity`.
+
+It lives in the profile like every other HUD choice, so presets, Vanilla, ranked-safe and HUD removal cover it with no new paths. The image itself is copied to `<data>/icons/<sha256>.png|svg`, so the source file can be deleted. Stored images are never deleted on reset: another profile may use them. A `Game` source stores nothing: the profile holds only the recipe, and a game update that redraws the icon is picked up on the next apply.
 
 **Building.** Every HUD build re-encodes each override from the player's current game file, so a game update that changes a header is picked up on the next apply, and the existing stale-on-buildid check prompts that apply. An override that cannot be built (the path is gone after an update, the stored image is missing or changed, the kind does not match the path) becomes an `IconProblem` on `HudPlan::icon_problems`; everything else ships. A plan whose only content was broken icons removes the addon.
 
@@ -72,13 +85,27 @@ pub struct snapshot::ImageInfo { width, height, format, mips }                  
 pub fn target(game_path: &str) -> Result<Target, IconError>;            // Raster | Vector, or why not
 pub fn set(icons: &mut BTreeMap<String, IconOverride>, data_dir: &Path,
            game_path: &str, image: &[u8], fit: Fit) -> Result<IconOverride, IconError>;
+pub fn set_fit(icons: &mut BTreeMap<String, IconOverride>, game_path: &str, fit: Fit) -> bool;
+pub fn adjust(icons: &mut BTreeMap<String, IconOverride>, game_path: &str, adjust: Adjust) -> Result<bool, IconError>;
+pub fn set_adjustments(icons: &mut BTreeMap<String, IconOverride>, game_path: &str, list: &[Adjust]) -> Result<bool, IconError>;
+pub fn remove_adjust(icons: &mut BTreeMap<String, IconOverride>, game_path: &str, kind: AdjustKind) -> bool;
 pub fn reset(icons: &mut BTreeMap<String, IconOverride>, game_path: &str) -> bool;
 pub fn reset_all(icons: &mut BTreeMap<String, IconOverride>);
 impl IconOverride {
-    pub fn image_sha256(&self) -> &str;
+    pub fn image_sha256(&self) -> Option<&str>;                        // None for a Game source
     pub fn is_experimental(&self) -> bool;
-    pub fn stored_at(&self, data_dir: &Path) -> PathBuf;               // the player's copy, for previews
+    pub fn fit(&self) -> Option<Fit>;
+    pub fn stored_at(&self, data_dir: &Path) -> Option<PathBuf>;       // the player's copy, for previews
 }
+
+// dt_core::texture::adjust and texture::svg (colour edits)
+pub fn adjust::apply_all(image: &mut RgbaImage, list: &[Adjust]);
+pub fn adjust::adjust_rgb(rgb: [u8; 3], adjust: &Adjust) -> [u8; 3];
+pub fn adjust::set(list: &mut Vec<Adjust>, adjust: Adjust) -> bool;     // one slot per kind
+impl Adjust { pub fn parse(spec: &str) -> Result<Adjust, String>; pub fn label(&self) -> String; }
+pub fn svg::palette(svg: &str) -> Palette;                                 // Swatch { rgb, uses }, current_color
+pub fn svg::remap(svg: &str, map: &BTreeMap<Rgb, Rgb>) -> String;
+pub fn svg::adjust(svg: &str, list: &[Adjust]) -> String;
 pub struct IconProblem { pub game_path: String, pub reason: String }   // HudPlan::icon_problems
 
 // dt_core::texture
@@ -94,6 +121,8 @@ pub fn png::write(image: &RgbaImage) -> Result<Vec<u8>, PngError>;
 ## GUI (built)
 
 `crates/dt-gui/src/images.rs` holds the page state and every transition (source, folders, filters, selection, drop, fit, reset, export) with tests; `thumbs.rs` decodes pictures on three worker threads (each frame's visible tiles replace the queue, so tiles scrolled past never decode) into egui textures in a 96 MB least-recently-used cache; `images_view.rs` draws it. Exports go to `<data>/exports/<folder>/<name>.png|svg` (no file dialog crate: drag-and-drop and a path box instead). Vector icons accept a PNG, labelled as a test, until IC-6 settles it. Icon problems from the current plan show as a red dot on the tile and a sentence in the panel.
+
+**Colour edits** (`images_edit.rs`, `images_edit_view.rs`): the panel's "Edit colours" section edits the selected override's adjustment list. Slider moves go into a draft that the live preview renders (on the thumbnail workers, off the UI thread) and that is committed into the profile once it has sat still for 250 ms or the drag ends, because every profile change replans the whole HUD pak. Every page edit (drop, slider commit, remove, bulk, reset) pushes a snapshot of `profile.hud.icons` onto an undo stack for the session (Ctrl+Z, Ctrl+Shift+Z, buttons); Discard changes clears it. Bulk applies one adjustment to the visible set (folder and search) or to Ctrl/Shift-marked tiles, each image keeping its own override; "Reset this folder" resets the visible set. For SVGs the panel lists the icon's palette with a picker per colour (a `Swap` each). Windows checks: `docs/testing-windows.md` section 22.
 
 The original brief:
 

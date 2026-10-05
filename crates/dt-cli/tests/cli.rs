@@ -262,7 +262,10 @@ fn apply_writes_then_second_apply_is_a_no_op() {
     assert_eq!(effective_values(&applied).unwrap()["fps_max"], "120");
     assert!(read(&fake.cfg().join("video.txt")).contains("\"setting.fps_max\"\t\t\"120\""));
     assert!(read(&fake.cfg().join("deadtune_live.cfg")).contains("csm_max_visible_dist \"2000\""));
-    assert_eq!(read(&fake.data().join("backups/original/gameinfo.gi")), vanilla);
+    assert_eq!(
+        read(&fake.data().join("backups/original/gameinfo.gi")),
+        vanilla
+    );
     assert_eq!(fake.backups(), 1);
 
     let again = fake.ok(&["apply", "--profile", "laptop.toml", "--yes"]);

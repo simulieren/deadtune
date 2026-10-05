@@ -13,7 +13,7 @@ use eframe::egui::{
 };
 
 use crate::state::{AppState, TopBarPreview};
-use crate::theme::{self, ACCENT, BORDER, RAIL, TEXT, WARN, WEAK};
+use crate::theme::{self, ACCENT, RAIL, TEXT, WARN, WEAK};
 use crate::widgets;
 
 /// The mock is laid out in bar units, 1400 wide, and scaled to the card.
@@ -837,7 +837,6 @@ fn centre_block(p: &Painter, at: impl Fn(f32, f32) -> Pos2, k: f32, style: &TopB
             Stroke::new(2.0 * k, OFF_WHITE.gamma_multiply(0.35)),
         );
     }
-    let _ = BORDER;
 }
 
 #[cfg(test)]

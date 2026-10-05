@@ -76,6 +76,19 @@ impl Element {
         Some(&mut parent.children[i])
     }
 
+    /// The grandparent of the element with this id and the parent's index among its
+    /// children: where a sibling of the enclosing panel goes.
+    fn locate_parent(&mut self, id: &str) -> Option<(&mut Element, usize)> {
+        if let Some(i) = self
+            .children
+            .iter()
+            .position(|c| c.children.iter().any(|g| g.id() == Some(id)))
+        {
+            return Some((self, i));
+        }
+        self.children.iter_mut().find_map(|c| c.locate_parent(id))
+    }
+
     fn section_mut(&mut self, tag: &str, insert_at: usize) -> &mut Element {
         let at = match self.children.iter().position(|c| c.tag == tag) {
             Some(i) => i,
@@ -95,6 +108,9 @@ pub enum Anchor {
     AppendTo(String),
     Before(String),
     After(String),
+    /// After the panel that holds the one with this id: for rows the game leaves
+    /// unnamed, found through their control.
+    AfterParentOf(String),
 }
 
 /// One layout's additions. Includes are `s2r://` paths. Applying the same edit twice adds
@@ -322,7 +338,10 @@ pub fn apply(root: &mut Element, edit: &LayoutEdit) -> Result<(), InjectError> {
     }
     for (anchor, panel) in &edit.panels {
         let id = match anchor {
-            Anchor::AppendTo(id) | Anchor::Before(id) | Anchor::After(id) => id,
+            Anchor::AppendTo(id)
+            | Anchor::Before(id)
+            | Anchor::After(id)
+            | Anchor::AfterParentOf(id) => id,
         };
         let present = |e: &Element| {
             panel
@@ -338,15 +357,18 @@ pub fn apply(root: &mut Element, edit: &LayoutEdit) -> Result<(), InjectError> {
                     target.children.push(panel.clone());
                 }
             }
-            Anchor::Before(_) | Anchor::After(_) => {
-                let (parent, i) = root
-                    .locate(id)
-                    .ok_or_else(|| InjectError::AnchorMissing(id.clone()))?;
+            Anchor::Before(_) | Anchor::After(_) | Anchor::AfterParentOf(_) => {
+                let (parent, i) = if matches!(anchor, Anchor::AfterParentOf(_)) {
+                    root.locate_parent(id)
+                } else {
+                    root.locate(id)
+                }
+                .ok_or_else(|| InjectError::AnchorMissing(id.clone()))?;
                 if !present(parent) {
-                    let at = if matches!(anchor, Anchor::After(_)) {
-                        i + 1
-                    } else {
+                    let at = if matches!(anchor, Anchor::Before(_)) {
                         i
+                    } else {
+                        i + 1
                     };
                     parent.children.insert(at, panel.clone());
                 }
@@ -408,6 +430,103 @@ pub fn style_resource(css: &str) -> Vec<u8> {
 /// A `.vjs_c` holding `js` as text.
 pub fn script_resource(js: &str) -> Vec<u8> {
     plaintext(SCRIPT_TYPE_VERSION, js.as_bytes().to_vec())
+}
+
+fn kv3_node(e: &Element) -> Value {
+    let obj = |members: Vec<(&str, Value)>| {
+        Value::Object(
+            members
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        )
+    };
+    let text = |s: &str| Value::Str(s.to_string());
+    let reference = |value: &str| {
+        if let Some(path) = value.strip_prefix("s2r://") {
+            obj(vec![
+                ("eType", text("REFERENCE_COMPILED")),
+                ("name", text(path)),
+            ])
+        } else if let Some(path) = value.strip_prefix("file://") {
+            obj(vec![
+                ("eType", text("REFERENCE_PASSTHROUGH")),
+                ("name", text(path)),
+            ])
+        } else {
+            obj(vec![
+                ("eType", text("PANEL_ATTRIBUTE_VALUE")),
+                ("name", text(value)),
+            ])
+        }
+    };
+    let etype = match e.tag.as_str() {
+        "root" => "ROOT",
+        "styles" => "STYLES",
+        "scripts" => "SCRIPTS",
+        "snippets" => "SNIPPETS",
+        "snippet" => "SNIPPET",
+        "include" => {
+            let src = e
+                .attrs
+                .iter()
+                .find(|(k, _)| k == "src")
+                .map_or("", |(_, v)| v.as_str());
+            return obj(vec![("eType", text("INCLUDE")), ("child", reference(src))]);
+        }
+        "script" => {
+            return obj(vec![
+                ("eType", text("SCRIPT_BODY")),
+                ("name", text(e.text.as_deref().unwrap_or_default())),
+            ]);
+        }
+        _ => "PANEL",
+    };
+    let mut members = vec![("eType", text(etype))];
+    if etype == "PANEL" {
+        members.push(("name", text(&e.tag)));
+    } else if etype == "SNIPPET" {
+        members.push((
+            "name",
+            text(
+                e.attrs
+                    .iter()
+                    .find(|(k, _)| k == "name")
+                    .map_or("", |(_, v)| v),
+            ),
+        ));
+    }
+    let mut children: Vec<Value> = Vec::new();
+    if etype == "PANEL" {
+        for (k, v) in &e.attrs {
+            children.push(obj(vec![
+                ("eType", text("PANEL_ATTRIBUTE")),
+                ("name", text(k)),
+                ("child", reference(v)),
+            ]));
+        }
+    }
+    children.extend(e.children.iter().map(kv3_node));
+    members.push(("vecChildren", Value::Array(children)));
+    obj(members)
+}
+
+/// `root` as a compiled layout resource with a `LaCo` block, the form `tree` reads: a
+/// stand-in for one of the game's layouts in tests and the fake install.
+pub fn compiled_layout(root: &Element) -> Vec<u8> {
+    let doc = Value::Object(vec![(
+        "m_AST".to_string(),
+        Value::Object(vec![("m_pRoot".to_string(), kv3_node(root))]),
+    )]);
+    Resource {
+        header_version: HEADER_VERSION,
+        type_version: LAYOUT_TYPE_VERSION,
+        blocks: vec![Block {
+            name: *b"LaCo",
+            data: kv3::encode_legacy(&doc),
+        }],
+    }
+    .to_bytes()
 }
 
 /// The game's compiled layout with `edit` applied, as a plaintext `.vxml_c`.
@@ -562,6 +681,62 @@ mod tests {
             apply(&mut root, &missing),
             Err(InjectError::AnchorMissing("Nope".into()))
         );
+    }
+
+    #[test]
+    fn after_parent_of_lands_beside_the_enclosing_panel() {
+        let mut root = Element::new("root").child(
+            Element::new("Section").attr("id", "section").child(
+                Element::new("Row")
+                    .child(Element::new("Slider").attr("id", "CameraFOV"))
+                    .child(Element::new("Label")),
+            ),
+        );
+        let edit = LayoutEdit {
+            panels: vec![(
+                Anchor::AfterParentOf("CameraFOV".into()),
+                Element::new("Row").attr("id", "DtRow"),
+            )],
+            ..LayoutEdit::default()
+        };
+        apply(&mut root, &edit).unwrap();
+        apply(&mut root, &edit).unwrap();
+        let section = &root.children[0];
+        assert_eq!(section.children.len(), 2, "{section:?}");
+        assert_eq!(section.children[1].id(), Some("DtRow"));
+        assert_eq!(
+            section.children[0].children.len(),
+            2,
+            "the stock row is untouched"
+        );
+        let missing = LayoutEdit {
+            panels: vec![(Anchor::AfterParentOf("Nope".into()), Element::new("Row"))],
+            ..LayoutEdit::default()
+        };
+        assert_eq!(
+            apply(&mut root, &missing),
+            Err(InjectError::AnchorMissing("Nope".into()))
+        );
+    }
+
+    #[test]
+    fn compiled_layout_reads_back_as_the_same_tree() {
+        for fixture in [TOP_BAR, MINIMAP] {
+            let original = tree(fixture).unwrap();
+            let bytes = compiled_layout(&original);
+            assert_eq!(tree(&bytes).unwrap(), original);
+            assert_eq!(layout_text(&bytes).unwrap(), layout_text(fixture).unwrap());
+        }
+        let mut script = Element::new("script");
+        script.text = Some("$.Msg('x')".into());
+        let small = Element::new("root")
+            .child(Element::new("scripts").child(script))
+            .child(
+                Element::new("Panel")
+                    .attr("id", "A")
+                    .attr("src", "file://x.png"),
+            );
+        assert_eq!(tree(&compiled_layout(&small)).unwrap(), small);
     }
 
     #[test]

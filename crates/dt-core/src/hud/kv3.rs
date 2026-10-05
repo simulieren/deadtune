@@ -1,9 +1,10 @@
 //! Binary KeyValues3 reader, versions 4 and 5, LZ4 or uncompressed, plus the legacy
 //! `VKV\x03` format (version 1, inline values; third-party compilers still emit it): enough
-//! to decode the `LaCo` block of a compiled Panorama layout (`.vxml_c`). Read-only on
-//! purpose; DeadTune rebuilds layouts as text (`inject`), so no writer is needed. Format
-//! notes: research/hud/top-bar/NOTES.md section 2; reference reader: ValveResourceFormat
-//! `BinaryKV3`.
+//! to decode the `LaCo` block of a compiled Panorama layout (`.vxml_c`). DeadTune rebuilds
+//! layouts as text (`inject`), so the only writer is `encode_legacy`, which makes stand-in
+//! compiled layouts for tests and the fake install; the game's own files are never
+//! re-encoded. Format notes: research/hud/top-bar/NOTES.md section 2; reference reader:
+//! ValveResourceFormat `BinaryKV3`.
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -414,6 +415,79 @@ impl<'a> Lane<'a> {
 
     fn rest(&self) -> &'a [u8] {
         &self.data[self.pos..]
+    }
+}
+
+/// `value` in the legacy `VKV\x03` format, uncompressed: what `parse` reads back as a
+/// version 1 document.
+pub fn encode_legacy(value: &Value) -> Vec<u8> {
+    let mut strings: Vec<String> = Vec::new();
+    let mut body = Vec::new();
+    write_legacy(value, &mut strings, &mut body);
+    let mut out = Vec::new();
+    out.extend_from_slice(&LEGACY_MAGIC.to_le_bytes());
+    out.extend_from_slice(&LEGACY_UNCOMPRESSED);
+    out.extend_from_slice(&[0; 16]);
+    out.extend_from_slice(&(strings.len() as u32).to_le_bytes());
+    for s in &strings {
+        out.extend_from_slice(s.as_bytes());
+        out.push(0);
+    }
+    out.extend_from_slice(&body);
+    out
+}
+
+fn intern(strings: &mut Vec<String>, s: &str) -> i32 {
+    let at = strings
+        .iter()
+        .position(|have| have == s)
+        .unwrap_or_else(|| {
+            strings.push(s.to_string());
+            strings.len() - 1
+        });
+    at as i32
+}
+
+fn write_legacy(value: &Value, strings: &mut Vec<String>, out: &mut Vec<u8>) {
+    match value {
+        Value::Null => out.push(node::NULL),
+        Value::Bool(true) => out.push(node::BOOLEAN_TRUE),
+        Value::Bool(false) => out.push(node::BOOLEAN_FALSE),
+        Value::Int(0) => out.push(node::INT64_ZERO),
+        Value::Int(1) => out.push(node::INT64_ONE),
+        Value::Int(n) => {
+            out.push(node::INT64);
+            out.extend_from_slice(&n.to_le_bytes());
+        }
+        Value::UInt(n) => {
+            out.push(node::UINT64);
+            out.extend_from_slice(&n.to_le_bytes());
+        }
+        Value::Float(f) if *f == 0.0 => out.push(node::DOUBLE_ZERO),
+        Value::Float(f) if *f == 1.0 => out.push(node::DOUBLE_ONE),
+        Value::Float(f) => {
+            out.push(node::DOUBLE);
+            out.extend_from_slice(&f.to_le_bytes());
+        }
+        Value::Str(s) => {
+            out.push(node::STRING);
+            out.extend_from_slice(&intern(strings, s).to_le_bytes());
+        }
+        Value::Array(items) => {
+            out.push(node::ARRAY);
+            out.extend_from_slice(&(items.len() as u32).to_le_bytes());
+            for item in items {
+                write_legacy(item, strings, out);
+            }
+        }
+        Value::Object(members) => {
+            out.push(node::OBJECT);
+            out.extend_from_slice(&(members.len() as u32).to_le_bytes());
+            for (name, member) in members {
+                out.extend_from_slice(&intern(strings, name).to_le_bytes());
+                write_legacy(member, strings, out);
+            }
+        }
     }
 }
 
@@ -840,6 +914,41 @@ mod tests {
             parse(&legacy(LEGACY_UNCOMPRESSED, &body[..body.len() - 3])),
             Err(Kv3Error::Truncated(_))
         ));
+    }
+
+    #[test]
+    fn legacy_encoding_round_trips_every_value_kind() {
+        let value = Value::Object(vec![
+            ("null".into(), Value::Null),
+            ("yes".into(), Value::Bool(true)),
+            ("no".into(), Value::Bool(false)),
+            ("zero".into(), Value::Int(0)),
+            ("one".into(), Value::Int(1)),
+            ("big".into(), Value::Int(-7_000_000_000)),
+            ("unsigned".into(), Value::UInt(u64::MAX)),
+            ("d0".into(), Value::Float(0.0)),
+            ("d1".into(), Value::Float(1.0)),
+            ("pi".into(), Value::Float(3.25)),
+            ("text".into(), Value::Str("hello".into())),
+            ("again".into(), Value::Str("hello".into())),
+            (
+                "list".into(),
+                Value::Array(vec![Value::Str("a".into()), Value::Int(2)]),
+            ),
+            ("empty".into(), Value::Object(Vec::new())),
+        ]);
+        let bytes = encode_legacy(&value);
+        assert_eq!(&bytes[..4], b"VKV\x03");
+        let doc = parse(&bytes).unwrap();
+        assert_eq!(doc.version, 1);
+        assert_eq!(doc.root, value);
+        let strings = u32::from_le_bytes(bytes[36..40].try_into().unwrap());
+        assert_eq!(
+            strings, 16,
+            "member names and distinct string values, interned once"
+        );
+        let top_bar = parse(&laco(TOP_BAR)).unwrap().root;
+        assert_eq!(parse(&encode_legacy(&top_bar)).unwrap().root, top_bar);
     }
 
     /// `DEADTUNE_KV3_SAMPLES=<dir>` points at compiled layouts kept outside the repo

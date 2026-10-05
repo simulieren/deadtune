@@ -15,7 +15,7 @@ use crate::relaunch::{self, Relaunch};
 use crate::settings::{Settings, View};
 use crate::state::{AppState, HudPage, MinimapPreset, Mode, Section, Status, Tab, TopBarPreview};
 use crate::update::{self, UpdateState};
-use crate::{Args, advanced, compact, profiles, simple, views};
+use crate::{Args, advanced, compact, profiles, simple};
 use dt_core::hud::topbar::TopBarPreset;
 
 pub const FULL_SIZE: [f32; 2] = [1280.0, 820.0];
@@ -108,7 +108,9 @@ impl App {
     /// Called once the window exists, for things that need the egui context.
     pub fn started(mut self, ctx: &egui::Context) -> App {
         crate::theme::install(ctx);
-        self.game_poll = Some(spawn_game_poll(ctx.clone()));
+        if !fake_running() {
+            self.game_poll = Some(spawn_game_poll(ctx.clone()));
+        }
         if let Ok(exe) = update::exe() {
             dt_core::update::cleanup(exe);
         }
@@ -134,6 +136,9 @@ impl App {
         });
         match opened {
             Ok(mut state) => {
+                if let Some(status) = state.sync_ingame() {
+                    state.status = Some(status);
+                }
                 if let Err(e) = state.start_watch() {
                     state.status = Some(Status::Error(format!("file watcher: {e}")));
                 }
@@ -169,7 +174,8 @@ impl App {
                         .map(|s| s.id);
                 }
                 // `DEADTUNE_HUD_PAGE=colors` opens the Minimap colours page in either view,
-                // `DEADTUNE_HUD_PAGE=top` the Top bar page;
+                // `DEADTUNE_HUD_PAGE=top` the Top bar page, `DEADTUNE_HUD_PAGE=ingame` the
+                // In-game settings page;
                 // `DEADTUNE_MINIMAP_PRESET=colourblind` (or `contrast`) applies a colour preset.
                 match std::env::var("DEADTUNE_HUD_PAGE").as_deref() {
                     Ok(v) if v.starts_with("colo") => {
@@ -179,6 +185,10 @@ impl App {
                     Ok(v) if v.starts_with("top") => {
                         state.ui.hud_page = HudPage::TopBar;
                         state.ui.section = Section::TopBar;
+                    }
+                    Ok(v) if v.starts_with("in") => {
+                        state.ui.hud_page = HudPage::Ingame;
+                        state.ui.section = Section::Ingame;
                     }
                     _ => {}
                 }
@@ -255,6 +265,23 @@ impl App {
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_PUSH") {
                     fake_push(&mut state, &kind);
                 }
+                // `DEADTUNE_FAKE_RUNNING=1` pretends Deadlock is running (no game polling).
+                if fake_running() {
+                    state.observe_game(true, None);
+                }
+                // `DEADTUNE_FAKE_STATUS=error:<raw>`, `warn:<raw>` or `info:<text>`.
+                if let Some((kind, text)) =
+                    std::env::var("DEADTUNE_FAKE_STATUS").ok().and_then(|v| {
+                        v.split_once(':')
+                            .map(|(k, t)| (k.to_string(), t.to_string()))
+                    })
+                {
+                    state.status = match kind.as_str() {
+                        "error" => Some(Status::Error(text)),
+                        "warn" => Some(Status::Warn(text)),
+                        _ => Some(Status::Info(text)),
+                    };
+                }
                 // `DEADTUNE_LAUNCH_ARGS="-vulkan -nosplash"` replaces the launch options;
                 // `DEADTUNE_LAUNCH_OPTIONS=1` opens their window.
                 if let Ok(line) = std::env::var("DEADTUNE_LAUNCH_ARGS") {
@@ -330,6 +357,12 @@ impl App {
             return;
         };
         if launch::is_game_running() {
+            return;
+        }
+        if state.ranked_safe_blocks_auto_profile() {
+            state.status = Some(Status::Info(format!(
+                "Ranked-safe mode is on, so the {name} profile for {source:?} power was not switched in."
+            )));
             return;
         }
         let Some(profile) = profiles::load(&state.profiles_dir(), &name) else {
@@ -421,12 +454,7 @@ impl App {
             && job.frames == 5
             && let Screen::Main(state) = &mut self.screen
         {
-            match state.settings.view {
-                View::Simple => simple::apply(ctx, state),
-                View::Advanced => {
-                    views::run_apply(ctx, state);
-                }
-            }
+            simple::apply(ctx, state);
         }
         // `DEADTUNE_FAKE_TRIAL=verified` marks whatever Apply just installed as started with.
         if job.frames == 6
@@ -454,6 +482,10 @@ impl App {
             ctx.send_viewport_cmd(ViewportCommand::Close);
         }
     }
+}
+
+fn fake_running() -> bool {
+    std::env::var_os("DEADTUNE_FAKE_RUNNING").is_some_and(|v| v == "1")
 }
 
 fn fake_push(state: &mut AppState, kind: &str) {
@@ -486,7 +518,7 @@ fn fake_push(state: &mut AppState, kind: &str) {
             ]),
         },
         "timeout" => PushStatus::TimedOut {
-            after: Duration::from_secs(10),
+            after: dt_core::bridge::ack::TIMEOUT,
             count: 3,
         },
         _ => return,

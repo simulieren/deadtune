@@ -24,6 +24,7 @@ use dt_core::gi::{self, Override};
 use dt_core::hud::apples_tunnels::{ApplesTunnels, DOT_SIZE_RANGE, RADIUS_RANGE};
 use dt_core::hud::elements::ElementId;
 use dt_core::hud::health_style::HealthStyle;
+use dt_core::hud::ingame::{self, IngameSettings};
 use dt_core::hud::install::HudPlan;
 use dt_core::hud::layout::{ElementEdit, HudLayout};
 use dt_core::hud::minimap_colors::{self, Color, IconId};
@@ -196,6 +197,7 @@ pub enum Section {
     Minimap,
     TopBar,
     Health,
+    Ingame,
     Addons,
     System,
     GameFiles,
@@ -203,7 +205,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 14] = [
+    pub const ALL: [Section; 15] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -214,6 +216,7 @@ impl Section {
         Section::Minimap,
         Section::TopBar,
         Section::Health,
+        Section::Ingame,
         Section::Addons,
         Section::System,
         Section::GameFiles,
@@ -232,6 +235,7 @@ impl Section {
             Section::Minimap => "Minimap",
             Section::TopBar => "Top bar",
             Section::Health => "Health bar",
+            Section::Ingame => "In-game settings",
             Section::Addons => "Addons",
             Section::System => "System check",
             Section::GameFiles => "Game files",
@@ -251,6 +255,9 @@ impl Section {
             Section::Minimap => "Colours, marker sizes and the look of the minimap.",
             Section::TopBar => "Hero portraits, clock and soul lead, plus spawn timers and more.",
             Section::Health => "A bigger health number, colours by health, less shaking.",
+            Section::Ingame => {
+                "DeadTune rows inside Deadlock's own settings menu: a Wide FOV slider and live performance sliders."
+            }
             Section::Addons => {
                 "Community performance mods, rebuilt by DeadTune so they survive game updates."
             }
@@ -511,6 +518,8 @@ pub enum HudPage {
     Layout,
     Colors,
     TopBar,
+    Health,
+    Ingame,
 }
 
 /// The game's own enemy colour setting (2026-09-29 accessibility update).
@@ -572,6 +581,8 @@ impl MinimapPreset {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
     Info(String),
+    /// It worked, with a catch the player should know about.
+    Warn(String),
     Error(String),
 }
 
@@ -1078,6 +1089,12 @@ impl AppState {
         }
     }
 
+    /// Whether the preset or the profile gives `name` a value, so a `+name` launch option
+    /// competes with it.
+    pub fn sets_convar(&self, name: &str) -> bool {
+        self.profile.convars.set.contains_key(name) || self.base_value(name).is_some()
+    }
+
     fn base_value(&self, name: &str) -> Option<&str> {
         self.base
             .as_ref()
@@ -1107,6 +1124,13 @@ impl AppState {
             edits.set.remove(name);
         } else {
             edits.set.insert(name.to_string(), value.clone());
+        }
+        if let Some((key, text)) = self.video_twin(name, &value) {
+            if is_base {
+                self.profile.video.remove(&key);
+            } else {
+                self.profile.video.insert(key, text);
+            }
         }
         if self.ctx.game_running
             && self.settings.bridge.pushes_while_dragging()
@@ -1162,16 +1186,41 @@ impl AppState {
     }
 
     pub fn reset_convars<'a>(&mut self, names: impl IntoIterator<Item = &'a str>) {
-        let edits = &mut self.profile.convars;
         for name in names {
+            let edits = &mut self.profile.convars;
             edits.set.remove(name);
             edits.comment.retain(|c| c != name);
+            self.profile.video.remove(&format!("setting.{name}"));
         }
         self.refresh_preview();
     }
 
-    /// Drops every convar edit so the profile is the preset again; HUD and video edits stay.
+    /// The `video.txt` key holding the same setting as ConVar `name`, with `value` written
+    /// in that file's style. The game's menu writes `video.txt`, so a ConVar edit alone
+    /// would leave the two files disagreeing.
+    fn video_twin(&self, name: &str, value: &str) -> Option<(String, String)> {
+        let key = format!("setting.{name}");
+        let current = dt_core::video::read_settings(self.live.video.as_deref()?)
+            .ok()?
+            .into_iter()
+            .find(|(k, _)| *k == key)?
+            .1;
+        let boolean = matches!(current.as_str(), "true" | "false");
+        let text = if boolean && matches!(value.trim(), "0" | "1" | "true" | "false") {
+            bool_text(parse_bool(value), Some(&current))
+        } else {
+            value.to_string()
+        };
+        Some((key, text))
+    }
+
+    /// Drops every setting edit, and the `video.txt` twins of those settings, so the
+    /// profile is the preset again; HUD and other video edits stay.
     pub fn reset_to_preset(&mut self) {
+        let names: Vec<String> = self.profile.convars.set.keys().cloned().collect();
+        for name in names {
+            self.profile.video.remove(&format!("setting.{name}"));
+        }
         self.profile.convars = ConVarEdits::default();
         self.refresh_preview();
     }
@@ -1785,12 +1834,14 @@ impl AppState {
         let top_bar = std::mem::take(&mut self.profile.hud.top_bar);
         let health = std::mem::take(&mut self.profile.hud.health);
         let apples_tunnels = self.profile.hud.apples_tunnels;
+        let ingame = std::mem::take(&mut self.profile.hud.ingame);
         self.profile.hud = HudLayout {
             minimap_colors,
             minimap,
             top_bar,
             health,
             apples_tunnels,
+            ingame,
             ..preset.layout()
         };
         self.refresh_preview();
@@ -1806,6 +1857,7 @@ impl AppState {
                 top_bar: self.profile.hud.top_bar.clone(),
                 health: self.profile.hud.health.clone(),
                 apples_tunnels: self.profile.hud.apples_tunnels,
+                ingame: self.profile.hud.ingame.clone(),
                 ..p.layout()
             } == self.profile.hud
         })
@@ -1891,6 +1943,54 @@ impl AppState {
 
     pub fn health_changed_count(&self) -> usize {
         self.profile.hud.health.changed_count()
+    }
+
+    /// Replaces the in-game settings rows; names that are not rows of the DeadTune group
+    /// are dropped.
+    pub fn set_ingame(&mut self, mut settings: IngameSettings) {
+        settings
+            .performance
+            .retain(|name| ingame::perf_row(name).is_some());
+        self.profile.hud.ingame = settings;
+        self.refresh_preview();
+    }
+
+    pub fn ingame_changed_count(&self) -> usize {
+        self.profile.hud.ingame.changed_count()
+    }
+
+    /// Carries a Wide FOV set on the in-game slider into gameinfo.gi and the profile, so
+    /// the Overview's Wide view shows it. Once per saved value; nothing most of the time.
+    pub fn sync_ingame(&mut self) -> Option<Status> {
+        let sync = match ingame::sync_wide_fov(&self.paths, &self.store) {
+            Ok(Some(sync)) => sync,
+            Ok(None) => return None,
+            Err(e) => return Some(Status::Error(format!("in-game Wide FOV: {e}"))),
+        };
+        if sync.gameinfo_changed {
+            match LiveFiles::read(&self.paths) {
+                Ok(live) => {
+                    self.live = live;
+                    self.known_gameinfo_sha = sha256_hex(self.live.gameinfo.as_bytes());
+                }
+                Err(e) => return Some(Status::Error(format!("in-game Wide FOV: {e}"))),
+            }
+        }
+        let value = ingame::wide_fov_text(sync.ratio);
+        let was_saved = self.saved.is_some();
+        if let Err(e) = self.set_convar(ingame::WIDE_FOV_CONVAR, value.clone()) {
+            return Some(Status::Error(format!("in-game Wide FOV: {e}")));
+        }
+        if was_saved && let Err(e) = self.save_profile() {
+            return Some(Status::Error(format!("in-game Wide FOV: {e}")));
+        }
+        let shown = match crate::friendly::row(ingame::WIDE_FOV_CONVAR) {
+            Some(row) => crate::friendly::display(row.control, &value),
+            None => value,
+        };
+        Some(Status::Info(format!(
+            "Wide view set to {shown} from the in-game slider"
+        )))
     }
 
     pub fn reset_minimap_style(&mut self) {
@@ -2164,11 +2264,26 @@ impl AppState {
         profiles::dir(&self.data_dir)
     }
 
+    /// What every Apply button runs: write, then keep what was written as the saved
+    /// profile, so Discard afterwards goes back to it and not to an older save.
+    pub fn apply_and_save(&mut self) -> Result<Applied, String> {
+        let applied = self.apply()?;
+        self.save_profile()
+            .map_err(|e| format!("Applied, but saving your profile failed: {e}"))?;
+        Ok(applied)
+    }
+
     pub fn save_profile(&mut self) -> io::Result<PathBuf> {
         let path = profiles::save(&self.profiles_dir(), &self.profile)?;
         self.saved = Some(self.profile.clone());
         self.settings.last_profile = Some(self.profile.name.clone());
         Ok(path)
+    }
+
+    /// The power-source profile switch would turn Ranked-safe off and bring practice mode
+    /// back, so it waits while Ranked-safe is on.
+    pub fn ranked_safe_blocks_auto_profile(&self) -> bool {
+        self.settings.source == TargetSource::RankedSafe
     }
 
     pub fn switch_profile(&mut self, profile: Profile, on_disk: bool) {
@@ -2838,9 +2953,10 @@ mod tests {
         state.set_convar(LIVE, "120".into()).unwrap();
         let t0 = Instant::now() + crate::live::DEBOUNCE;
         state.tick_live(t0).unwrap().unwrap();
-        state.poll_conlog(t0 + Duration::from_secs(9));
+        let timeout = dt_core::bridge::ack::TIMEOUT;
+        state.poll_conlog(t0 + timeout - Duration::from_secs(1));
         assert!(state.ack.is_waiting());
-        state.poll_conlog(t0 + Duration::from_secs(11));
+        state.poll_conlog(t0 + timeout + Duration::from_secs(1));
         assert!(
             matches!(state.ack.status(), PushStatus::TimedOut { count: 1, .. }),
             "{:?}",
@@ -3200,6 +3316,72 @@ mod tests {
     }
 
     #[test]
+    fn ingame_rows_drop_unknown_names_count_and_survive_layout_presets() {
+        let (_dir, mut state) = state();
+        state.set_ingame(IngameSettings {
+            wide_fov: true,
+            performance: ["r_citadel_shadow_quality", "fps_max"]
+                .map(String::from)
+                .into(),
+        });
+        let stored = state.profile.hud.ingame.clone();
+        assert_eq!(
+            stored.performance.iter().collect::<Vec<_>>(),
+            ["r_citadel_shadow_quality"]
+        );
+        assert_eq!(state.ingame_changed_count(), 2);
+        assert!(state.is_dirty());
+        state.apply_hud_preset(HudPreset::Competitive);
+        assert_eq!(state.profile.hud.ingame, stored);
+        assert_eq!(state.hud_preset(), Some(HudPreset::Competitive));
+        state.set_ingame(IngameSettings::default());
+        state.apply_hud_preset(HudPreset::Vanilla);
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn ingame_wide_fov_sync_lands_in_gameinfo_and_the_profile_once() {
+        let (_dir, mut state) = state();
+        assert_eq!(state.sync_ingame(), None, "nothing saved in game yet");
+        std::fs::write(
+            state.paths.cfg_dir.join("user_convars_0_slot0.vcfg"),
+            format!(
+                "\"config\" {{ \"convars\" {{ \"{}\" \"{}\" }} }}",
+                ingame::STASH_CONVAR,
+                ingame::stash_encode(2.49)
+            ),
+        )
+        .unwrap();
+        let status = state.sync_ingame().expect("synced");
+        assert!(
+            matches!(&status, Status::Info(s) if s.starts_with("Wide view set to ") && s.contains("100")),
+            "{status:?}"
+        );
+        assert_eq!(
+            state.current_value("r_aspectratio").as_deref(),
+            Some("2.49")
+        );
+        assert!(
+            state.live.gameinfo.contains("r_aspectratio"),
+            "written to gameinfo.gi"
+        );
+        assert_eq!(
+            state.known_gameinfo_sha,
+            sha256_hex(state.live.gameinfo.as_bytes())
+        );
+        assert!(
+            plan(&state).restart.is_empty() && !plan(&state).is_empty() || plan(&state).is_empty(),
+            "the file already holds the value: {:?}",
+            plan(&state)
+        );
+        assert!(
+            !state.is_dirty(),
+            "the profile was on disk, so the synced value is saved with it"
+        );
+        assert_eq!(state.sync_ingame(), None, "same value again: nothing to do");
+    }
+
+    #[test]
     fn apples_and_tunnels_clamp_count_and_survive_layout_presets() {
         let (_dir, mut state) = state();
         let mut style = ApplesTunnels::default();
@@ -3376,6 +3558,73 @@ mod tests {
         state.reset_convars(ENEMY_UI_COLOR.iter().copied().chain([CUSTOM_UI_COLORS]));
         assert_eq!(state.enemy_ui_color(), [215, 50, 50]);
         assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn apply_and_save_makes_the_applied_profile_the_saved_one() {
+        let (_dir, mut state) = state();
+        state.set_convar("r_farz", "6000".into()).unwrap();
+        state.apply_and_save().unwrap();
+        assert_eq!(state.saved.as_ref(), Some(&state.profile));
+        state.revert_all();
+        assert_eq!(
+            state.profile.convars.set.get("r_farz").map(String::as_str),
+            Some("6000"),
+            "Discard after Apply keeps what was applied"
+        );
+    }
+
+    #[test]
+    fn ranked_safe_holds_back_the_power_profile_switch() {
+        let (_dir, mut state) = state();
+        assert!(!state.ranked_safe_blocks_auto_profile());
+        state.toggle_ranked_safe().unwrap();
+        assert!(state.ranked_safe_blocks_auto_profile());
+    }
+
+    #[test]
+    fn a_convar_edit_keeps_its_video_txt_twin_in_step() {
+        let (_dir, mut state) = state();
+        let live = state.live.video.clone().unwrap();
+        let has = |k: &str| live.contains(&format!("\"setting.{k}\""));
+        assert!(
+            has("r_citadel_shadow_quality") && has("r_screen_space_shadows"),
+            "fixture"
+        );
+        state
+            .set_convar("r_citadel_shadow_quality", "2".into())
+            .unwrap();
+        state
+            .set_convar("r_screen_space_shadows", "1".into())
+            .unwrap();
+        let video = &state.profile.video;
+        assert_eq!(video["setting.r_citadel_shadow_quality"], "2");
+        assert_eq!(
+            video["setting.r_screen_space_shadows"], "true",
+            "the file's own style"
+        );
+        state.set_convar("r_farz", "6000".into()).unwrap();
+        assert!(
+            !state.profile.video.contains_key("setting.r_farz"),
+            "no twin, nothing written"
+        );
+        state.reset_convars(["r_citadel_shadow_quality"]);
+        assert!(
+            !state
+                .profile
+                .video
+                .contains_key("setting.r_citadel_shadow_quality")
+        );
+        state.reset_to_preset();
+        assert!(state.profile.video.is_empty());
+    }
+
+    #[test]
+    fn sets_convar_covers_profile_and_preset() {
+        let (_dir, mut state) = state();
+        assert!(!state.sets_convar("definitely_not_a_convar"));
+        state.set_convar("r_farz", "6000".into()).unwrap();
+        assert!(state.sets_convar("r_farz"));
     }
 
     #[test]
@@ -3624,6 +3873,123 @@ mod tests {
         ));
         assert!(state.profile.addons.is_enabled(AddonId::SoulContainer));
         assert!(matches!(state.status, Some(Status::Info(ref m)) if m.contains("started fine")));
+    }
+
+    /// A pak01 holding a scope texture shaped like the game's: Tamara's header with the
+    /// dims patched, over a radial alpha vignette. 1536 px rather than the game's 2048
+    /// keeps the test quick while every offered size still shrinks it.
+    fn install_scope_original(state: &AppState) {
+        use dt_core::addons::native_scope::TEXTURE;
+        use dt_core::hud::resource::Resource;
+        use dt_core::hud::vpk::{self, VpkDir};
+        use dt_core::texture::Vtex;
+        let up = VpkDir::open(&upstream("Vindicta Scope Downscale", "pak89_dir.vpk"))
+            .unwrap()
+            .read(TEXTURE)
+            .unwrap();
+        let start = Vtex::parse(&up).unwrap().pixel_start();
+        let data_len = Resource::parse(&up)
+            .unwrap()
+            .block(b"DATA")
+            .unwrap()
+            .data
+            .len();
+        let mut original = up[..start].to_vec();
+        let dims = start - data_len + 20;
+        const SIDE: i32 = 1536;
+        let side = (SIDE as u16).to_le_bytes();
+        original[dims..dims + 4].copy_from_slice(&[side, side].concat());
+        for y in 0..SIDE {
+            for x in 0..SIDE {
+                let r = f64::from((2 * x - SIDE).pow(2) + (2 * y - SIDE).pow(2)).sqrt()
+                    / f64::from(SIDE);
+                original.extend_from_slice(&[0, 0, 0, (92.0 + 150.0 * r.min(1.0)) as u8]);
+            }
+        }
+        let files = BTreeMap::from([(TEXTURE.to_string(), original)]);
+        std::fs::write(
+            state
+                .paths
+                .citadel_dir
+                .join(dt_core::hud::install::GAME_PAK),
+            vpk::write(&files),
+        )
+        .unwrap();
+    }
+
+    fn scope_pak_side(state: &AppState) -> Option<u16> {
+        use dt_core::hud::vpk::VpkDir;
+        let pak = dt_core::hud::install::addons_dir(&state.paths).join("pak74_dir.vpk");
+        let bytes = VpkDir::open(&pak)
+            .ok()?
+            .read(addons::native_scope::TEXTURE)
+            .unwrap();
+        let v = dt_core::texture::Vtex::parse(&bytes).unwrap();
+        assert_eq!(v.width, v.height);
+        Some(v.width)
+    }
+
+    #[test]
+    fn scope_applies_verifies_goes_on_trial_and_removes_at_every_size() {
+        let (_dir, mut state) = state();
+        install_scope_original(&state);
+        state.set_addon_enabled(AddonId::VindictaScope, true);
+        let mut launched = SystemTime::now();
+        for side in [720u16, 1080, 1440] {
+            state.set_scope(addons::ScopeOptions { side });
+            assert!(
+                matches!(
+                    state.addon_action(AddonId::VindictaScope),
+                    Some(Action::Write(_))
+                ),
+                "{side}: {:?}",
+                state.addon_action(AddonId::VindictaScope)
+            );
+            state.apply().unwrap();
+            assert_eq!(scope_pak_side(&state), Some(side));
+            let reports = addons::verify::verify_installed(&state.paths, &state.store.root);
+            assert_eq!(reports.len(), 1);
+            assert!(
+                reports[0]
+                    .result
+                    .as_ref()
+                    .is_ok_and(|v| v.problems.is_empty()),
+                "{side}: {}",
+                reports[0]
+            );
+
+            launched += Duration::from_secs(60);
+            state.observe_game(true, Some(launched));
+            let trial = state.guard.trial.clone().expect("the new pak is on trial");
+            assert_eq!(
+                trial.changed.keys().collect::<Vec<_>>(),
+                [&AddonId::VindictaScope],
+                "{side}"
+            );
+            state.guard_lines.push("DEADTUNE_BOOT 0.9.0".into());
+            state.observe_game(true, Some(launched));
+            assert!(matches!(
+                state.guard.verdict(AddonId::VindictaScope),
+                Some(Verdict::Verified { .. })
+            ));
+            state.observe_game(false, None);
+        }
+
+        state.set_scope(addons::ScopeOptions { side: 2048 });
+        assert_eq!(
+            state.addon_action(AddonId::VindictaScope),
+            Some(&Action::Remove),
+            "a size not below the game's leaves nothing to install"
+        );
+        state.apply().unwrap();
+        assert_eq!(scope_pak_side(&state), None);
+
+        state.set_scope(addons::ScopeOptions::default());
+        state.apply().unwrap();
+        assert_eq!(scope_pak_side(&state), Some(1080));
+        assert_eq!(state.remove_addon_now(AddonId::VindictaScope), Ok(true));
+        assert_eq!(scope_pak_side(&state), None);
+        assert!(!state.profile.addons.is_enabled(AddonId::VindictaScope));
     }
 
     #[test]

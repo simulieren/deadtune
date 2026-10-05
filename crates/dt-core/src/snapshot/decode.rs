@@ -91,10 +91,11 @@ pub fn decode(kind: Kind, bytes: &[u8]) -> Result<Vec<u8>, String> {
                 .map(|t| text(t.to_string()))
                 .map_err(|e| e.to_string())
         }
-        Kind::Texture => texture::decode(bytes)
-            .map(|image| texture::png::write(&image))
-            .map_err(|e| e.to_string()),
-        Kind::Vector => texture::svg::decode_svg(bytes)
+        Kind::Texture => {
+            let image = texture::decode(bytes).map_err(|e| e.to_string())?;
+            texture::png::write(&image).map_err(|e| e.to_string())
+        }
+        Kind::Vector => texture::svg::svg_text(bytes)
             .map(text)
             .map_err(|e| e.to_string()),
     }
@@ -150,7 +151,7 @@ mod tests {
             prefixed, "var a = 1;",
             "older scripts carry the style prefix"
         );
-        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 8 8\"/>";
         assert_eq!(text(Kind::Vector, &inject::style_resource(svg)), svg);
     }
 

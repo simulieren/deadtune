@@ -17,6 +17,9 @@ use crate::theme::{self, ACCENT, BAD, GOOD, WARN, WEAK};
 
 /// Width kept free on the right of a card's header for the status line and badge.
 const STATUS_COLUMN: f32 = 250.0;
+/// Below this card width the status column shrinks so the description keeps room.
+const NARROW_CARD: f32 = 700.0;
+const STATUS_COLUMN_NARROW: f32 = 150.0;
 
 enum Edit {
     Enable(AddonId, bool),
@@ -404,17 +407,19 @@ fn card(
             ui.vertical(|ui| {
                 // A wrapped description would otherwise take the whole row and squeeze the
                 // status column on the right into one character per line.
-                ui.set_max_width(ui.available_width() - STATUS_COLUMN);
+                let status = if ui.available_width() < NARROW_CARD {
+                    STATUS_COLUMN_NARROW
+                } else {
+                    STATUS_COLUMN
+                };
+                ui.set_max_width(ui.available_width() - status);
                 ui.spacing_mut().item_spacing.y = 2.0;
-                ui.horizontal(|ui| {
-                    card_title(ui, info.name);
-                    ui.add_space(4.0);
-                    ui.hyperlink_to(
-                        RichText::new(info.credit()).small().color(WEAK),
-                        info.credit_url,
-                    )
-                    .on_hover_text(info.credit_url);
-                });
+                card_title(ui, info.name);
+                ui.hyperlink_to(
+                    RichText::new(info.credit()).small().color(WEAK),
+                    info.credit_url,
+                )
+                .on_hover_text(info.credit_url);
                 ui.label(RichText::new(info.description).color(WEAK));
                 ui.label(
                     RichText::new(format!("Gains: {}", info.benefit))
@@ -671,7 +676,7 @@ fn scope_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     let scope = state.profile.addons.scope;
     ui.horizontal(|ui| {
         caption(ui, "Scope size");
-        for side in [720u16, 1080, 1440, 2048] {
+        for side in [720u16, 1080, 1440] {
             let label = format!("{side} px");
             if ui.selectable_label(scope.side == side, label).clicked() && scope.side != side {
                 edits.push(Edit::Scope(ScopeOptions { side }));
@@ -680,8 +685,9 @@ fn scope_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     });
     ui.label(
         RichText::new(
-            "1080 px is what the published mod ships and fills a 1080p screen; pick the next size up for a \
-             1440p or 4K screen. The game's own overlay is 4096 px. Rebuilt automatically after every game update.",
+            "1080 px is what the published mod ships and fills a 1080p screen; pick 1440 px for a 1440p screen. \
+             The game's own overlay is 2048 px, so on a 4K screen this addon has nothing to shrink. \
+             Rebuilt automatically after every game update.",
         )
         .small()
         .color(WEAK),

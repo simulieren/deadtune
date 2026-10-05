@@ -280,8 +280,8 @@ pub struct Selection {
     pub categories: BTreeSet<Category>,
     /// Write decoded text next to the raw bytes.
     pub decode: bool,
-    /// Files above this many bytes are listed but not stored (`None` stores everything).
-    /// Images in scope are exempt.
+    /// Files above this many bytes are listed but not stored (`None` stores everything),
+    /// except the files DeadTune generators read and images in scope.
     pub size_cap: Option<u64>,
     pub images: ImageScope,
 }
@@ -296,6 +296,16 @@ impl Default for Selection {
             size_cap: Some(DEFAULT_SIZE_CAP),
             images: ImageScope::None,
         }
+    }
+}
+
+impl Selection {
+    /// Whether the snapshot keeps the whole file under the cap. A file a DeadTune
+    /// generator reads is always kept, so a snapshot holds every generator input;
+    /// `Inventory::in_scope` adds the images.
+    pub fn stores_full(&self, candidate: &Candidate) -> bool {
+        candidate.categories.contains(&Category::Deadtune)
+            || self.size_cap.is_none_or(|cap| candidate.size <= cap)
     }
 }
 
@@ -392,24 +402,28 @@ impl Inventory {
     /// Files and bytes the selection would store (the size cap applied).
     pub fn selected_totals(&self, selection: &Selection) -> (usize, u64) {
         self.selected(selection).fold((0, 0), |(n, b), c| {
-            let stored = self.in_scope(selection.images, c)
-                || selection.size_cap.is_none_or(|cap| c.size <= cap);
+            let stored = self.in_scope(selection.images, c) || selection.stores_full(c);
             (n + 1, b + if stored { c.size } else { 0 })
         })
     }
 }
 
-/// `gameinfo.gi`, the cfg files and the Steam appmanifest, CRCs computed here.
+/// `gameinfo.gi`, the cfg files and the Steam appmanifest, CRCs computed here. The two
+/// files the ConVar editor writes are DeadTune inputs too.
 pub fn loose_files(paths: &GamePaths) -> Result<Vec<Candidate>, SnapshotError> {
     let mut out = Vec::new();
     let mut push = |path: String, source: Source, file: &Path| -> Result<(), SnapshotError> {
         let bytes = std::fs::read(file)?;
+        let mut categories = vec![Category::Config];
+        if [super::GAMEINFO, super::VIDEO].contains(&path.as_str()) {
+            categories.push(Category::Deadtune);
+        }
         out.push(Candidate {
             path,
             source,
             size: bytes.len() as u64,
             crc: crc32(&bytes),
-            categories: vec![Category::Config],
+            categories,
         });
         Ok(())
     };
@@ -592,6 +606,18 @@ pub(crate) mod tests {
         let (n_capped, bytes_capped) = inv.selected_totals(&sel);
         assert_eq!(n_capped, n, "capped files stay listed");
         assert!(bytes_capped < bytes);
+        let deadtune: u64 = inv
+            .selected(&sel)
+            .filter(|c| c.categories.contains(&Category::Deadtune))
+            .map(|c| c.size)
+            .sum();
+        assert!(deadtune > 0);
+        sel.size_cap = Some(1);
+        assert_eq!(
+            inv.selected_totals(&sel),
+            (n, deadtune),
+            "generator inputs ignore the cap"
+        );
         assert_eq!(Selection::default().categories.len(), 6);
         assert_eq!(Selection::default().images, ImageScope::None);
         assert_eq!(Category::parse("deadtune"), Some(Category::Deadtune));
@@ -648,16 +674,25 @@ pub(crate) mod tests {
         assert_eq!(inv.scope_totals(ImageScope::All).0, 6);
 
         let over_cap = Selection {
-            categories: BTreeSet::from([Category::Deadtune]),
+            categories: BTreeSet::from([Category::Hud]),
             images: ImageScope::Hud,
             size_cap: Some(20),
             ..Selection::default()
         };
-        let (_, bytes) = inv.selected_totals(&over_cap);
+        let (n, bytes) = inv.selected_totals(&over_cap);
+        assert!(n > inv.scope_totals(ImageScope::Hud).0);
+        let generator_inputs: u64 = inv
+            .selected(&over_cap)
+            .filter(|c| {
+                c.categories.contains(&Category::Deadtune)
+                    && !c.categories.contains(&Category::Images)
+            })
+            .map(|c| c.size)
+            .sum();
         assert_eq!(
             bytes,
-            inv.scope_totals(ImageScope::Hud).1,
-            "images in scope count whole; everything else is over the 20-byte cap"
+            inv.scope_totals(ImageScope::Hud).1 + generator_inputs,
+            "images in scope and generator inputs count whole; the rest is over the 20-byte cap"
         );
         let scope = inv.files.iter().find(|c| c.path == scope_texture).unwrap();
         assert!(inv.in_scope(ImageScope::Hud, scope));
@@ -738,7 +773,10 @@ pub(crate) mod tests {
                 "steam/appmanifest_1422450.acf"
             ]
         );
-        assert!(loose.iter().all(|c| c.categories == [Category::Config]));
+        let categories: Vec<&[Category]> = loose.iter().map(|c| &c.categories[..]).collect();
+        let both = &[Category::Config, Category::Deadtune][..];
+        let config = &[Category::Config][..];
+        assert_eq!(categories, [both, config, both, config]);
         assert_eq!(loose[3].source, Source::Steam);
         assert_eq!(
             loose_path(&paths, &loose[1]),

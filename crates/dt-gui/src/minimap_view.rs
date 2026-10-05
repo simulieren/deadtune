@@ -89,6 +89,7 @@ enum Action {
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
+    crate::hud_view::show_layout_note(ui, state, dt_core::hud::elements::ElementId::Minimap);
     let mut actions = Vec::new();
     if !SHOW_PREVIEW {
         official(ui, state, &mut actions);
@@ -141,8 +142,8 @@ fn official(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
     widgets::section(ui, "Game colour settings (official)", |ui| {
         widgets::hint(
             ui,
-            "The game's own Enemy UI Color setting. Applies instantly with the key bind, \
-             and is ranked-safe because it's a normal game setting.",
+            "The game's own Enemy UI Color setting. Applies instantly with the key bind. \
+             Ranked-safe mode resets it to the game's default while it is on.",
         );
         ui.add_space(4.0);
         let on = state.custom_ui_colors();
@@ -208,7 +209,7 @@ fn map_style(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
-                    .add_enabled(n > 0, egui::Button::new("Reset all"))
+                    .add_enabled(n > 0, egui::Button::new("Reset map and markers"))
                     .on_hover_text("Back to the game's own map and marker sizes")
                     .clicked()
                 {
@@ -307,7 +308,8 @@ fn icons(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
         });
         widgets::hint(
             ui,
-            "Goes into the HUD addon on Apply. Troopers and ziplines can't be recoloured.",
+            "Goes into the HUD addon on Apply. Troopers and ziplines can't be recoloured. With \
+             the game's own enemy colour (above) turned on, it may win for enemy icons; untested.",
         );
         ui.add_space(4.0);
         let colors = &state.profile.hud.minimap_colors;
@@ -331,7 +333,7 @@ fn icons(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
-                    .add_enabled(n > 0, egui::Button::new("Reset all"))
+                    .add_enabled(n > 0, egui::Button::new("Reset icon colours"))
                     .on_hover_text("Back to the game's own icon colours")
                     .clicked()
                 {

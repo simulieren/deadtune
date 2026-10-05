@@ -13,6 +13,7 @@ mod game_files_view;
 mod health_view;
 mod hud_view;
 mod icons;
+mod ingame_view;
 mod launch_view;
 mod live;
 mod live_status;

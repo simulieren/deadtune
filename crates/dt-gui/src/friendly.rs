@@ -479,6 +479,7 @@ pub fn groups(section: Section) -> &'static [Group] {
         | Section::Minimap
         | Section::TopBar
         | Section::Health
+        | Section::Ingame
         | Section::Addons
         | Section::System
         | Section::GameFiles
@@ -799,34 +800,109 @@ pub fn preset_blurb(id: PresetId) -> Option<&'static str> {
     }
 }
 
-/// One human sentence plus what to do, from a raw error string.
-pub fn human_error(raw: &str) -> String {
-    if raw == crate::state::STALE {
-        return raw.into();
+/// A raw error in plain words: what happened, and what to do about it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Problem {
+    pub title: String,
+    pub fix: Option<String>,
+}
+
+impl Problem {
+    fn new(title: &str, fix: &str) -> Problem {
+        Problem {
+            title: title.into(),
+            fix: Some(fix.into()),
+        }
     }
+
+    pub fn line(&self) -> String {
+        match &self.fix {
+            Some(fix) => format!("{}. {fix}", self.title),
+            None => self.title.clone(),
+        }
+    }
+}
+
+/// Context prefixes go first: "launch: ... not found" is about Steam, not a game file.
+pub fn explain(raw: &str) -> Problem {
     let lower = raw.to_lowercase();
-    if lower.contains("isn't downloaded yet") {
-        "This preset isn't downloaded yet. Download it, or import the cfg.zip from its mod page."
-            .into()
-    } else if lower.contains("braces") || lower.contains("no convars block") {
-        "The game's config file looks damaged. Use \"Restore original game files\", then try again."
-            .into()
-    } else if lower.contains("permission")
-        || lower.contains("access is denied")
-        || lower.contains("denied (os error")
-    {
-        "Windows blocked the change. Close Deadlock and try again; if it keeps happening, run Steam's \"Verify integrity of game files\".".into()
-    } else if lower.contains("not found")
-        || lower.contains("no such file")
-        || lower.contains("cannot find")
-    {
-        "A game file is missing. Open \"Check setup\" to see which one.".into()
-    } else if lower.contains("connection refused") || lower.contains("timed out") {
-        "The game didn't answer. Use the key bind instead, or press Apply and restart the game."
-            .into()
+    let has = |words: &[&str]| words.iter().any(|w| lower.contains(w));
+    if raw == crate::state::STALE {
+        Problem::new(
+            "The game files changed while you were editing",
+            "DeadTune reloaded them. Click Apply again.",
+        )
+    } else if lower.starts_with("launch") {
+        Problem::new(
+            "Couldn't start Deadlock",
+            "Make sure Steam is open and signed in, then try again.",
+        )
+    } else if lower.starts_with("saving your profile") {
+        Problem::new(
+            "The game files changed, but DeadTune couldn't save your profile",
+            "Your settings are in the game. Check that DeadTune's data folder isn't read-only.",
+        )
+    } else if lower.contains("boot cfg not updated") {
+        Problem::new(
+            "Saved, but instant changes may not work",
+            "DeadTune couldn't update its file in the game's cfg folder. Close Deadlock and click Apply again.",
+        )
+    } else if has(&["live push failed", "push failed", "live push skipped"]) {
+        Problem::new(
+            "Saved, but the instant push didn't reach the game",
+            "The changes load the next time you start Deadlock.",
+        )
+    } else if has(&["isn't downloaded yet"]) {
+        Problem::new(
+            "This preset isn't downloaded yet",
+            "Download it, or import the cfg.zip from its mod page.",
+        )
+    } else if has(&["braces", "no convars block"]) {
+        Problem::new(
+            "The game's config file looks damaged",
+            "Click Restore original game files on Safety & setup, then try again.",
+        )
+    } else if has(&["used by another process", "os error 32", "resource busy"]) {
+        Problem::new(
+            "A game file is in use by another program",
+            "Close Deadlock, then click Apply again.",
+        )
+    } else if has(&[
+        "permission",
+        "access is denied",
+        "denied (os error",
+        "read-only",
+    ]) {
+        Problem::new(
+            "DeadTune wasn't allowed to change a game file",
+            "Close Deadlock and try again. If it keeps happening, run Steam's Verify integrity of game files.",
+        )
+    } else if has(&["no space left", "os error 112", "disk full"]) {
+        Problem::new(
+            "The disk is full",
+            "Free some space, then click Apply again.",
+        )
+    } else if has(&["not found", "no such file", "cannot find"]) {
+        Problem::new(
+            "A game file is missing",
+            "Open System check to see which one.",
+        )
+    } else if has(&["connection refused", "timed out"]) {
+        Problem::new(
+            "The game didn't answer",
+            "Press your instant-change key in game, or restart Deadlock to load the changes.",
+        )
     } else {
-        "Something went wrong. Open \"Check setup\"; the details are in the tooltip.".into()
+        Problem {
+            title: raw.trim().trim_end_matches('.').to_string(),
+            fix: Some("If it keeps happening, open System check.".into()),
+        }
     }
+}
+
+/// [`explain`] as one line, for places with room for a single label.
+pub fn human_error(raw: &str) -> String {
+    explain(raw).line()
 }
 
 #[cfg(test)]
@@ -1112,7 +1188,6 @@ mod tests {
             "unbalanced braces near line 3",
             "Permission denied (os error 13)",
             "SideLock isn't downloaded yet. Download it or import cfg.zip or gameinfo.gi.",
-            "x",
         ]
         .map(human_error);
         for text in ROWS
@@ -1136,5 +1211,24 @@ mod tests {
             human_error("gameinfo.gi: unbalanced braces near line 3").contains("Restore original")
         );
         assert!(human_error("io: Access is denied. (os error 5)").contains("Close Deadlock"));
+        assert_eq!(
+            explain("launch: steam.exe not found").title,
+            "Couldn't start Deadlock"
+        );
+        assert!(
+            explain("files saved, but the live push failed: x")
+                .title
+                .starts_with("Saved")
+        );
+    }
+
+    #[test]
+    fn messages_already_in_plain_words_are_kept() {
+        let raw = "Deadlock didn't start with Clutter remover. DeadTune removed them.";
+        assert!(
+            explain(raw)
+                .title
+                .starts_with("Deadlock didn't start with Clutter remover")
+        );
     }
 }

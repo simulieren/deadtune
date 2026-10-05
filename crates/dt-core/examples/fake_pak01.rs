@@ -2,9 +2,11 @@
 //! fake install (`scripts/fake-install.sh`) can build every addon: the stylesheet as
 //! Sqooky's pak97 copied it, the game's empty particle, the Sinner's Sacrifice mask and
 //! model in their stock layout (made from the upstream pak like the unit tests do), a
-//! 512 px stand-in for the scope overlay, and the top bar's and minimap's stylesheets and
-//! layouts, and the HUD and health stylesheets (the HUD stylesheet standing in for every
-//! stylesheet).
+//! 2048 px stand-in for the scope overlay (the game's size), and the top bar's and minimap's
+//! stylesheets and layouts, a stand-in settings menu with the rows our in-game settings anchor
+//! on, the HUD and health stylesheets (the HUD stylesheet standing in for every stylesheet),
+//! and a vector icon for UI image overrides (a Panorama container laid out as DeadTune reads
+//! it, not a copy of the game's file).
 //!
 //! cargo run -p dt-core --example fake_pak01 -- <out pak01_dir.vpk>
 
@@ -14,10 +16,13 @@ use std::path::{Path, PathBuf};
 
 use dt_core::addons::{native_blur, native_particles, native_scope, native_sinner};
 use dt_core::hud::apples_tunnels::MINIMAP_LAYOUT;
+use dt_core::hud::crc32::crc32;
 use dt_core::hud::elements::HUD_STYLE;
 use dt_core::hud::health_style::{HEALTH_CONTAINER_STYLE, HEALTH_STYLE};
+use dt_core::hud::ingame::{self, SETTINGS_LAYOUT};
+use dt_core::hud::inject;
 use dt_core::hud::minimap_colors::MINIMAP_STYLE;
-use dt_core::hud::resource::Resource;
+use dt_core::hud::resource::{Block, Resource};
 use dt_core::hud::topbar::{TOP_BAR_LAYOUT, TOP_BAR_STYLE};
 use dt_core::hud::vpk::{self, VpkDir};
 use dt_core::texture::vtex::Vtex;
@@ -80,6 +85,32 @@ fn scope_original(upstream: &VpkDir, side: usize) -> Result<Vec<u8>, Box<dyn Err
     Ok(out)
 }
 
+const VECTOR_ICON: &str = "panorama/images/hud/icons/rejuvenator.vsvg_c";
+const VECTOR_SVG: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"12\"/></svg>";
+
+/// `svg` in a Panorama resource: RED2, then DATA with a CRC prefix, an empty image table
+/// and the text.
+fn vector_icon(svg: &str) -> Vec<u8> {
+    let mut data = crc32(svg.as_bytes()).to_le_bytes().to_vec();
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.extend_from_slice(svg.as_bytes());
+    Resource {
+        header_version: 12,
+        type_version: 3,
+        blocks: vec![
+            Block {
+                name: *b"RED2",
+                data: vec![0; 16],
+            },
+            Block {
+                name: *b"DATA",
+                data,
+            },
+        ],
+    }
+    .to_bytes()
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let out = std::env::args()
         .nth(1)
@@ -104,7 +135,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         (native_sinner::MODEL.to_string(), stock_model(&pak26)?),
         (
             native_scope::TEXTURE.to_string(),
-            scope_original(&pak89, 512)?,
+            scope_original(&pak89, 2048)?,
         ),
         (
             TOP_BAR_STYLE.to_string(),
@@ -122,8 +153,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             MINIMAP_LAYOUT.to_string(),
             std::fs::read(here("tests/fixtures/hud/hud_minimap_vanilla.vxml_c"))?,
         ),
+        (
+            SETTINGS_LAYOUT.to_string(),
+            inject::compiled_layout(&ingame::stand_in_layout()),
+        ),
     ]);
     let mut files = files;
+    files.insert(VECTOR_ICON.to_string(), vector_icon(VECTOR_SVG));
     for style in [HUD_STYLE, HEALTH_STYLE, HEALTH_CONTAINER_STYLE] {
         files.insert(
             style.to_string(),

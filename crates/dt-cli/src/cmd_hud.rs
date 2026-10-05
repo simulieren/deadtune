@@ -1,16 +1,21 @@
-//! hud apply | remove | status
+//! hud apply | remove | status | icon
 
 use std::path::Path;
 
 use dt_core::apply::{self, ApplyContext, Target};
+use dt_core::backup;
 use dt_core::catalog::Catalog;
 use dt_core::doctor;
 use dt_core::hud::elements::HUD_STYLE;
-use dt_core::hud::install::{self, ADDON_FILE, InstalledState};
+use dt_core::hud::icons::{self, IconOverride, Target as IconTarget};
+use dt_core::hud::install::{self, ADDON_FILE, GAME_PAK, InstalledState};
+use dt_core::hud::vpk::VpkDir;
 use dt_core::hud::{HudLayout, layout, searchpaths};
 use dt_core::locate::GamePaths;
+use dt_core::texture::encode::Fit;
+use dt_core::texture::{self, png, svg};
 
-use crate::args::{Args, CliResult, fail};
+use crate::args::{Args, CliResult, fail, usage};
 use crate::env::{self, Env};
 
 fn load_layout(path: &Path) -> Result<HudLayout, crate::args::CliError> {
@@ -73,6 +78,106 @@ fn reconcile(env: &Env, args: &Args, layout: &HudLayout) -> CliResult {
     Ok(())
 }
 
+/// `hud icon export <game_path> <out>`: the game's own image, decoded, to look at or edit
+/// before swapping it. A texture becomes a PNG, a vector icon its SVG text.
+fn icon_export(env: &Env, game_path: &str, out: &str) -> CliResult {
+    let paths = env.paths()?;
+    let pak = VpkDir::open(&paths.citadel_dir.join(GAME_PAK))?;
+    let bytes = pak.read(game_path)?;
+    let (data, what) = match icons::target(game_path)? {
+        IconTarget::Raster => {
+            let image = texture::decode(&bytes)?;
+            (
+                png::write(&image)?,
+                format!("{}x{} PNG", image.width, image.height),
+            )
+        }
+        IconTarget::Vector => {
+            let text = svg::svg_text(&bytes)?;
+            (text.into_bytes(), "SVG".to_string())
+        }
+    };
+    std::fs::write(out, &data).map_err(|e| fail(format!("{out}: {e}")))?;
+    println!("{game_path}: {what} written to {out}");
+    Ok(())
+}
+
+/// `hud icon list|set|reset|reset-all`: edits the `icons` table of a layout file. Images are
+/// stored in the data dir, so the source file can go; `hud apply` ships them. `export`
+/// needs no layout.
+pub fn icon(env: &Env, args: &Args) -> CliResult {
+    if args.pos.first().map(String::as_str) == Some("export") {
+        let [_, game_path, out] = args.positionals("export <game_path> <out.png|out.svg>")?;
+        return icon_export(env, game_path, out);
+    }
+    let file = args.path("layout")?;
+    let mut layout = match env::read_opt(&file)? {
+        Some(text) => {
+            toml::from_str(&text).map_err(|e| fail(format!("{}: {e}", file.display())))?
+        }
+        None => HudLayout::default(),
+    };
+    let ship = format!(
+        "Run `hud apply --layout {}` to update the game.",
+        file.display()
+    );
+    match args.pos.first().map(String::as_str) {
+        Some("list") => {
+            args.positionals::<1>("list")?;
+            if layout.icons.is_empty() {
+                println!("No icon overrides in {}.", file.display());
+            }
+            for (path, entry) in &layout.icons {
+                println!(
+                    "{path}  {}  {}",
+                    icon_kind(entry),
+                    entry.stored_at(&env.data_dir).display()
+                );
+            }
+            return Ok(());
+        }
+        Some("set") => {
+            let [_, game_path, image] =
+                args.positionals("set <game_path> <image.png|image.svg>")?;
+            let fit = match args.value("fit") {
+                None => Fit::default(),
+                Some(text) => Fit::parse(text).ok_or_else(|| usage("--fit is original or own"))?,
+            };
+            let bytes = std::fs::read(image).map_err(|e| fail(format!("{image}: {e}")))?;
+            let entry = icons::set(&mut layout.icons, &env.data_dir, game_path, &bytes, fit)?;
+            println!("{game_path}: {} set. {ship}", icon_kind(&entry));
+        }
+        Some("reset") => {
+            let [_, game_path] = args.positionals("reset <game_path>")?;
+            if icons::reset(&mut layout.icons, game_path) {
+                println!("{game_path}: override removed. {ship}");
+            } else {
+                println!("{game_path}: no override to remove.");
+                return Ok(());
+            }
+        }
+        Some("reset-all") => {
+            args.positionals::<1>("reset-all")?;
+            let n = layout.icons.len();
+            icons::reset_all(&mut layout.icons);
+            println!("{n} icon override(s) removed. {ship}");
+        }
+        _ => return Err(usage("expected list, set, reset, reset-all or export")),
+    }
+    let text = toml::to_string(&layout).map_err(|e| fail(e.to_string()))?;
+    backup::atomic_write(&file, text.as_bytes())
+        .map_err(|e| fail(format!("{}: {e}", file.display())))?;
+    Ok(())
+}
+
+fn icon_kind(entry: &IconOverride) -> String {
+    match entry {
+        IconOverride::Png { fit, .. } => format!("png, fit {}", fit.key()),
+        IconOverride::Svg { .. } => "svg".into(),
+        IconOverride::PngInSvg { .. } => "png in svg (experimental)".into(),
+    }
+}
+
 pub fn status(env: &Env, args: &Args) -> CliResult {
     args.positionals::<0>("no positional arguments")?;
     let paths = env.paths()?;
@@ -95,6 +200,9 @@ pub fn status(env: &Env, args: &Args) -> CliResult {
         }
         for (file, text) in &patch.own_files {
             println!("layout adds {file} ({} bytes)", text.len());
+        }
+        for (file, entry) in &patch.icons {
+            println!("layout replaces {file} with your {}", icon_kind(entry));
         }
         if patch.is_empty() {
             println!("layout is vanilla: applying it removes the addon");
@@ -137,6 +245,13 @@ pub fn report_lines(env: &Env, paths: &GamePaths) -> Vec<String> {
         lines.push(format!(
             "HUD conflict: {} overrides {HUD_STYLE}",
             addon.display()
+        ));
+    }
+    for addon in doctor::settings_menu_conflicts(paths) {
+        lines.push(format!(
+            "Settings menu conflict: {} replaces {}",
+            addon.display(),
+            dt_core::hud::ingame::SETTINGS_LAYOUT
         ));
     }
     lines

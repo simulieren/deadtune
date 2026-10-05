@@ -226,7 +226,8 @@ fn launch_menu(ui: &mut Ui, state: &mut AppState, fit: Fit) {
             .button("Safe mode: launch without addons")
             .on_hover_text(
                 "Removes every DeadTune pak from game/citadel/addons right now (other mods stay), \
-                 remembers what was on, and starts Deadlock. Restore addons from this menu later.",
+                 remembers what was on, and starts Deadlock. Restore addons from this menu later. \
+                 Your settings stay; Ranked-safe mode on Safety & setup also resets them.",
             )
             .clicked()
         {
@@ -262,12 +263,126 @@ fn results_tip(results: &[(String, Outcome)], transcript: &[String]) -> String {
     tip.join("\n")
 }
 
-const CHECKLIST: [&str; 4] = [
-    "Is Deadlock running?",
-    "Was it started from DeadTune, or with +exec deadtune_boot in Steam's launch options?",
-    "Press the key with the console closed.",
-    "Check the bind: the Safety & setup page has it.",
-];
+/// Where instant changes stand, from the game, the console log and the last test.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Setup {
+    /// The game's cfg folder is missing, so DeadTune has nowhere to write its files.
+    NoCfgFolder,
+    /// Never tested and the game is closed.
+    NotSetUp,
+    /// Tested before; works whenever the game starts with DeadTune's launch options.
+    ReadyOnLaunch,
+    /// The game runs but DeadTune's boot file never showed up in its console log.
+    RunningWithoutBoot,
+    /// The boot file ran; the key press has not been tested yet.
+    Untested,
+    Testing,
+    /// The test timed out; the likely causes, most likely first.
+    NoReply(Vec<String>),
+    Working,
+}
+
+pub fn setup(state: &AppState) -> Setup {
+    if !state.paths.cfg_dir.is_dir() {
+        return Setup::NoCfgFolder;
+    }
+    let running = state.ctx.game_running;
+    let booted = state.ack.boot.is_some();
+    match state.ack.status() {
+        PushStatus::Waiting { .. } => return Setup::Testing,
+        PushStatus::Confirmed { .. } => return Setup::Working,
+        PushStatus::TimedOut { .. } => {
+            let key = &state.settings.bind_key;
+            let mut causes = Vec::new();
+            if !running {
+                causes.push("Deadlock isn't running.".to_string());
+            } else if !booted {
+                causes.push(
+                    "Deadlock was started without DeadTune's launch options, so the key does \
+                     nothing yet. Restart it from DeadTune."
+                        .to_string(),
+                );
+            }
+            causes.push(format!(
+                "Press {key} in game with the console closed, within {} seconds of Send test.",
+                dt_core::bridge::ack::TIMEOUT.as_secs()
+            ));
+            causes.push(format!(
+                "Another key binding may use {key}. Check Deadlock's keyboard settings."
+            ));
+            return Setup::NoReply(causes);
+        }
+        PushStatus::Idle => {}
+    }
+    let verified = state.settings.live_verified;
+    match (running, booted, verified) {
+        (false, _, false) => Setup::NotSetUp,
+        (false, _, true) => Setup::ReadyOnLaunch,
+        (true, false, _) => Setup::RunningWithoutBoot,
+        (true, true, false) => Setup::Untested,
+        (true, true, true) => Setup::Working,
+    }
+}
+
+impl Setup {
+    /// Dot colour, headline and what to do next.
+    pub fn look(&self, key: &str) -> (Color32, String, String) {
+        let (color, title, detail): (Color32, &str, String) = match self {
+            Setup::NoCfgFolder => (
+                BAD,
+                "Instant changes can't work",
+                "The game's cfg folder is missing. Run Steam's Verify integrity of game files."
+                    .into(),
+            ),
+            Setup::NotSetUp => (
+                WEAK,
+                "Instant changes are not set up",
+                format!(
+                    "Optional, about a minute: start Deadlock from DeadTune, then press {key} once."
+                ),
+            ),
+            Setup::ReadyOnLaunch => (
+                GOOD,
+                "Instant changes are set up",
+                "They work whenever you start Deadlock from DeadTune or with your Steam launch \
+                 options."
+                    .into(),
+            ),
+            Setup::RunningWithoutBoot => (
+                WARN,
+                "Instant changes are off until Deadlock restarts",
+                format!(
+                    "Deadlock was started without DeadTune's launch options, so {key} does \
+                     nothing yet. Restart it from DeadTune."
+                ),
+            ),
+            Setup::Untested => (
+                ACCENT,
+                "Instant changes are ready to test",
+                format!("Click Send test, then press {key} once in game."),
+            ),
+            Setup::Testing => (
+                ACCENT,
+                "Waiting for you to press the key in Deadlock",
+                format!("Switch to the game and press {key} once, with the console closed."),
+            ),
+            Setup::NoReply(causes) => (
+                BAD,
+                "Deadlock didn't answer the test",
+                match causes.len() {
+                    1 => causes[0].clone(),
+                    _ => "Check the list under Test it once, then send the test again.".into(),
+                },
+            ),
+            Setup::Working => (
+                GOOD,
+                "Instant changes work",
+                format!("After you click Apply, press {key} in game to load them right away."),
+            ),
+        };
+        (color, title.to_string(), detail)
+    }
+}
 
 /// The live-status line. Returns false when there is nothing to show (no push yet).
 /// `dense` keeps the timeout checklist in a tooltip instead of lines below.
@@ -277,7 +392,7 @@ pub fn push_status(ui: &mut Ui, state: &AppState, dense: bool) -> bool {
         PushStatus::Idle => false,
         PushStatus::Waiting { since, .. } => {
             ui.horizontal(|ui| {
-                ui.spinner();
+                ui.add(egui::Spinner::new().size(12.0).color(ACCENT));
                 ui.label(
                     RichText::new(format!(
                         "Waiting for Deadlock: press {key} in game ({}s)",
@@ -326,16 +441,23 @@ pub fn push_status(ui: &mut Ui, state: &AppState, dense: bool) -> bool {
             true
         }
         PushStatus::TimedOut { after, .. } => {
-            let text = format!("No reply from Deadlock after {} s", after.as_secs());
-            let checklist = CHECKLIST.join("\n");
+            let text = format!(
+                "{}o reply from Deadlock after {} s",
+                if dense { "Instant changes: n" } else { "N" },
+                after.as_secs()
+            );
+            let causes = match setup(state) {
+                Setup::NoReply(causes) => causes,
+                _ => Vec::new(),
+            };
             if dense {
                 ui.label(RichText::new(text).small().color(BAD))
-                    .on_hover_text(checklist);
+                    .on_hover_text(causes.join("\n"));
             } else {
                 ui.label(RichText::new(text).small().color(BAD));
-                for item in CHECKLIST {
+                for cause in causes {
                     ui.label(
-                        RichText::new(format!("\u{2022} {item}"))
+                        RichText::new(format!("\u{2022} {cause}"))
                             .small()
                             .color(WEAK),
                     );

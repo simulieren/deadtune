@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use dt_core::doctor::{Check, CheckStatus, hud_conflicts, run};
+use dt_core::doctor::{Check, CheckStatus, hud_conflicts, run, settings_menu_conflicts};
 use dt_core::locate::{GamePaths, from_game_root};
 use dt_core::practice::{self, PracticeMode, Record};
 
@@ -202,6 +202,35 @@ fn another_hud_mod_is_a_warning() {
     let conflict = find(&checks, "HUD conflicts");
     assert_eq!(conflict.status, CheckStatus::Warn);
     assert!(conflict.detail.contains("pak03_dir.vpk"));
+    assert_eq!(
+        find(&checks, "Settings menu mods").status,
+        CheckStatus::Pass,
+        "a HUD stylesheet is not the settings menu"
+    );
+}
+
+#[test]
+fn another_settings_menu_mod_is_a_warning() {
+    let fake = Fake::new();
+    let addons = fake.paths.citadel_dir.join("addons");
+    fs::create_dir_all(&addons).unwrap();
+    let pak = dt_core::hud::vpk::write(&BTreeMap::from([(
+        dt_core::hud::ingame::SETTINGS_LAYOUT.to_string(),
+        b"replaced".to_vec(),
+    )]));
+    fs::write(addons.join("pak50_dir.vpk"), &pak).unwrap();
+    fs::write(addons.join("pak77_dir.vpk"), &pak).unwrap();
+    assert_eq!(
+        settings_menu_conflicts(&fake.paths),
+        vec![addons.join("pak50_dir.vpk")],
+        "our own pak is never a conflict"
+    );
+    assert!(hud_conflicts(&fake.paths).is_empty());
+    let checks = fake.run();
+    let conflict = find(&checks, "Settings menu mods");
+    assert_eq!(conflict.status, CheckStatus::Warn);
+    assert!(conflict.detail.contains("pak50_dir.vpk"), "{conflict:?}");
+    assert!(conflict.fix.as_deref().unwrap_or("").contains("Wide FOV"));
 }
 
 #[test]

@@ -23,6 +23,7 @@ pub mod snapshot;
 pub mod steamcfg;
 pub mod texture;
 pub mod update;
+pub mod usercfg;
 pub mod video;
 pub mod watch;
 pub mod winfps;

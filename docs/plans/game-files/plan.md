@@ -65,7 +65,7 @@ size = 3154
 crc = "7a1c0f33"            # VPK tree CRC; crc32 of the bytes for loose files
 sha256 = "..."
 categories = ["hud", "panorama", "deadtune"]
-stored = "full"             # full | header | none (over the size cap)
+stored = "full"             # full | none (over the size cap) | header (0.9.0 only)
 text = "panorama/layout/citadel_hud_top_bar.xml"
 decoded = "text"            # text | image | strings | none
 

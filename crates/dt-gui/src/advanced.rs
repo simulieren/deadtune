@@ -1,8 +1,6 @@
 //! The advanced view: header, tab strip, banner, footer, and the ConVars tab
 //! (category rail, convar table, pending panel). The other tab pages live in `views`.
 
-use std::time::Instant;
-
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::catalog::{ApplyClass, CatalogEntry, Kind};
 use dt_core::preset;
@@ -204,16 +202,12 @@ fn status_chips(ui: &mut Ui, state: &mut AppState) {
     };
     if widgets::chip(ui, label, WARN, Some(ranked))
         .on_hover_text(
-            "One click writes the stock ConVars block (video.txt kept); one click goes back to \
-             your profile.",
+            "One click writes the stock ConVars block and takes DeadTune's addons and HUD out \
+             (video.txt kept); one click goes back to your profile.",
         )
         .clicked()
     {
-        state.status = Some(match state.toggle_ranked_safe() {
-            Ok(_) if ranked => Status::Info("profile restored".into()),
-            Ok(_) => Status::Info("stock ConVars restored (ranked-safe)".into()),
-            Err(e) => Status::Error(e),
-        });
+        state.status = Some(crate::simple::toggle_ranked_safe(state));
     }
 }
 
@@ -302,14 +296,6 @@ fn tab_row(ui: &mut Ui, state: &mut AppState) {
             if let Relaunch::Failed(e) = &state.relaunch {
                 widgets::chip(ui, "Relaunch failed", BAD, None).on_hover_text(e);
             }
-            if let Some(elapsed) = state.relaunch.elapsed(Instant::now()) {
-                widgets::chip(
-                    ui,
-                    &format!("Relaunching {}s", elapsed.as_secs()),
-                    WARN,
-                    None,
-                );
-            }
             if let Some(pending) = &state.pending_restart {
                 widgets::chip(
                     ui,
@@ -337,10 +323,7 @@ fn banner(ui: &mut Ui, state: &mut AppState) {
         };
         ui.colored_label(WARN, RichText::new(text).strong());
         if ui.button("Re-apply").clicked() {
-            state.status = Some(match state.apply() {
-                Ok(_) => Status::Info("re-applied".into()),
-                Err(e) => Status::Error(e),
-            });
+            crate::simple::apply(ui.ctx(), state);
         }
         if ui.button("Dismiss").clicked() {
             state.banner = None;
@@ -359,8 +342,16 @@ fn footer(ui: &mut Ui, state: &AppState) {
             Some(Status::Info(m)) => {
                 ui.label(RichText::new(m).size(11.5));
             }
-            Some(Status::Error(m)) => {
-                ui.label(RichText::new(m).size(11.5).color(BAD));
+            Some(Status::Warn(m)) => {
+                ui.label(RichText::new(m).size(11.5).color(WARN));
+            }
+            Some(Status::Error(raw)) => {
+                ui.label(
+                    RichText::new(crate::friendly::human_error(raw))
+                        .size(11.5)
+                        .color(BAD),
+                )
+                .on_hover_text(raw);
             }
             None => {}
         }
@@ -933,14 +924,18 @@ fn pending(ui: &mut Ui, state: &mut AppState) {
     {
         action = Some(PendingAction::ApplyRelaunch);
     }
-    if widgets::wide_button(ui, true, "Push live")
-        .on_hover_text("Send live-class changes through the active bridge without writing files")
-        .clicked()
-    {
+    let (label, hint, can_send) = crate::compact::send_now(state);
+    let send = widgets::wide_button(ui, can_send, &label);
+    let send = if state.ctx.game_running {
+        send.on_hover_text(hint)
+    } else {
+        send.on_disabled_hover_text("Deadlock is closed; Apply saves for next launch.")
+    };
+    if send.clicked() {
         action = Some(PendingAction::Push);
     }
-    if widgets::wide_button(ui, state.is_dirty(), "Revert all")
-        .on_hover_text("Throw away unsaved profile edits")
+    if widgets::wide_button(ui, state.is_dirty(), crate::simple::DISCARD)
+        .on_hover_text(crate::simple::DISCARD_HINT)
         .clicked()
     {
         action = Some(PendingAction::RevertAll);

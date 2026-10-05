@@ -6,7 +6,7 @@ use std::error::Error;
 use std::path::PathBuf;
 
 use dt_core::hud::install::{self, GAME_PAK, HudAction};
-use dt_core::hud::vpk::VpkDir;
+use dt_core::hud::vpk::{self, VpkDir};
 use dt_core::hud::{HudLayout, searchpaths};
 use dt_core::{backup, locate};
 
@@ -83,7 +83,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if let Some(out) = &args.out {
         let pak = VpkDir::open(&paths.citadel_dir.join(GAME_PAK))?;
-        let bytes = install::build_addon(&pak, &plan.patch)?;
+        let built = install::build_addon(&pak, &plan.patch, &state_dir)?;
+        for problem in &built.icon_problems {
+            println!("icon left out: {problem}");
+        }
+        let bytes = vpk::write(&built.files);
         backup::atomic_write(out, &bytes)?;
         println!("wrote {} ({} bytes)", out.display(), bytes.len());
     }

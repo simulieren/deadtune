@@ -8,7 +8,7 @@ rust-version.workspace = true
 [features]
 default = []
 fetch = ["dep:ureq"]
-# SVG rasterising for icon previews (resvg, ~0.6 MB on the Windows binary); the GUI only.
+# SVG rasterising for icon previews (resvg, 591 KB on the Windows binary); the GUI only.
 svg = ["dep:resvg"]
 
 [dependencies]
@@ -27,7 +27,8 @@ sysinfo = { version = "0.39", default-features = false, features = ["system", "d
 ureq = { version = "3", optional = true }
 # Already linked by ureq and png; reads cfg.zip for remote presets.
 flate2 = "1"
-# Already linked into the GUI through eframe; game UI images in and out of snapshots.
+# Already linked into the GUI by eframe; decodes the PNGs players swap in for UI icons and
+# writes the ones snapshots export.
 png = "0.18"
 resvg = { version = "0.48.1", default-features = false, optional = true }
 

@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 
-use crate::texture::png;
+use crate::texture::png::{self, RgbaImage};
 use crate::texture::resample::Image;
 use crate::texture::vtex::{Flags, Format, Layout, Mip, Vtex, VtexError, mip_dim, raw_mip_len};
 
@@ -28,17 +28,9 @@ pub enum DecodeError {
     Png(String),
 }
 
-/// RGBA8, rows top-down, no padding.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RgbaImage {
-    pub width: u32,
-    pub height: u32,
-    pub pixels: Vec<u8>,
-}
-
 impl RgbaImage {
     /// Transparent black.
-    pub fn new(width: u32, height: u32) -> RgbaImage {
+    fn blank(width: u32, height: u32) -> RgbaImage {
         RgbaImage {
             width,
             height,
@@ -94,7 +86,7 @@ pub fn decode_mip(bytes: &[u8], level: u8) -> Result<RgbaImage, DecodeError> {
             if level != 0 {
                 return Err(DecodeError::NoMip { level, mips });
             }
-            png::read(&bytes[v.pixel_start()..]).map_err(|e| DecodeError::Png(e.0))?
+            png::read(&bytes[v.pixel_start()..]).map_err(|e| DecodeError::Png(e.to_string()))?
         }
         Codec::Pixels { bytes: n, to_rgba } => {
             let raw = mip_bytes(bytes, &v, level, Layout::Pixels(n))?;
@@ -252,7 +244,7 @@ fn from_blocks(
 ) -> RgbaImage {
     let (w, h) = (u32::from(mip.width), u32::from(mip.height));
     let cols = w.div_ceil(4).max(1) as usize;
-    let mut out = RgbaImage::new(w, h);
+    let mut out = RgbaImage::blank(w, h);
     let mut block = [[0u8; 4]; 16];
     for (i, src) in raw.chunks_exact(block_bytes).enumerate() {
         let (bx, by) = ((i % cols) as u32 * 4, (i / cols) as u32 * 4);
@@ -276,7 +268,7 @@ fn crop(img: RgbaImage, rect: Option<(u16, u16)>, level: u8) -> RgbaImage {
         return img;
     }
     let (src_stride, dst_stride) = (img.width as usize * 4, w as usize * 4);
-    let mut out = RgbaImage::new(w, h);
+    let mut out = RgbaImage::blank(w, h);
     for y in 0..h as usize {
         out.pixels[y * dst_stride..(y + 1) * dst_stride]
             .copy_from_slice(&img.pixels[y * src_stride..y * src_stride + dst_stride]);
@@ -1130,7 +1122,7 @@ pub(crate) mod tests {
             pixels: (0..24).collect(),
         };
         for format in [16, 18] {
-            let bytes = build_vtex(format, 3, 2, 0, &[png::write(&img)], false, None);
+            let bytes = build_vtex(format, 3, 2, 0, &[png::write(&img).unwrap()], false, None);
             assert_eq!(decode(&bytes).unwrap(), img, "format {format}");
             assert!(matches!(
                 decode_mip(&bytes, 1),

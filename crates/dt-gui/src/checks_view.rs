@@ -86,6 +86,7 @@ pub static INFO: &[CheckInfo] = &[
     info("HUD addon", Area::Addons, "HUD layout addon", true, "DeadTune's HUD addon should be installed and match your HUD settings."),
     info("HUD search path", Area::Addons, "Addon loading", false, "The game must be set up to load mods from its addons folder."),
     info("HUD conflicts", Area::Addons, "Other HUD mods", false, "Another mod that replaces the same HUD files would undo your layout."),
+    info("Settings menu mods", Area::Addons, "Other settings menu mods", false, "Another mod that replaces the game's settings menu would hide DeadTune's in-game settings rows."),
     info("Performance addons", Area::Addons, "Performance addons", true, "The performance addons you turned on."),
     info("Addons after update", Area::Addons, "Addons and game updates", false, "Addons are rebuilt after a game update so they keep working."),
     info("Addon files", Area::Addons, "Addon files", false, "Addon files DeadTune installed should not be changed by anything else."),
@@ -366,6 +367,9 @@ fn section_caption(ui: &mut Ui, text: &str) {
     ui.add_space(4.0);
 }
 
+/// Room the summary text leaves for Check again and Copy report.
+const SUMMARY_BUTTONS: f32 = 220.0;
+
 fn summary(ui: &mut Ui, state: &mut AppState) {
     let running = state.checks_running();
     theme::card().show(ui, |ui| {
@@ -376,6 +380,7 @@ fn summary(ui: &mut Ui, state: &mut AppState) {
                     ui.add(egui::Spinner::new().size(36.0).color(ACCENT));
                     ui.add_space(8.0);
                     ui.vertical(|ui| {
+                        ui.set_max_width(ui.available_width() - SUMMARY_BUTTONS);
                         ui.label(RichText::new("Checking your setup…").size(18.0).family(theme::semibold()).color(TEXT));
                         ui.label(RichText::new("Reading the game files and your Windows settings. Nothing is changed.").color(WEAK));
                     });
@@ -386,6 +391,7 @@ fn summary(ui: &mut Ui, state: &mut AppState) {
                     ui.add_space(8.0);
                     let passed = checks.iter().filter(|c| c.status == CheckStatus::Pass).count();
                     ui.vertical(|ui| {
+                        ui.set_max_width(ui.available_width() - SUMMARY_BUTTONS);
                         ui.label(RichText::new(text).size(18.0).family(theme::semibold()).color(TEXT));
                         let when = state
                             .checks_at

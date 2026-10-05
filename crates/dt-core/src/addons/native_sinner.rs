@@ -111,18 +111,20 @@ fn data_block_len(bytes: &[u8]) -> Result<usize, AddonError> {
 
 /// A COMPRESSED_MIP_SIZE table lists stored sizes largest mip first; keep the first.
 fn shrink_size_table(out: &mut [u8], header: usize, count: usize) -> Result<(), AddonError> {
-    let mut entry = header + VTEX_EXTRA + u32_at(out, header + VTEX_EXTRA)? as usize;
-    for _ in 0..u32_at(out, header + VTEX_EXTRA + 4)? {
-        if u32_at(out, entry)? == EXTRA_COMPRESSED_MIP_SIZE {
-            let payload = entry + 4 + u32_at(out, entry + 4)? as usize;
+    let table = header + VTEX_EXTRA + u32_at(out, header + VTEX_EXTRA)? as usize;
+    let entries =
+        crate::texture::vtex::extras(out, header).map_err(|e| malformed(e.to_string()))?;
+    for (i, extra) in entries.iter().enumerate() {
+        if extra.kind == EXTRA_COMPRESSED_MIP_SIZE {
+            let entry = table + 12 * i;
+            let payload = extra.payload.start;
             let array = payload + 4 + u32_at(out, payload + 4)? as usize;
             put_u32(out, payload + 8, 1);
             out[array + 4..array + 4 * count].fill(0);
-            if u32_at(out, entry + 8)? as usize == 12 + 4 * count {
+            if extra.payload.len() == 12 + 4 * count {
                 put_u32(out, entry + 8, 16);
             }
         }
-        entry += 12;
     }
     Ok(())
 }

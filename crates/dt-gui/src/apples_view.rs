@@ -57,7 +57,10 @@ fn header(ui: &mut Ui, current: &ApplesTunnels, next: &mut ApplesTunnels) {
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui
-                .add_enabled(!current.is_vanilla(), egui::Button::new("Reset all"))
+                .add_enabled(
+                    !current.is_vanilla(),
+                    egui::Button::new("Reset apples and tunnels"),
+                )
                 .on_hover_text("Back to the game's own minimap")
                 .clicked()
             {
@@ -153,7 +156,7 @@ fn dots_row(ui: &mut Ui, label: &str, note: &str, current: Dots, next: &mut Dots
     });
     ui.horizontal(|ui| {
         ui.add_space(46.0);
-        ui.label(RichText::new(note).size(11.5).color(WEAK));
+        ui.add(egui::Label::new(RichText::new(note).size(11.5).color(WEAK)).wrap());
     });
 }
 

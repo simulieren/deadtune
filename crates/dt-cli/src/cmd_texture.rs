@@ -14,14 +14,14 @@ fn read(path: &str) -> Result<Vec<u8>, crate::args::CliError> {
 pub fn to_png(_: &Env, args: &Args) -> CliResult {
     let [input, output] = args.positionals("<in.vtex_c> <out.png>")?;
     let image = texture::decode(&read(input)?)?;
-    std::fs::write(output, png::write(&image))?;
+    std::fs::write(output, png::write(&image)?)?;
     println!("{output}: {}x{}", image.width, image.height);
     Ok(())
 }
 
 pub fn to_svg(_: &Env, args: &Args) -> CliResult {
     let [input, output] = args.positionals("<in.vsvg_c> <out.svg>")?;
-    let text = svg::decode_svg(&read(input)?)?;
+    let text = svg::svg_text(&read(input)?)?;
     std::fs::write(output, &text)?;
     println!("{output}: {} bytes of SVG", text.len());
     Ok(())

@@ -4,22 +4,20 @@
 use std::path::PathBuf;
 
 use dt_core::addons::clutter;
-use dt_core::bridge::ack::PushStatus;
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::catalog::{CatalogEntry, Impact, Kind};
-use dt_core::doctor::CheckStatus;
 use dt_core::practice::{Group, PracticeMode};
 use dt_core::preset::{self, PresetId};
 use dt_core::profile::BaseRef;
 use eframe::egui::{
     self, Align, Align2, Color32, CornerRadius, FontId, Layout, Margin, Rect, RichText, Sense,
-    Stroke, StrokeKind, Ui, vec2,
+    Stroke, StrokeKind, Ui, Vec2, vec2,
 };
 
 use crate::friendly::{self, Control, human_error};
 use crate::icons::{self, Icon};
 use crate::live::BridgeKind;
-use crate::live_status;
+use crate::live_status::{self, Setup};
 use crate::settings::{TargetSource, View};
 use crate::state::{
     AppState, Pending, Section, StartChoice, Status, Timing, Welcome, bool_text, fmt_num,
@@ -40,10 +38,15 @@ fn big_button(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
 }
 
 fn accent_button(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
+    let (fill, color) = if enabled {
+        (ACCENT, ON_ACCENT)
+    } else {
+        (CARD_HOVER, WEAK)
+    };
     ui.add_enabled(
         enabled,
-        egui::Button::new(RichText::new(text).size(15.0).strong().color(ON_ACCENT))
-            .fill(ACCENT)
+        egui::Button::new(RichText::new(text).size(15.0).strong().color(color))
+            .fill(fill)
             .min_size(vec2(140.0, 36.0)),
     )
 }
@@ -52,6 +55,9 @@ fn status_line(ui: &mut Ui, status: &Option<Status>) {
     match status {
         Some(Status::Info(m)) => {
             ui.label(m);
+        }
+        Some(Status::Warn(raw)) => {
+            ui.colored_label(WARN, human_error(raw)).on_hover_text(raw);
         }
         Some(Status::Error(raw)) => {
             ui.colored_label(BAD, human_error(raw)).on_hover_text(raw);
@@ -226,30 +232,70 @@ fn pick_start(ui: &mut Ui, state: &mut AppState, choice: Option<StartChoice>) {
     ui.weak("Takes effect next time you start Deadlock. Your original files are backed up first.");
 }
 
-/// Apply with a plain-language result; what was applied becomes the saved profile.
-pub fn apply(ctx: &egui::Context, state: &mut AppState) {
-    match state.apply() {
+/// Every Apply button in every view: applies and saves the profile. The Apply bar says
+/// what happens next, so the status line only carries warnings and the clipboard hint.
+/// Returns whether it worked.
+pub fn apply(ctx: &egui::Context, state: &mut AppState) -> bool {
+    match state.apply_and_save() {
         Ok(applied) => {
-            let mut msg = String::from("Saved.");
-            if applied.report.needs_restart {
-                msg.push_str(" Takes effect next time you start Deadlock.");
-            }
-            if applied.report.pushed_live > 0 {
-                msg.push_str(&format!(
-                    " Some changes are ready now: press {} in game.",
-                    state.settings.bind_key
-                ));
-            }
+            let copied = applied.copy.is_some();
             if let Some(text) = applied.copy {
                 ctx.copy_text(text);
             }
-            state.status = Some(match state.save_profile() {
-                Ok(_) => Status::Info(msg),
-                Err(e) => Status::Error(format!("saving your profile: {e}")),
-            });
+            state.status = match applied.warning {
+                Some(w) => Some(Status::Warn(w)),
+                None if copied => Some(Status::Info(
+                    "The instant changes are copied. Paste them into the game console (F7).".into(),
+                )),
+                None => None,
+            };
+            true
         }
-        Err(e) => state.status = Some(Status::Error(e)),
+        Err(e) => {
+            state.status = Some(Status::Error(e));
+            false
+        }
     }
+}
+
+/// What it takes for a live change to land, as a short phrase, for the bridge in use.
+pub(crate) fn live_step(state: &AppState) -> String {
+    match state.settings.bridge {
+        BridgeKind::ExecFile => format!("press {} in game", state.settings.bind_key),
+        BridgeKind::Netcon => "DeadTune sends it to the game".into(),
+        BridgeKind::Clipboard => "paste it into the game's console".into(),
+    }
+}
+
+pub(crate) const DISCARD: &str = "Discard changes";
+pub(crate) const DISCARD_HINT: &str = "Throw away changes since your last Apply";
+
+/// Ranked-safe on or off from any view, with the same words.
+pub(crate) fn toggle_ranked_safe(state: &mut AppState) -> Status {
+    let was_on = state.settings.source == TargetSource::RankedSafe;
+    match state.toggle_ranked_safe() {
+        Ok(_) if was_on => Status::Info(
+            "Your settings, addons and HUD are back. Takes effect next time you start Deadlock."
+                .into(),
+        ),
+        Ok(_) => Status::Info(
+            "Ranked-safe mode is on: the game's own settings, no DeadTune addons or HUD. \
+             Takes effect next time you start Deadlock."
+                .into(),
+        ),
+        Err(e) => Status::Error(e),
+    }
+}
+
+/// The note for a row whose effect practice mode overrides; the Shadows page gets one
+/// banner instead of a note per row.
+fn practice_override(
+    practice: &dt_core::practice::PracticeMode,
+    name: &str,
+) -> Option<&'static str> {
+    const FOG_ROWS: [&str; 2] = ["r_enable_volume_fog", "r_citadel_fog_quality"];
+    (practice.fog && FOG_ROWS.contains(&name))
+        .then_some("Practice mode turns fog off, so this changes nothing while it's on.")
 }
 
 /// What the simple view asks of the state, collected while drawing and run afterwards.
@@ -393,6 +439,7 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
                     Page::Section(Section::Minimap) => crate::minimap_view::page(ui, state),
                     Page::Section(Section::Health) => crate::health_view::page(ui, state),
                     Page::Section(Section::TopBar) => crate::topbar_view::page(ui, state),
+                    Page::Section(Section::Ingame) => crate::ingame_view::page(ui, state),
                     Page::Section(Section::Addons) => crate::addons_view::addons(ui, state),
                     Page::Section(Section::System) => crate::checks_view::page(ui, state),
                     Page::Section(Section::GameFiles) => crate::game_files_view::page(ui, state),
@@ -462,6 +509,7 @@ fn section_changes(state: &AppState, section: Section) -> usize {
         Section::Minimap => state.minimap_changed_count(),
         Section::TopBar => state.top_bar_changed_count(),
         Section::Health => state.health_changed_count(),
+        Section::Ingame => state.ingame_changed_count(),
         Section::Addons => state.addons_enabled_count(),
         Section::System => state.check_problems(),
         Section::GameFiles => state.snapshot_impact_count(),
@@ -493,8 +541,8 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     search_box(ui, &mut state.ui.query);
     ui.add_space(6.0);
     let searching = !state.ui.query.trim().is_empty();
-    // Measured height of the two group headings with their spacing.
-    let headings = 76.0;
+    // Measured height of the three group headings with their spacing.
+    let headings = 114.0;
     let rows = Section::ALL.len() as f32;
     let row_height = ((ui.available_height() - headings) / rows - 2.0).clamp(26.0, 30.0);
     let shown = state.ui.section;
@@ -518,8 +566,9 @@ fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
             ui.spacing_mut().item_spacing.y = 2.0;
             for (i, section) in Section::ALL.into_iter().enumerate() {
                 let heading = match i {
-                    1 => Some("Settings"),
-                    6 => Some("More"),
+                    1 => Some("Graphics"),
+                    6 => Some("HUD & mods"),
+                    11 => Some("Tools"),
                     _ => None,
                 };
                 if let Some(heading) = heading {
@@ -601,6 +650,7 @@ fn section_icon(section: Section) -> Icon {
         Section::Minimap => Icon::Minimap,
         Section::TopBar => Icon::TopBar,
         Section::Health => Icon::Heart,
+        Section::Ingame => Icon::Sliders,
         Section::Addons => Icon::Addons,
         Section::System => Icon::System,
         Section::GameFiles => Icon::Folder,
@@ -738,7 +788,8 @@ fn version_line(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 Tone::Accent => ACCENT,
                 Tone::Bad => BAD,
             };
-            let clickable = status.click != RailClick::Nothing;
+            // The refresh icon checks; the text only links where the icon can't.
+            let clickable = status.click == RailClick::OpenUpdates;
             let mut text = RichText::new(&status.text).size(11.5).color(color);
             if status.tone == Tone::Accent {
                 text = text.family(theme::semibold());
@@ -754,14 +805,17 @@ fn version_line(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 let (dot, _) = ui.allocate_exact_size(vec2(8.0, 12.0), Sense::hover());
                 ui.painter().circle_filled(dot.center(), 3.0, color);
             }
+            let failed = match &state.update.state {
+                crate::update::UpdateState::Failed { message, .. } => Some(message.clone()),
+                _ => None,
+            };
             if !clickable {
+                if let Some(message) = failed {
+                    response.on_hover_text(message);
+                }
                 return;
             }
-            let hover = match (&state.update.state, status.click) {
-                (crate::update::UpdateState::Failed { message, .. }, _) => message.clone(),
-                (_, RailClick::Check) => "Check for a new version now".to_string(),
-                _ => "Open the Updates card".to_string(),
-            };
+            let hover = failed.unwrap_or_else(|| "Open the Updates card".to_string());
             let response = response
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text(hover);
@@ -773,11 +827,7 @@ fn version_line(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 );
             }
             if response.clicked() {
-                match status.click {
-                    RailClick::Check => state.check_update(true),
-                    RailClick::OpenUpdates => edits.push(Edit::Go(Section::Safety)),
-                    RailClick::Nothing => {}
-                }
+                edits.push(Edit::Go(Section::Safety));
             }
         });
     });
@@ -980,7 +1030,7 @@ fn header(ui: &mut Ui, state: &AppState, page: Page, edits: &mut Vec<Edit>) {
                 ui.set_width(ui.available_width());
                 ui.colored_label(
                     WARN,
-                    "Ranked-safe mode is on: the game uses its own settings. Changes here are kept for later.",
+                    "Ranked-safe mode is on: the game runs on its own settings, without DeadTune's addons and HUD. Changes here are saved, but Apply has nothing to write until you turn it off on Safety & setup.",
                 );
             });
     }
@@ -1096,14 +1146,9 @@ fn stacked_row(ui: &mut Ui, state: &AppState, name: &'static str, edits: &mut Ve
 
 /// The small "Reset" chip beside a changed setting's label.
 fn reset_pill(ui: &mut Ui, was: &str) -> bool {
-    ui.add(
-        egui::Button::new(RichText::new("Reset").small().color(ACCENT))
-            .fill(ACCENT.gamma_multiply(0.14))
-            .corner_radius(CornerRadius::same(255))
-            .min_size(vec2(0.0, 18.0)),
-    )
-    .on_hover_text(format!("Back to your preset: {was}"))
-    .clicked()
+    crate::widgets::reset_pill(ui)
+        .on_hover_text(format!("Back to your preset: {was}"))
+        .clicked()
 }
 
 /// "What do you want?": four goal cards, the tweak readout, and a dropdown for every preset.
@@ -1117,7 +1162,10 @@ fn hero(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 if tweaks > 0 {
                     if ui
                         .button("Reset all to preset")
-                        .on_hover_text("Drops every tweak and goes back to the preset as is")
+                        .on_hover_text(
+                            "Drops your setting changes and goes back to the preset. HUD, addons \
+                             and other video edits stay.",
+                        )
                         .clicked()
                     {
                         edits.push(Edit::ResetAll);
@@ -1130,35 +1178,48 @@ fn hero(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
         });
         ui.add_space(4.0);
         let gap = 10.0;
-        let n = friendly::GOALS.len() as f32;
-        let width = ((ui.available_width() - gap * (n - 1.0)) / n - 0.5).floor();
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for (id, title, sub) in friendly::GOALS {
-                let selected = state.profile.base == BaseRef::Preset(*id);
-                if goal_card(ui, width, selected, title, sub) {
-                    edits.push(Edit::Base(*id));
+        let all = friendly::GOALS.len();
+        let per_row = if ui.available_width() >= GOAL_MIN_WIDTH * all as f32 {
+            all
+        } else {
+            2
+        };
+        let width =
+            ((ui.available_width() - gap * (per_row as f32 - 1.0)) / per_row as f32 - 0.5).floor();
+        let height = friendly::GOALS
+            .iter()
+            .map(|(_, _, sub)| goal_sub(ui, sub, width).size().y)
+            .fold(0.0, f32::max)
+            + 40.0;
+        let spacing = ui.spacing().item_spacing.y;
+        ui.spacing_mut().item_spacing.y = gap;
+        for goals in friendly::GOALS.chunks(per_row) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for (id, title, sub) in goals {
+                    let selected = state.profile.base == BaseRef::Preset(*id);
+                    if goal_card(ui, vec2(width, height), selected, title, sub) {
+                        edits.push(Edit::Base(*id));
+                    }
                 }
+            });
+        }
+        ui.spacing_mut().item_spacing.y = spacing;
+        ui.add_space(2.0);
+        let (name, blurb) = match &state.profile.base {
+            BaseRef::Preset(id) => {
+                let info = preset::info(*id);
+                (
+                    format!("{} by {}", info.label, info.author),
+                    friendly::preset_blurb(*id).unwrap_or(""),
+                )
             }
-        });
-        ui.add_space(8.0);
+            BaseRef::File(_) => (
+                "My original settings".to_string(),
+                "Your files as they were before DeadTune.",
+            ),
+        };
         ui.horizontal(|ui| {
-            let (name, blurb) = match &state.profile.base {
-                BaseRef::Preset(id) => {
-                    let info = preset::info(*id);
-                    (
-                        format!("{} by {}", info.label, info.author),
-                        friendly::preset_blurb(*id).unwrap_or(""),
-                    )
-                }
-                BaseRef::File(_) => (
-                    "My original settings".to_string(),
-                    "Your files as they were before DeadTune.",
-                ),
-            };
-            ui.label(RichText::new("Preset:").color(WEAK));
-            ui.label(RichText::new(name).strong());
-            ui.label(RichText::new(blurb).color(WEAK));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let combo = egui::ComboBox::from_id_salt("all_presets")
                     .selected_text("All presets")
@@ -1193,8 +1254,13 @@ fn hero(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 if state.ui.open_presets {
                     egui::Popup::open_id(ui.ctx(), combo.response.id.with("popup"));
                 }
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.label(RichText::new("Preset:").color(WEAK));
+                    ui.add(egui::Label::new(RichText::new(name).strong()).truncate());
+                });
             });
         });
+        ui.add(egui::Label::new(RichText::new(blurb).color(WEAK)).wrap());
         if let BaseRef::Preset(id) = state.profile.base
             && preset::info(id).remote().is_some()
         {
@@ -1300,8 +1366,23 @@ fn remote_preset_panel(ui: &mut Ui, state: &mut AppState, id: PresetId, edits: &
     }
 }
 
-fn goal_card(ui: &mut Ui, width: f32, selected: bool, title: &str, sub: &str) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 56.0), Sense::click());
+/// Below this a goal card's subtitle wraps to three lines, so the cards go two by two.
+const GOAL_MIN_WIDTH: f32 = 160.0;
+
+/// A goal card's subtitle, centred and wrapped to the card.
+fn goal_sub(ui: &Ui, sub: &str, width: f32) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple(
+        sub.to_string(),
+        FontId::proportional(11.5),
+        WEAK,
+        width - 16.0,
+    );
+    job.halign = Align::Center;
+    ui.painter().layout_job(job)
+}
+
+fn goal_card(ui: &mut Ui, size: Vec2, selected: bool, title: &str, sub: &str) -> bool {
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let painter = ui.painter();
     let (fill, stroke) = if selected {
         (ACCENT.gamma_multiply(0.14), Stroke::new(2.0, ACCENT))
@@ -1318,19 +1399,14 @@ fn goal_card(ui: &mut Ui, width: f32, selected: bool, title: &str, sub: &str) ->
         StrokeKind::Inside,
     );
     painter.text(
-        rect.center() - vec2(0.0, 9.0),
+        rect.center_top() + vec2(0.0, 19.0),
         Align2::CENTER_CENTER,
         title,
         FontId::proportional(15.5),
         if selected { ACCENT } else { TEXT },
     );
-    painter.text(
-        rect.center() + vec2(0.0, 10.0),
-        Align2::CENTER_CENTER,
-        sub,
-        FontId::proportional(11.5),
-        WEAK,
-    );
+    let galley = goal_sub(ui, sub, rect.width());
+    painter.galley(rect.center_top() + vec2(0.0, 30.0), galley, WEAK);
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
@@ -1368,12 +1444,14 @@ fn status_card(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
                 n => format!("{n} settings changed from your preset"),
             });
         });
-        if let Some(pending) = &state.pending_restart {
-            status_item(ui, WARN, |ui| {
-                ui.label(format!(
-                    "Restart Deadlock to load {} saved changes",
-                    pending.names.len()
-                ));
+        if state.pending_restart.is_some() {
+            let (color, text) = if state.ctx.game_running {
+                (WARN, "Restart Deadlock to load your saved changes")
+            } else {
+                (WEAK, "Saved changes load the next time you start Deadlock")
+            };
+            status_item(ui, color, |ui| {
+                ui.label(text);
             });
         }
         let ranked = state.settings.source == TargetSource::RankedSafe;
@@ -1396,37 +1474,19 @@ fn status_card(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
             });
         }
         if state.settings.bridge != BridgeKind::Clipboard {
-            let key = &state.settings.bind_key;
-            let (color, text, action) = match state.ack.status() {
-                PushStatus::Confirmed { at, .. } => (
-                    GOOD,
-                    format!(
-                        "Instant changes confirmed by Deadlock at {}",
-                        live_status::clock(*at)
-                    ),
-                    None,
-                ),
-                PushStatus::Waiting { .. } => (
-                    ACCENT,
-                    format!("Instant changes: waiting for you to press {key} in game"),
-                    None,
-                ),
-                _ if state.settings.live_verified => {
-                    (GOOD, format!("Instant changes: press {key} in game"), None)
+            let setup = live_status::setup(state);
+            let (color, title, detail) = setup.look(&state.settings.bind_key);
+            let action = match setup {
+                Setup::Working | Setup::ReadyOnLaunch | Setup::Testing => None,
+                Setup::NotSetUp => Some("Set up"),
+                Setup::Untested => Some("Test"),
+                Setup::RunningWithoutBoot | Setup::NoReply(_) | Setup::NoCfgFolder => {
+                    Some("How to fix")
                 }
-                _ if state.ack.boot.is_some() => (
-                    ACCENT,
-                    format!("Instant changes ready: press {key} once in game to test"),
-                    Some("Test"),
-                ),
-                _ => (
-                    WEAK,
-                    "Instant changes are not set up".to_string(),
-                    Some("Set up (1 minute)"),
-                ),
             };
             status_item(ui, color, |ui| {
-                ui.label(text);
+                ui.label(title);
+                ui.label(RichText::new(detail).small().color(WEAK));
                 if let Some(label) = action
                     && ui.small_button(label).clicked()
                 {
@@ -1487,6 +1547,21 @@ fn settings_page(
     inline_help: bool,
     edits: &mut Vec<Edit>,
 ) {
+    if section == Section::Shadows && state.profile.practice.shadows {
+        egui::Frame::new()
+            .fill(WARN.gamma_multiply(0.14))
+            .corner_radius(CornerRadius::same(theme::RADIUS))
+            .inner_margin(Margin::symmetric(14, 10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.colored_label(
+                    WARN,
+                    "Practice mode turns shadows off, so the settings on this page change nothing \
+                     until you turn it off on the Performance page.",
+                );
+            });
+        ui.add_space(8.0);
+    }
     let groups = friendly::groups(section);
     let columns = if ui.available_width() >= 1100.0 && groups.len() > 1 {
         2
@@ -1676,11 +1751,14 @@ fn setting_row(
             }
             if entry.gameinfo_ignored {
                 ui.label(
-                    RichText::new("Deadlock ignores this in gameinfo.gi")
+                    RichText::new("The game ignores this setting now")
                         .small()
                         .color(WARN),
                 )
-                .on_hover_text("Ignored: the engine flags this gameinfo_cannot_override, so Deadlock skips it in gameinfo.gi. If it is cheat-flagged, the console still takes it in hideout or sandbox.");
+                .on_hover_text("Since the September 2026 update the game skips this setting when it comes from its settings file. In the hideout or sandbox the console may still take it.");
+            }
+            if let Some(note) = practice_override(&state.profile.practice, name) {
+                ui.label(RichText::new(note).small().color(WARN));
             }
             if name == clutter::FADE_CONVAR && clutter::fade_hides_effects(&value) {
                 ui.label(RichText::new(clutter::FADE_WARNING).small().color(WARN));
@@ -1897,78 +1975,193 @@ fn segmented(
     picked
 }
 
+/// Clicks in the apply bar, run once it is drawn.
+#[derive(Default)]
+struct BarClicks {
+    apply: bool,
+    discard: bool,
+    restart: bool,
+    dismiss: bool,
+    copy: Option<String>,
+}
+
+/// One status block on the left that wraps instead of overflowing, the buttons on the right.
+/// A problem replaces the normal block until it is dismissed or the next action clears it.
 fn apply_bar(ui: &mut Ui, state: &mut AppState) {
-    let file_changes = state
-        .preview
-        .as_ref()
-        .map(|p| p.live.len() + p.queued_cheat.len() + p.restart.len() + p.video_changes.len())
-        .map_err(Clone::clone);
     let pending = state.pending();
     let ready = pending != Pending::Nothing;
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
+    let restart = !ready && state.ctx.game_running && state.pending_restart.is_some();
+    let mut clicks = BarClicks::default();
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        clicks.apply = accent_button(ui, ready, "Apply")
+            .on_disabled_hover_text("Nothing to apply yet")
+            .clicked();
+        if state.is_dirty() {
+            clicks.discard = ui
+                .add(egui::Button::new(DISCARD).min_size(vec2(90.0, 36.0)))
+                .on_hover_text(DISCARD_HINT)
+                .clicked();
+        }
+        if restart {
+            clicks.restart = ui
+                .add(egui::Button::new("Restart Deadlock").min_size(vec2(0.0, 36.0)))
+                .on_hover_text("Closes Deadlock and starts it again with your saved changes")
+                .clicked();
+        }
+        ui.add_space(16.0);
+        ui.with_layout(Layout::top_down(Align::Min), |ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
-            let tweaks = |n: usize| match n {
-                1 => "1 tweak".to_string(),
-                n => format!("{n} tweaks"),
-            };
-            let headline = match &pending {
-                Pending::Nothing => "Everything is applied".to_string(),
-                Pending::Preset { label, tweaks: 0 } => format!("Switching to {label} preset"),
-                Pending::Preset { label, tweaks: n } => {
-                    format!("Ready to apply: {label} preset + {}", tweaks(*n))
-                }
-                Pending::Tweaks(n) => format!("Ready to apply: {}", tweaks(*n)),
-                Pending::Other => "Ready to apply: HUD, addon or practice mode changes".to_string(),
-            };
-            match &file_changes {
-                Err(raw) => {
-                    ui.colored_label(BAD, human_error(raw))
-                        .on_hover_text(raw.as_str());
-                }
-                Ok(_) => {
-                    let text = RichText::new(headline).size(15.0).strong();
-                    ui.label(if ready { text.color(ACCENT) } else { text });
-                }
+            bar_message(ui, state, &pending, &mut clicks);
+            if *state.ack.status() != dt_core::bridge::ack::PushStatus::Idle {
+                ui.horizontal(|ui| {
+                    ui.add_space(16.0);
+                    live_status::push_status(ui, state, true);
+                });
             }
-            let key = &state.settings.bind_key;
-            let when = match state.timing() {
-                Timing::Nothing => match &state.pending_restart {
-                    Some(p) => format!("Restart Deadlock to load {} saved changes.", p.names.len()),
-                    None => "Pick a preset or change a setting, then Apply.".into(),
-                },
-                Timing::NextLaunch => "Takes effect next time you start Deadlock.".into(),
-                Timing::Instant => format!("Takes effect right away: press {key} in game."),
-                Timing::Mixed { now, later } => format!(
-                    "{now} take effect right away (press {key} in game), {later} next time you start Deadlock."
-                ),
-            };
-            let detail = match file_changes {
-                Ok(n) if n > 1 && ready => format!("{n} settings in the game files change. {when}"),
-                _ => when,
-            };
-            ui.label(RichText::new(detail).small().color(WEAK));
-            live_status::push_status(ui, state, false);
-        });
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if accent_button(ui, ready, "Apply").clicked() {
-                apply(ui.ctx(), state);
-            }
-            if state.is_dirty()
-                && ui
-                    .add(egui::Button::new("Discard").min_size(vec2(90.0, 36.0)))
-                    .on_hover_text("Throw away changes you haven't applied")
-                    .clicked()
-            {
-                state.revert_all();
-            }
-            ui.add_space(12.0);
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.add_space(24.0);
-                status_line(ui, &state.status);
-            });
         });
     });
+    if let Some(text) = clicks.copy {
+        ui.ctx().copy_text(text);
+    }
+    if clicks.dismiss {
+        state.status = None;
+    }
+    if clicks.discard {
+        state.revert_all();
+    }
+    if clicks.restart {
+        crate::views::restart_game(state);
+    }
+    if clicks.apply {
+        apply(ui.ctx(), state);
+    }
+}
+
+fn bar_message(ui: &mut Ui, state: &AppState, pending: &Pending, clicks: &mut BarClicks) {
+    let problem = match (&state.status, &state.preview) {
+        (Some(Status::Error(raw)), _) => Some((BAD, raw, true)),
+        (_, Err(raw)) => Some((BAD, raw, false)),
+        (Some(Status::Warn(raw)), _) => Some((WARN, raw, true)),
+        _ => None,
+    };
+    if let Some((color, raw, dismissable)) = problem {
+        let problem = friendly::explain(raw);
+        bar_block(ui, color, &problem.title, problem.fix.as_deref()).on_hover_text(raw.as_str());
+        ui.horizontal(|ui| {
+            if ui
+                .small_button("Copy details")
+                .on_hover_text("Copies the full error, to paste into a bug report")
+                .clicked()
+            {
+                clicks.copy = Some(format!("DeadTune {}: {raw}", env!("CARGO_PKG_VERSION")));
+            }
+            if dismissable && ui.small_button("Dismiss").clicked() {
+                clicks.dismiss = true;
+            }
+        });
+        return;
+    }
+    let tweaks = |n: usize| match n {
+        1 => "1 tweak".to_string(),
+        n => format!("{n} tweaks"),
+    };
+    let (color, title, detail) = match pending {
+        Pending::Nothing => match &state.pending_restart {
+            Some(_) if state.ctx.game_running => (
+                WARN,
+                "Saved. Restart Deadlock to load it".to_string(),
+                "Deadlock reads these settings when it starts.".to_string(),
+            ),
+            Some(_) => (
+                GOOD,
+                "Saved".to_string(),
+                "Your changes load the next time you start Deadlock.".to_string(),
+            ),
+            None => (
+                GOOD,
+                "Everything is applied".to_string(),
+                "Change a setting or pick a preset, then click Apply.".to_string(),
+            ),
+        },
+        Pending::Preset { label, tweaks: 0 } => {
+            (ACCENT, format!("Ready to switch to {label}"), String::new())
+        }
+        Pending::Preset { label, tweaks: n } => (
+            ACCENT,
+            format!("Ready to apply: {label} + {}", tweaks(*n)),
+            String::new(),
+        ),
+        Pending::Tweaks(n) => (
+            ACCENT,
+            format!("Ready to apply: {}", tweaks(*n)),
+            String::new(),
+        ),
+        Pending::Other => (
+            ACCENT,
+            "Ready to apply: HUD, addon or practice mode changes".to_string(),
+            String::new(),
+        ),
+    };
+    let instant_off = matches!(live_status::setup(state), Setup::RunningWithoutBoot);
+    let detail = if detail.is_empty() {
+        match state.timing() {
+            Timing::Nothing | Timing::NextLaunch => {
+                "Loads the next time you start Deadlock.".to_string()
+            }
+            Timing::Instant | Timing::Mixed { .. } if instant_off => {
+                "Loads when you restart Deadlock. Instant changes are off: it was started without \
+                 DeadTune's launch options."
+                    .to_string()
+            }
+            Timing::Instant => format!("Changes right away: {} after Apply.", live_step(state)),
+            Timing::Mixed { now, later } => format!(
+                "{} right away ({} after Apply). {} the next time you start Deadlock.",
+                settings_verb(now, "changes", "change"),
+                live_step(state),
+                settings_verb(later, "loads", "load"),
+            ),
+        }
+    } else {
+        detail
+    };
+    bar_block(ui, color, &title, Some(&detail));
+    if let Some(Status::Info(text)) = &state.status {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(text).small());
+            if ui.small_button("Dismiss").clicked() {
+                clicks.dismiss = true;
+            }
+        });
+    }
+}
+
+/// "1 setting changes", "3 settings change".
+fn settings_verb(n: usize, one: &str, many: &str) -> String {
+    match n {
+        1 => format!("1 setting {one}"),
+        n => format!("{n} settings {many}"),
+    }
+}
+
+/// A coloured dot, a headline and one wrapped line below it.
+fn bar_block(ui: &mut Ui, color: Color32, title: &str, detail: Option<&str>) -> egui::Response {
+    ui.horizontal_top(|ui| {
+        let (rect, _) = ui.allocate_exact_size(vec2(10.0, 20.0), Sense::hover());
+        ui.painter().circle_filled(rect.center(), 4.5, color);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            let text = RichText::new(title).size(15.0).strong();
+            ui.label(if color == GOOD {
+                text
+            } else {
+                text.color(color)
+            });
+            if let Some(detail) = detail {
+                ui.label(RichText::new(detail).small().color(WEAK));
+            }
+        });
+    })
+    .response
 }
 
 /// The right-hand panel on settings pages: what the hovered (or last edited) row does.
@@ -2036,7 +2229,7 @@ fn help(ui: &mut Ui, state: &AppState, page: Page) {
     fact(ui, "In this preset", &preset);
     fact(ui, "Your setting", &yours);
     let when = if state.is_live_now(row.name) {
-        format!("Right away: press {} in game", state.settings.bind_key)
+        format!("Right away: {}", live_step(state))
     } else {
         "Next time you start Deadlock".to_string()
     };
@@ -2083,7 +2276,7 @@ fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                     Ok(()) => Status::Info(
                         "Undone. The game files are back to before your last Apply.".into(),
                     ),
-                    Err(e) => Status::Info(e),
+                    Err(e) => Status::Error(e),
                 });
             }
             ui.label(
@@ -2093,20 +2286,27 @@ fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
             );
             ui.add_space(6.0);
             if ui
-                .add(egui::Button::new("Restore original game files").min_size(vec2(190.0, 30.0)))
+                .add(
+                    egui::Button::new("Restore original settings files")
+                        .min_size(vec2(190.0, 30.0)),
+                )
                 .clicked()
             {
                 state.status = Some(match state.restore_original_files() {
                     Ok(()) => Status::Info(
-                        "The game files are back to how they were before DeadTune.".into(),
+                        "The game's settings files are back to how they were before DeadTune."
+                            .into(),
                     ),
-                    Err(e) => Status::Info(e),
+                    Err(e) => Status::Error(e),
                 });
             }
             ui.label(
-                RichText::new("Puts the game exactly back to how it was before DeadTune.")
-                    .small()
-                    .color(WEAK),
+                RichText::new(
+                    "Puts the game's two settings files back to how they were before DeadTune. \
+                     Addons and the HUD stay until you turn them off.",
+                )
+                .small()
+                .color(WEAK),
             );
         });
     };
@@ -2124,21 +2324,14 @@ fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 .inner;
             ui.label(
                 RichText::new(
-                    "Puts the game's own performance settings back so matchmaking never complains. \
-                     Your video settings stay. Turn it off to go back to your settings.",
+                    "Puts the game's own performance settings back and takes DeadTune's addons \
+                     and HUD out, so matchmaking never complains. Your video settings stay. Turn \
+                     it off to go back to your settings.",
                 )
                 .color(WEAK),
             );
             if clicked {
-                state.status = Some(match state.toggle_ranked_safe() {
-                    Ok(_) if on => Status::Info(
-                        "Your settings are back. Takes effect next time you start Deadlock.".into(),
-                    ),
-                    Ok(_) => Status::Info(
-                        "Ranked-safe mode is on. Takes effect next time you start Deadlock.".into(),
-                    ),
-                    Err(e) => Status::Error(e),
-                });
+                state.status = Some(toggle_ranked_safe(state));
             }
         });
     };
@@ -2197,167 +2390,188 @@ fn mono_box(ui: &mut Ui, text: &str) {
         .show(ui, |ui| ui.monospace(text));
 }
 
-/// Two steps with live ticks: the boot cfg ran (seen in the console log), and a push came back.
+/// The setup check up top, then three steps that tick themselves off from what the console
+/// log shows: the boot cfg ran, a test push came back, and how to use it from then on.
 fn instant_changes(ui: &mut Ui, state: &mut AppState) {
     card_title(ui, "Instant changes");
     let key = state.settings.bind_key.clone();
     ui.label(
         RichText::new(
-            "Some settings, like the FPS limit, change while you play. DeadTune sends them to the \
-             game and reads its console log to confirm each one.",
+            "Optional. Some settings, like the FPS limit, can change while you play. Without \
+             this, every change loads the next time you start Deadlock.",
         )
         .color(WEAK),
     );
-    ui.add_space(8.0);
+    ui.add_space(10.0);
+    let setup = live_status::setup(state);
+    let (color, title, detail) = setup.look(&key);
+    egui::Frame::new()
+        .fill(color.gamma_multiply(0.12))
+        .stroke(Stroke::new(1.0, color.gamma_multiply(0.5)))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::symmetric(12, 10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            bar_block(ui, color, &title, Some(&detail));
+        });
+    ui.add_space(12.0);
+
+    let running = state.ctx.game_running;
     let booted = state.ack.boot.is_some();
-    ui.horizontal_top(|ui| {
-        live_status::step_mark(ui, 1, booted);
-        ui.vertical(|ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Start Deadlock from DeadTune").strong());
-                if !state.ctx.game_running {
-                    live_status::launch_control(ui, state, live_status::Fit::Chip);
-                }
-            });
-            ui.label(
-                RichText::new(if booted {
-                    "Deadlock loaded DeadTune's boot file."
-                } else {
-                    "Or, if you start the game from Steam: right-click Deadlock > Properties > \
-                     General > Launch Options, and paste:"
-                })
-                .small()
-                .color(WEAK),
-            );
-            if !booted {
-                let text = state.steam_launch_options();
+    let answered = matches!(setup, Setup::Working);
+    let verified = state.settings.live_verified;
+    let mut restart = false;
+    step(
+        ui,
+        1,
+        booted || answered,
+        "Start Deadlock from DeadTune",
+        |ui| {
+            if let Some(boot) = &state.ack.boot {
+                weak(
+                    ui,
+                    &format!(
+                        "Done. Deadlock loaded DeadTune's file at {}.",
+                        live_status::clock(boot.at)
+                    ),
+                );
+                return;
+            }
+            if running {
+                weak(
+                    ui,
+                    "Deadlock is running, but DeadTune hasn't seen it load its file. Close it and \
+                 start it again from here:",
+                );
                 ui.horizontal(|ui| {
-                    mono_box(ui, &text);
-                    if ui.button("Copy").clicked() {
-                        ui.ctx().copy_text(text.clone());
-                        state.status = Some(Status::Info(
-                            "Copied. Paste it into Deadlock's Launch Options in Steam.".into(),
-                        ));
-                    }
+                    restart = ui.button("Restart Deadlock from DeadTune").clicked();
+                    weak(ui, "or test it in step 2 if you used the launch options.");
+                });
+            } else {
+                ui.horizontal(|ui| {
+                    live_status::launch_control(ui, state, live_status::Fit::Chip);
+                    weak(ui, "Use this button whenever you play.");
                 });
             }
-        });
-    });
-    ui.add_space(6.0);
-    let verified = state.settings.live_verified;
-    ui.horizontal_top(|ui| {
-        live_status::step_mark(ui, 2, verified);
-        ui.vertical(|ui| {
+            ui.add_space(4.0);
+            weak(
+                ui,
+                "Start the game from Steam instead? Add this once: in Steam, right-click Deadlock > \
+             Properties > General > Launch Options, and paste:",
+            );
+            let text = state.steam_launch_options();
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("Press {key} once in game to test")).strong());
-                let send = ui
-                    .add_enabled(!state.ack.is_waiting(), egui::Button::new("Send test"))
-                    .on_hover_text(
-                        "Writes a harmless batch that only asks the game for its FPS limit, then \
-                         waits for the reply in the console log.",
-                    );
-                if send.clicked()
-                    && let Err(e) = state.send_test()
-                {
-                    state.status = Some(Status::Error(e));
+                mono_box(ui, &text);
+                if ui.button("Copy").clicked() {
+                    ui.ctx().copy_text(text.clone());
+                    state.status = Some(Status::Info(
+                        "Copied. Paste it into Deadlock's Launch Options in Steam.".into(),
+                    ));
                 }
             });
-            if !live_status::push_status(ui, state, false) {
-                ui.label(
-                    RichText::new(if verified {
-                        "Verified: the game answered a push from DeadTune."
-                    } else {
-                        "Click Send test, then press the key in game. The tick appears when the \
-                         game answers."
-                    })
-                    .small()
-                    .color(WEAK),
+        },
+    );
+    if restart {
+        crate::views::restart_game(state);
+    }
+
+    let mut send = false;
+    step(ui, 2, verified || answered, "Test it once", |ui| {
+        weak(
+            ui,
+            &format!(
+                "Click Send test, switch to Deadlock and press {key} once with the console \
+                 closed. The number turns into a tick when the game answers."
+            ),
+        );
+        ui.horizontal(|ui| {
+            let why_not = if !running {
+                Some("Start Deadlock first (step 1)")
+            } else if state.ack.is_waiting() {
+                Some("Waiting for the key press")
+            } else {
+                None
+            };
+            let button = ui
+                .add_enabled(why_not.is_none(), egui::Button::new("Send test"))
+                .on_hover_text(
+                    "Asks the game for its FPS limit and waits for the answer. Changes nothing.",
                 );
+            if let Some(why) = why_not {
+                button.on_disabled_hover_text(why);
+                if !running {
+                    weak(ui, "Start Deadlock first.");
+                }
+            } else {
+                send = button.clicked();
             }
         });
+        live_status::push_status(ui, state, false);
     });
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        if switch(ui, state.settings.console_window).clicked() {
-            state.settings.console_window = !state.settings.console_window;
-        }
-        ui.label(RichText::new("Also open the game console (-console)").small());
-    });
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new("Key bind, in case you want it by hand (console, F7):")
-                .small()
-                .color(WEAK),
+    if send && let Err(e) = state.send_test() {
+        state.status = Some(Status::Error(e));
+    }
+
+    step(ui, 3, verified, "Use it", |ui| {
+        weak(
+            ui,
+            &format!(
+                "After you change a setting and click Apply, press {key} in game. The help panel \
+                 on each settings page says whether a setting changes right away or on the next \
+                 start."
+            ),
         );
-        let line = ExecFileBridge::bind_hint(&key);
-        ui.label(RichText::new(&line).monospace().size(11.0));
-        if ui.small_button("Copy").clicked() {
-            ui.ctx().copy_text(line);
-        }
     });
+
+    ui.add_space(4.0);
+    egui::CollapsingHeader::new(RichText::new("Options and manual setup").small())
+        .id_salt("instant_manual")
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if switch(ui, state.settings.console_window).clicked() {
+                    state.settings.console_window = !state.settings.console_window;
+                }
+                ui.label(RichText::new("Also open the game console (-console)").small());
+            });
+            ui.horizontal(|ui| {
+                weak(ui, "Bind the key by hand in the game console (F7):");
+                let line = ExecFileBridge::bind_hint(&key);
+                ui.label(RichText::new(&line).monospace().size(11.0));
+                if ui.small_button("Copy").clicked() {
+                    ui.ctx().copy_text(line);
+                }
+            });
+        });
 }
 
-/// `plain` hides the technical detail behind a tooltip.
-pub fn check_setup(ui: &mut Ui, state: &mut AppState) {
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new("Check setup")
-                .text_style(egui::TextStyle::Heading)
-                .strong(),
-        );
-        let running = state.checks_running();
-        let label = match (running, state.checks.is_some()) {
-            (true, _) => "Checking…",
-            (false, true) => "Check again",
-            (false, false) => "Run checks",
-        };
-        if ui.add_enabled(!running, egui::Button::new(label)).clicked() {
-            state.run_checks();
-        }
-        if running {
-            ui.spinner();
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(100));
-        }
-        if ui
-            .button("Copy diagnostic report")
-            .on_hover_text(
-                "Plain text for a bug report: DeadTune version, the gameinfo.gi SearchPaths block, what is in \
-                 game/citadel/addons and who owns it, DeadTune's records, the launch guard, the last launch \
-                 arguments, the last 80 console.log lines and a read-back of every installed pak.",
-            )
-            .clicked()
-        {
-            ui.ctx().copy_text(state.diagnostic_report());
-            state.status = Some(Status::Info(
-                "Diagnostic report copied. Paste it into your notes or the bug report.".into(),
-            ));
-        }
-    });
-    let Some(checks) = &state.checks else { return };
-    for check in checks {
-        let (color, mark) = match check.status {
-            CheckStatus::Pass => (GOOD, "OK"),
-            CheckStatus::Warn => (WARN, "Warning"),
-            CheckStatus::Fail => (BAD, "Problem"),
-        };
-        ui.horizontal(|ui| {
-            ui.colored_label(color, RichText::new(mark).strong());
-            ui.label(RichText::new(check.name).strong());
-            ui.weak(&check.detail);
+/// A numbered step that turns into a tick when done.
+fn step(ui: &mut Ui, number: usize, done: bool, title: &str, body: impl FnOnce(&mut Ui)) {
+    ui.horizontal_top(|ui| {
+        live_status::step_mark(ui, number, done);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.label(RichText::new(title).strong());
+            body(ui);
         });
-        if check.status != CheckStatus::Pass
-            && let Some(fix) = &check.fix
-        {
-            ui.label(format!("    What to do: {fix}"));
-        }
-        if check.status != CheckStatus::Pass
-            && let Some(uri) = check.link
-        {
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-                ui.hyperlink_to("Open Windows Settings", uri);
-            });
-        }
+    });
+    ui.add_space(10.0);
+}
+
+fn weak(ui: &mut Ui, text: &str) {
+    ui.label(RichText::new(text).small().color(WEAK));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn practice_fog_marks_only_the_fog_rows() {
+        let mut practice = dt_core::practice::PracticeMode::default();
+        assert_eq!(practice_override(&practice, "r_enable_volume_fog"), None);
+        practice.fog = true;
+        assert!(practice_override(&practice, "r_enable_volume_fog").is_some());
+        assert!(practice_override(&practice, "r_citadel_fog_quality").is_some());
+        assert_eq!(practice_override(&practice, "r_farz"), None);
     }
 }

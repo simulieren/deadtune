@@ -243,7 +243,7 @@ pub(crate) mod tests {
         for (kind, payload) in extras {
             let at = d.len();
             d.extend_from_slice(&kind.to_le_bytes());
-            d.extend_from_slice(&((payload_at - at) as u32).to_le_bytes());
+            d.extend_from_slice(&((payload_at - at - 4) as u32).to_le_bytes());
             d.extend_from_slice(&(payload.len() as u32).to_le_bytes());
             payload_at += payload.len();
         }

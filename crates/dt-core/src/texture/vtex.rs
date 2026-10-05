@@ -257,7 +257,9 @@ impl Vtex {
             let mut entry = header_at + 32 + extra_off;
             for _ in 0..extra_count {
                 let kind = u32_at(bytes, entry)?;
-                let payload = entry + u32_at(bytes, entry + 4)? as usize;
+                // The offset is relative to its own field (VRF reads `offset - 8` past the
+                // 12-byte entry): FALLBACK_BITS right after a one-entry table has offset 8.
+                let payload = entry + 4 + u32_at(bytes, entry + 4)? as usize;
                 let size = u32_at(bytes, entry + 8)? as usize;
                 if payload + size > pixel_start {
                     return Err(VtexError::Malformed("extra data outside the DATA block"));
@@ -457,25 +459,52 @@ pub(crate) mod tests {
     #[test]
     fn parses_fixtures() {
         let cases = [
-            (MASK, 512, "DXT1", 8, Flags(0)),
-            (COLOR, 512, "BC7", 8, Flags(0)),
-            (TINY, 4, "ATI1N", 1, Flags(0)),
-            (NOLOD, 1024, "ATI1N", 1, Flags::NO_LOD),
+            (MASK, 512, "DXT1", 8, Flags(0), None),
+            (COLOR, 512, "BC7", 8, Flags(0), None),
+            (TINY, 4, "ATI1N", 1, Flags(0), Some((1, 1))),
+            (NOLOD, 1024, "ATI1N", 1, Flags::NO_LOD, None),
         ];
-        for (bytes, side, fmt, mips, flags) in cases {
+        for (bytes, side, fmt, mips, flags, rect) in cases {
             let v = Vtex::parse(bytes).unwrap();
             assert_eq!((v.width, v.height, v.depth), (side, side, 1), "{fmt}");
             assert_eq!(v.format.name(), fmt);
             assert_eq!(v.mips.len(), mips);
             assert_eq!(v.flags, flags);
-            assert_eq!(v.display_rect, None);
+            assert_eq!(v.display_rect, rect, "{fmt}: a 1x1 source padded to 4x4");
             assert_eq!(v.pixel_start + v.pixel_len(), bytes.len(), "{fmt} sizes");
             assert_eq!(v.mips[0].width, side);
             assert_eq!(v.mips.last().unwrap().width, mip_dim(side, mips as u8 - 1));
         }
         let v = Vtex::parse(TINY).unwrap();
         assert_eq!(v.pixel_len(), 8);
-        assert!(v.display_rect_at.is_some());
+        assert_eq!(
+            v.display_rect_at,
+            Some(v.header_at + 40 + 2 * 12 + 1024 + 2),
+            "FILL_TO_POW2 payload sits after both entries and the 1024-byte fallback bits"
+        );
+    }
+
+    /// The research scope texture: one FALLBACK_BITS entry whose offset field is 8, so its
+    /// 1024-byte payload starts 12 bytes after the entry and ends exactly at the pixels.
+    #[test]
+    fn extra_data_payload_offset_is_relative_to_its_field() {
+        use crate::addons::sources::tests::research;
+        use crate::hud::vpk::VpkDir;
+        let up = VpkDir::open(&research("Vindicta Scope Downscale", "pak89_dir.vpk"))
+            .unwrap()
+            .read(crate::addons::native_scope::TEXTURE)
+            .unwrap();
+        let v = Vtex::parse(&up).unwrap();
+        let entry = v.header_at + 32 + u32_at(&up, v.header_at + 32).unwrap() as usize;
+        assert_eq!(u32_at(&up, entry).unwrap(), 1, "FALLBACK_BITS");
+        assert_eq!(u32_at(&up, entry + 4).unwrap(), 8);
+        assert_eq!(u32_at(&up, entry + 8).unwrap(), 1024);
+        assert_eq!(entry + 4 + 8 + 1024, v.pixel_start());
+        let mut moved = up.clone();
+        moved[entry..entry + 4].copy_from_slice(&EXTRA_METADATA.to_le_bytes());
+        let at = entry + 12 + 2;
+        moved[at..at + 4].copy_from_slice(&[7, 0, 9, 0]);
+        assert_eq!(Vtex::parse(&moved).unwrap().display_rect, Some((7, 9)));
     }
 
     #[test]
@@ -585,7 +614,7 @@ pub(crate) mod tests {
         ] {
             let at = d.len();
             d.extend_from_slice(&kind.to_le_bytes());
-            d.extend_from_slice(&((payload - at) as u32).to_le_bytes());
+            d.extend_from_slice(&((payload - at - 4) as u32).to_le_bytes());
             d.extend_from_slice(&size.to_le_bytes());
         }
         d.extend_from_slice(&0u16.to_le_bytes());

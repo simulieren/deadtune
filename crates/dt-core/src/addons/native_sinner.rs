@@ -114,7 +114,7 @@ fn shrink_size_table(out: &mut [u8], header: usize, count: usize) -> Result<(), 
     let mut entry = header + VTEX_EXTRA + u32_at(out, header + VTEX_EXTRA)? as usize;
     for _ in 0..u32_at(out, header + VTEX_EXTRA + 4)? {
         if u32_at(out, entry)? == EXTRA_COMPRESSED_MIP_SIZE {
-            let payload = entry + u32_at(out, entry + 4)? as usize;
+            let payload = entry + 4 + u32_at(out, entry + 4)? as usize;
             let array = payload + 4 + u32_at(out, payload + 4)? as usize;
             put_u32(out, payload + 8, 1);
             out[array + 4..array + 4 * count].fill(0);

@@ -13,6 +13,7 @@ use eframe::egui::{
 };
 
 use crate::friendly::{self, Control, human_error};
+use crate::icons::{self, Icon};
 use crate::live::BridgeKind;
 use crate::live_status;
 use crate::settings::{TargetSource, View};
@@ -22,6 +23,7 @@ use crate::state::{
 use crate::theme::{
     self, ACCENT, BAD, BORDER, CARD_HOVER, GOOD, ON_ACCENT, RAIL, TEXT, WARN, WEAK,
 };
+use crate::update::{RailClick, Tone};
 
 fn big_button(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
     ui.add_enabled(
@@ -420,85 +422,336 @@ pub(crate) fn caption(ui: &mut Ui, text: &str) {
 }
 
 fn rail(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
-    ui.horizontal(|ui| {
-        ui.add_space(8.0);
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label(RichText::new("Dead").size(22.0).strong().color(TEXT));
-        ui.label(RichText::new("Tune").size(22.0).strong().color(ACCENT));
-    });
-    ui.horizontal(|ui| {
-        ui.add_space(8.0);
-        ui.label(
-            RichText::new(format!("Preset: {}", state.preset_label()))
-                .small()
-                .color(WEAK),
-        );
-    });
+    egui::Panel::bottom("simple_rail_footer")
+        .frame(egui::Frame::new().inner_margin(Margin {
+            top: 10,
+            ..Margin::ZERO
+        }))
+        .show_separator_line(false)
+        .show(ui, |ui| rail_footer(ui, state, edits));
+    brand(ui, state, edits);
     ui.add_space(10.0);
     search_box(ui, &mut state.ui.query);
     ui.add_space(6.0);
     let searching = !state.ui.query.trim().is_empty();
-    for (i, section) in Section::ALL.into_iter().enumerate() {
-        let heading = match i {
-            1 => Some("Settings"),
-            6 => Some("More"),
-            _ => None,
+    // Measured height of the two group headings with their spacing.
+    let headings = 76.0;
+    let rows = Section::ALL.len() as f32;
+    let row_height = ((ui.available_height() - headings) / rows - 2.0).clamp(26.0, 30.0);
+    let shown = state.ui.section;
+    let memory = ui.id().with("rail_shown");
+    let pass = ui.ctx().cumulative_pass_nr();
+    // Layout settles over the first passes after a page change, so the reveal repeats briefly.
+    let revealing = ui.ctx().data_mut(|d| {
+        let since = match d.get_temp::<(Section, u64)>(memory) {
+            Some((section, at)) if section == shown => at,
+            _ => {
+                d.insert_temp(memory, (shown, pass));
+                pass
+            }
         };
-        if let Some(heading) = heading {
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                ui.add_space(10.0);
-                caption(ui, heading);
-            });
-        }
-        if nav_item(
-            ui,
-            section,
-            !searching && state.ui.section == section,
-            section_changes(state, section),
-        ) {
-            edits.push(Edit::Go(section));
-        }
+        pass - since < 4
+    });
+    let out = egui::ScrollArea::vertical()
+        .auto_shrink(false)
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            for (i, section) in Section::ALL.into_iter().enumerate() {
+                let heading = match i {
+                    1 => Some("Settings"),
+                    6 => Some("More"),
+                    _ => None,
+                };
+                if let Some(heading) = heading {
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space(12.0);
+                        rail_caption(ui, heading);
+                    });
+                    ui.add_space(2.0);
+                }
+                let selected = !searching && shown == section;
+                let response = nav_item(
+                    ui,
+                    section,
+                    row_height,
+                    selected,
+                    section_changes(state, section),
+                );
+                if selected && revealing {
+                    response.scroll_to_me_animation(None, egui::style::ScrollAnimation::none());
+                }
+                if response.clicked() {
+                    edits.push(Edit::Go(section));
+                }
+            }
+        });
+    let hidden_below = out.content_size.y - out.state.offset.y - out.inner_rect.height();
+    if out.state.offset.y > 1.0 {
+        fade_edge(ui.painter(), out.inner_rect, Align::Min);
     }
-    ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-        if ui
-            .add(egui::Button::new(RichText::new("Advanced view").color(WEAK)).frame(false))
-            .on_hover_text("Every setting, profiles, backups, benchmarks")
-            .clicked()
-        {
-            edits.push(Edit::Advanced);
+    if hidden_below > 1.0 {
+        fade_edge(ui.painter(), out.inner_rect, Align::Max);
+    }
+}
+
+/// A gradient into the rail colour at the top (`Min`) or bottom (`Max`) edge of `rect`.
+fn fade_edge(painter: &egui::Painter, rect: Rect, edge: Align) {
+    let height = 28.0;
+    let (band, top, bottom) = match edge {
+        Align::Max => (
+            Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - height), rect.max),
+            RAIL.gamma_multiply(0.0),
+            RAIL,
+        ),
+        _ => (
+            Rect::from_min_max(rect.min, egui::pos2(rect.right(), rect.top() + height)),
+            RAIL,
+            RAIL.gamma_multiply(0.0),
+        ),
+    };
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(band.left_top(), top);
+    mesh.colored_vertex(band.right_top(), top);
+    mesh.colored_vertex(band.right_bottom(), bottom);
+    mesh.colored_vertex(band.left_bottom(), bottom);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    painter.add(mesh);
+}
+
+fn rail_caption(ui: &mut Ui, text: &str) {
+    ui.label(
+        RichText::new(text.to_uppercase())
+            .size(10.5)
+            .family(theme::semibold())
+            .color(WEAK.gamma_multiply(0.75)),
+    );
+}
+
+fn section_icon(section: Section) -> Icon {
+    match section {
+        Section::Overview => Icon::Overview,
+        Section::Display => Icon::Display,
+        Section::Shadows => Icon::Shadows,
+        Section::Effects => Icon::Effects,
+        Section::World => Icon::World,
+        Section::Performance => Icon::Performance,
+        Section::Hud => Icon::Hud,
+        Section::Minimap => Icon::Minimap,
+        Section::Addons => Icon::Addons,
+        Section::System => Icon::System,
+        Section::Safety => Icon::Safety,
+    }
+}
+
+/// Logo mark, wordmark and the current preset, which links to Overview.
+fn brand(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+    ui.horizontal(|ui| {
+        ui.add_space(6.0);
+        let (mark, _) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::hover());
+        let painter = ui.painter();
+        painter.rect_filled(mark, CornerRadius::same(7), ACCENT);
+        for (i, h) in [9.0, 15.0, 11.0].into_iter().enumerate() {
+            let x = mark.left() + 8.0 + i as f32 * 6.0;
+            painter.rect_filled(
+                Rect::from_center_size(egui::pos2(x, mark.center().y), vec2(3.0, h)),
+                CornerRadius::same(2),
+                ON_ACCENT,
+            );
         }
-        if ui
-            .add(egui::Button::new(RichText::new("Mini window").color(WEAK)).frame(false))
+        ui.add_space(4.0);
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.label(
+            RichText::new("Dead")
+                .size(19.0)
+                .family(theme::semibold())
+                .color(TEXT),
+        );
+        ui.label(
+            RichText::new("Tune")
+                .size(19.0)
+                .family(theme::semibold())
+                .color(ACCENT),
+        );
+    });
+    ui.add_space(2.0);
+    ui.horizontal(|ui| {
+        ui.add_space(6.0);
+        let text = format!("Preset: {}", state.preset_label());
+        let response = ui
+            .add(
+                egui::Label::new(RichText::new(&text).size(11.5).color(WEAK))
+                    .truncate()
+                    .sense(Sense::click()),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text("Change the preset on Overview");
+        if response.hovered() {
+            let r = response.rect;
+            ui.painter().line_segment(
+                [r.left_bottom(), r.right_bottom()],
+                Stroke::new(1.0, WEAK.gamma_multiply(0.6)),
+            );
+        }
+        if response.clicked() {
+            edits.push(Edit::Go(Section::Overview));
+        }
+    });
+}
+
+/// Launch, the two other views, and the version with what the updater is doing.
+fn rail_footer(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
+    if state.settings.source == TargetSource::RankedSafe {
+        dot_label(ui, WARN, "Ranked-safe mode on");
+        ui.add_space(4.0);
+    }
+    ui.horizontal(|ui| {
+        live_status::launch_control(ui, state, live_status::Fit::Wide);
+    });
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let half = (ui.available_width() - 4.0) / 2.0;
+        if rail_link(ui, Icon::MiniWindow, "Mini window", half)
             .on_hover_text("A small always-on-top window for tweaking while you play")
             .clicked()
         {
             edits.push(Edit::Mini);
         }
-        ui.add_space(4.0);
-        if state.settings.source == TargetSource::RankedSafe {
-            dot_label(ui, WARN, "Ranked-safe mode on");
+        if rail_link(ui, Icon::Sliders, "Advanced", half)
+            .on_hover_text("Every setting, profiles, backups, benchmarks")
+            .clicked()
+        {
+            edits.push(Edit::Advanced);
         }
-        ui.horizontal(|ui| {
-            live_status::launch_control(ui, state, live_status::Fit::Wide);
+    });
+    ui.add_space(8.0);
+    let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().rect_filled(line, CornerRadius::ZERO, BORDER);
+    ui.add_space(6.0);
+    version_line(ui, state, edits);
+}
+
+fn rail_link(ui: &mut Ui, icon: Icon, label: &str, width: f32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click());
+    let t = ui
+        .ctx()
+        .animate_bool_responsive(response.id.with("hover"), response.hovered());
+    let painter = ui.painter();
+    painter.rect_filled(rect, CornerRadius::same(6), CARD_HOVER.gamma_multiply(t));
+    let color = lerp_color(WEAK, TEXT, t);
+    let font = FontId::proportional(12.0);
+    let galley = painter.layout_no_wrap(label.to_string(), font, color);
+    let content = 14.0 + 6.0 + galley.size().x;
+    let left = rect.center().x - content / 2.0;
+    icons::paint(
+        painter,
+        Rect::from_center_size(egui::pos2(left + 7.0, rect.center().y), vec2(14.0, 14.0)),
+        icon,
+        color,
+    );
+    painter.galley(
+        egui::pos2(left + 20.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        color,
+    );
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+fn version_line(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
+    let status = state.update.state.rail_status(crate::update::AVAILABLE);
+    ui.horizontal(|ui| {
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                .size(11.5)
+                .color(WEAK.gamma_multiply(0.8)),
+        )
+        .on_hover_text(format!("DeadTune {}", crate::update::this_version()));
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 5.0;
+            let color = match status.tone {
+                Tone::Quiet => WEAK,
+                Tone::Good => GOOD,
+                Tone::Accent => ACCENT,
+                Tone::Bad => BAD,
+            };
+            let clickable = status.click != RailClick::Nothing;
+            let mut text = RichText::new(&status.text).size(11.5).color(color);
+            if status.tone == Tone::Accent {
+                text = text.family(theme::semibold());
+            }
+            let response = ui.add(egui::Label::new(text).sense(if clickable {
+                Sense::click()
+            } else {
+                Sense::hover()
+            }));
+            if status.busy {
+                ui.add(egui::Spinner::new().size(11.0).color(color));
+            } else {
+                let (dot, _) = ui.allocate_exact_size(vec2(8.0, 12.0), Sense::hover());
+                ui.painter().circle_filled(dot.center(), 3.0, color);
+            }
+            if !clickable {
+                return;
+            }
+            let hover = match (&state.update.state, status.click) {
+                (crate::update::UpdateState::Failed { message, .. }, _) => message.clone(),
+                (_, RailClick::Check) => "Check for a new version now".to_string(),
+                _ => "Open the Updates card".to_string(),
+            };
+            let response = response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(hover);
+            if response.hovered() {
+                let r = response.rect;
+                ui.painter().line_segment(
+                    [r.left_bottom(), r.right_bottom()],
+                    Stroke::new(1.0, color.gamma_multiply(0.6)),
+                );
+            }
+            if response.clicked() {
+                match status.click {
+                    RailClick::Check => state.check_update(true),
+                    RailClick::OpenUpdates => edits.push(Edit::Go(Section::Safety)),
+                    RailClick::Nothing => {}
+                }
+            }
         });
     });
 }
 
+fn lerp_color(from: Color32, to: Color32, t: f32) -> Color32 {
+    let mix = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
+    Color32::from_rgb(
+        mix(from.r(), to.r()),
+        mix(from.g(), to.g()),
+        mix(from.b(), to.b()),
+    )
+}
+
 /// Full-width text box styled like the other inputs, with a clear button once it has text.
 pub(crate) fn search_box(ui: &mut Ui, query: &mut String) {
-    let height = 28.0;
+    let height = 32.0;
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
     ui.painter().rect(
         rect,
-        CornerRadius::same(4),
+        CornerRadius::same(6),
         theme::CARD,
         Stroke::new(1.0, BORDER),
         StrokeKind::Inside,
     );
     let clear = rect.right_center() - vec2(14.0, 0.0);
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(rect.left_center() + vec2(15.0, 0.0), vec2(14.0, 14.0)),
+        Icon::Search,
+        WEAK,
+    );
     let text_rect = Rect::from_min_max(
-        rect.left_top() + vec2(10.0, 0.0),
+        rect.left_top() + vec2(28.0, 0.0),
         egui::pos2(clear.x - 12.0, rect.bottom()),
     );
     ui.scope_builder(
@@ -551,51 +804,71 @@ fn dot_label(ui: &mut Ui, color: Color32, text: &str) {
     });
 }
 
-fn nav_item(ui: &mut Ui, section: Section, selected: bool, changes: usize) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
+fn nav_item(
+    ui: &mut Ui,
+    section: Section,
+    height: f32,
+    selected: bool,
+    changes: usize,
+) -> egui::Response {
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    let hover = ui
+        .ctx()
+        .animate_bool_responsive(response.id.with("hover"), response.hovered() && !selected);
     let painter = ui.painter();
     if selected {
-        painter.rect_filled(rect, CornerRadius::same(6), CARD_HOVER);
+        painter.rect_filled(rect, CornerRadius::same(7), CARD_HOVER);
         painter.rect_filled(
-            Rect::from_min_size(rect.min + vec2(0.0, 8.0), vec2(3.0, rect.height() - 16.0)),
+            Rect::from_min_size(rect.min + vec2(0.0, 7.0), vec2(3.0, rect.height() - 14.0)),
             CornerRadius::same(2),
             ACCENT,
         );
-    } else if response.hovered() {
-        painter.rect_filled(rect, CornerRadius::same(6), CARD_HOVER.gamma_multiply(0.6));
+    } else if hover > 0.0 {
+        painter.rect_filled(
+            rect,
+            CornerRadius::same(7),
+            CARD_HOVER.gamma_multiply(0.7 * hover),
+        );
     }
-    let color = if selected {
-        TEXT
+    let resting = WEAK.gamma_multiply(1.1);
+    let (icon_color, text_color) = if selected {
+        (ACCENT, TEXT)
     } else {
-        WEAK.gamma_multiply(1.15)
+        let c = lerp_color(resting, TEXT, hover);
+        (c, c)
     };
+    icons::paint(
+        painter,
+        Rect::from_center_size(rect.left_center() + vec2(22.0, 0.0), vec2(16.0, 16.0)),
+        section_icon(section),
+        icon_color,
+    );
     painter.text(
-        rect.left_center() + vec2(14.0, 0.0),
+        rect.left_center() + vec2(40.0, 0.0),
         Align2::LEFT_CENTER,
         section.label(),
         if selected {
-            FontId::new(14.0, theme::semibold())
+            FontId::new(13.5, theme::semibold())
         } else {
-            FontId::proportional(14.0)
+            FontId::proportional(13.5)
         },
-        color,
+        text_color,
     );
     if changes > 0 {
         let text = changes.to_string();
-        let center = rect.right_center() - vec2(20.0, 0.0);
+        let center = rect.right_center() - vec2(18.0, 0.0);
         let badge = Rect::from_center_size(center, vec2(10.0 + 7.0 * text.len() as f32, 18.0));
-        painter.rect_filled(badge, CornerRadius::same(255), ACCENT.gamma_multiply(0.22));
+        painter.rect_filled(badge, CornerRadius::same(255), ACCENT.gamma_multiply(0.18));
         painter.text(
             center,
             Align2::CENTER_CENTER,
             text,
-            FontId::proportional(11.5),
+            FontId::new(11.0, theme::semibold()),
             ACCENT,
         );
     }
-    response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn header(ui: &mut Ui, state: &AppState, page: Page, edits: &mut Vec<Edit>) {

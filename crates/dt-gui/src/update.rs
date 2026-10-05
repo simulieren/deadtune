@@ -316,6 +316,90 @@ pub fn spawn_new_exe() -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// The sidebar's one-line update status, next to the version.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RailStatus {
+    pub text: String,
+    pub tone: Tone,
+    pub click: RailClick,
+    pub busy: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tone {
+    Quiet,
+    Good,
+    Accent,
+    Bad,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RailClick {
+    Nothing,
+    Check,
+    /// The Updates card, which has the install, notes and skip buttons.
+    OpenUpdates,
+}
+
+impl UpdateState {
+    pub fn rail_status(&self, available: bool) -> RailStatus {
+        let status = |text: String, tone, click, busy| RailStatus {
+            text,
+            tone,
+            click,
+            busy,
+        };
+        if !available && *self == UpdateState::Idle {
+            return status("Updates off".into(), Tone::Quiet, RailClick::Nothing, false);
+        }
+        match self {
+            UpdateState::Idle => status(
+                "Check for updates".into(),
+                Tone::Quiet,
+                RailClick::Check,
+                false,
+            ),
+            UpdateState::Checking => {
+                status("Checking…".into(), Tone::Quiet, RailClick::Nothing, true)
+            }
+            UpdateState::UpToDate { .. } => {
+                status("Up to date".into(), Tone::Good, RailClick::Check, false)
+            }
+            UpdateState::Available(r) => status(
+                format!("Update to {}", r.version),
+                Tone::Accent,
+                RailClick::OpenUpdates,
+                false,
+            ),
+            UpdateState::Downloading { done, total, .. } if *total > 0 && done < total => status(
+                format!("Downloading {}%", done * 100 / total),
+                Tone::Accent,
+                RailClick::OpenUpdates,
+                true,
+            ),
+            UpdateState::Downloading { .. } => status(
+                "Installing…".into(),
+                Tone::Accent,
+                RailClick::OpenUpdates,
+                true,
+            ),
+            UpdateState::Ready { .. } => {
+                status("Restarting…".into(), Tone::Accent, RailClick::Nothing, true)
+            }
+            UpdateState::Failed {
+                during: Phase::Check,
+                ..
+            } => status("Couldn't check".into(), Tone::Bad, RailClick::Check, false),
+            UpdateState::Failed { .. } => status(
+                "Update failed".into(),
+                Tone::Bad,
+                RailClick::OpenUpdates,
+                false,
+            ),
+        }
+    }
+}
+
 /// `0.2.0 (abc1234)`, or `0.2.0 (dev build)` without an embedded commit.
 pub fn this_version() -> String {
     let commit = option_env!("DEADTUNE_COMMIT").map_or("dev build", |c| &c[..c.len().min(7)]);
@@ -407,6 +491,63 @@ mod tests {
             notes_url: r.notes_url.clone(),
             asset: r.asset.clone(),
         }
+    }
+
+    #[test]
+    fn the_rail_line_says_what_the_updater_is_doing() {
+        let r = release(Version(0, 9, 0));
+        let line = |s: UpdateState| {
+            let st = s.rail_status(true);
+            (st.text, st.tone, st.click, st.busy)
+        };
+        assert_eq!(
+            line(UpdateState::Idle),
+            (
+                "Check for updates".into(),
+                Tone::Quiet,
+                RailClick::Check,
+                false
+            )
+        );
+        assert_eq!(
+            line(UpdateState::UpToDate { checked_at: at(0) }),
+            ("Up to date".into(), Tone::Good, RailClick::Check, false)
+        );
+        assert_eq!(
+            line(UpdateState::Available(r.clone())),
+            (
+                "Update to 0.9.0".into(),
+                Tone::Accent,
+                RailClick::OpenUpdates,
+                false
+            )
+        );
+        let downloading = |done| UpdateState::Downloading {
+            release: r.clone(),
+            done,
+            total: 200,
+        };
+        assert_eq!(line(downloading(50)).0, "Downloading 25%");
+        assert_eq!(line(downloading(200)).0, "Installing…");
+        assert!(line(UpdateState::Checking).3);
+        let failed = |during| UpdateState::Failed {
+            message: "offline".into(),
+            during,
+            release: None,
+        };
+        assert_eq!(line(failed(Phase::Check)).2, RailClick::Check);
+        assert_eq!(line(failed(Phase::Download)).2, RailClick::OpenUpdates);
+        assert_eq!(line(failed(Phase::Download)).1, Tone::Bad);
+        let off = UpdateState::Idle.rail_status(false);
+        assert_eq!(
+            (off.text.as_str(), off.click),
+            ("Updates off", RailClick::Nothing)
+        );
+        assert_eq!(
+            UpdateState::Available(r).rail_status(false).text,
+            "Update to 0.9.0",
+            "a state the updater reached still shows"
+        );
     }
 
     #[test]

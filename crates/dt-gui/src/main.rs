@@ -19,6 +19,7 @@ mod ingame_view;
 mod launch_view;
 mod live;
 mod live_status;
+mod mark;
 mod minimap_view;
 mod png;
 mod profiles;
@@ -77,6 +78,9 @@ fn env_path(name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Side of the window and taskbar icon; the OS scales it down.
+const WINDOW_ICON: u32 = 256;
+
 fn main() -> anyhow::Result<()> {
     let args = parse_args(std::env::args().skip(1)).map_err(anyhow::Error::msg)?;
     let data_dir = env_path("DEADTUNE_DATA_DIR").unwrap_or_else(dt_core::backup::data_dir);
@@ -100,7 +104,12 @@ fn main() -> anyhow::Result<()> {
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("DeadTune")
         .with_inner_size(size)
-        .with_min_inner_size([300.0, 300.0]);
+        .with_min_inner_size([300.0, 300.0])
+        .with_icon(std::sync::Arc::new(eframe::egui::IconData {
+            rgba: mark::rgba(WINDOW_ICON),
+            width: WINDOW_ICON,
+            height: WINDOW_ICON,
+        }));
     if compact {
         viewport = viewport.with_always_on_top();
     }

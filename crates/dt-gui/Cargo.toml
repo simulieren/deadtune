@@ -14,6 +14,9 @@ default = []
 remote = ["dep:tiny_http"]
 fetch = ["dt-core/fetch"]
 
+[build-dependencies]
+embed-resource = "3"
+
 [dependencies]
 dt-core = { workspace = true, features = ["svg"] }
 anyhow.workspace = true

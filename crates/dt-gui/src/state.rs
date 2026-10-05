@@ -1110,6 +1110,13 @@ impl AppState {
         } else {
             edits.set.insert(name.to_string(), value.clone());
         }
+        if let Some((key, text)) = self.video_twin(name, &value) {
+            if is_base {
+                self.profile.video.remove(&key);
+            } else {
+                self.profile.video.insert(key, text);
+            }
+        }
         if self.ctx.game_running
             && self.settings.bridge.pushes_while_dragging()
             && self.is_live_now(name)
@@ -1164,16 +1171,41 @@ impl AppState {
     }
 
     pub fn reset_convars<'a>(&mut self, names: impl IntoIterator<Item = &'a str>) {
-        let edits = &mut self.profile.convars;
         for name in names {
+            let edits = &mut self.profile.convars;
             edits.set.remove(name);
             edits.comment.retain(|c| c != name);
+            self.profile.video.remove(&format!("setting.{name}"));
         }
         self.refresh_preview();
     }
 
-    /// Drops every convar edit so the profile is the preset again; HUD and video edits stay.
+    /// The `video.txt` key holding the same setting as ConVar `name`, with `value` written
+    /// in that file's style. The game's menu writes `video.txt`, so a ConVar edit alone
+    /// would leave the two files disagreeing.
+    fn video_twin(&self, name: &str, value: &str) -> Option<(String, String)> {
+        let key = format!("setting.{name}");
+        let current = dt_core::video::read_settings(self.live.video.as_deref()?)
+            .ok()?
+            .into_iter()
+            .find(|(k, _)| *k == key)?
+            .1;
+        let boolean = matches!(current.as_str(), "true" | "false");
+        let text = if boolean && matches!(value.trim(), "0" | "1" | "true" | "false") {
+            bool_text(parse_bool(value), Some(&current))
+        } else {
+            value.to_string()
+        };
+        Some((key, text))
+    }
+
+    /// Drops every setting edit, and the `video.txt` twins of those settings, so the
+    /// profile is the preset again; HUD and other video edits stay.
     pub fn reset_to_preset(&mut self) {
+        let names: Vec<String> = self.profile.convars.set.keys().cloned().collect();
+        for name in names {
+            self.profile.video.remove(&format!("setting.{name}"));
+        }
         self.profile.convars = ConVarEdits::default();
         self.refresh_preview();
     }
@@ -3416,6 +3448,43 @@ mod tests {
         assert!(!state.ranked_safe_blocks_auto_profile());
         state.toggle_ranked_safe().unwrap();
         assert!(state.ranked_safe_blocks_auto_profile());
+    }
+
+    #[test]
+    fn a_convar_edit_keeps_its_video_txt_twin_in_step() {
+        let (_dir, mut state) = state();
+        let live = state.live.video.clone().unwrap();
+        let has = |k: &str| live.contains(&format!("\"setting.{k}\""));
+        assert!(
+            has("r_citadel_shadow_quality") && has("r_screen_space_shadows"),
+            "fixture"
+        );
+        state
+            .set_convar("r_citadel_shadow_quality", "2".into())
+            .unwrap();
+        state
+            .set_convar("r_screen_space_shadows", "1".into())
+            .unwrap();
+        let video = &state.profile.video;
+        assert_eq!(video["setting.r_citadel_shadow_quality"], "2");
+        assert_eq!(
+            video["setting.r_screen_space_shadows"], "true",
+            "the file's own style"
+        );
+        state.set_convar("r_farz", "6000".into()).unwrap();
+        assert!(
+            !state.profile.video.contains_key("setting.r_farz"),
+            "no twin, nothing written"
+        );
+        state.reset_convars(["r_citadel_shadow_quality"]);
+        assert!(
+            !state
+                .profile
+                .video
+                .contains_key("setting.r_citadel_shadow_quality")
+        );
+        state.reset_to_preset();
+        assert!(state.profile.video.is_empty());
     }
 
     #[test]

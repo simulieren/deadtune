@@ -307,7 +307,8 @@ fn icons(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
         });
         widgets::hint(
             ui,
-            "Goes into the HUD addon on Apply. Troopers and ziplines can't be recoloured.",
+            "Goes into the HUD addon on Apply. Troopers and ziplines can't be recoloured. With \
+             the game's own enemy colour (above) turned on, it may win for enemy icons; untested.",
         );
         ui.add_space(4.0);
         let colors = &state.profile.hud.minimap_colors;

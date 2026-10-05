@@ -250,7 +250,11 @@ fn portraits_card(ui: &mut Ui, s: &mut TopBarStyle) {
 
 fn colours_card(ui: &mut Ui, s: &mut TopBarStyle) {
     card(ui, "Team colours", None, |ui| {
-        widgets::hint(ui, "Health bars and souls tags of each side.");
+        widgets::hint(
+            ui,
+            "Health bars and souls tags of each side. With the game's own enemy colour \
+             (Minimap page) turned on, it may win for enemies; untested.",
+        );
         ui.add_space(4.0);
         color_row(ui, "Allies", &mut s.ally_color, ALLY_HEALTH);
         color_row(ui, "Enemies", &mut s.enemy_color, ENEMY_HEALTH);

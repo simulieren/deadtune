@@ -9,38 +9,22 @@ use dt_core::hud::apples_tunnels::{
 use dt_core::hud::minimap_colors::Color;
 use eframe::egui::color_picker::{Alpha, color_edit_button_srgba};
 use eframe::egui::{
-    self, Align, Color32, Layout, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, pos2, vec2,
+    self, Align, Color32, Layout, Painter, Pos2, Rect, RichText, Stroke, Ui, pos2, vec2,
 };
 
-use crate::hud_art::Images;
 use crate::minimap_view::marked;
 use crate::state::AppState;
 use crate::theme::{ACCENT, TEXT, WARN, WEAK};
 use crate::widgets;
 
-const PREVIEW: f32 = 170.0;
-/// Where the preview puts the stand-in hero, as map fractions.
-const SAMPLE_HERO: [f64; 2] = [0.5, 0.52];
-
-/// The card; `Some` with the whole new setting when it was edited.
-pub fn card(ui: &mut Ui, state: &AppState, images: &mut Images) -> Option<ApplesTunnels> {
+/// The card; `Some` with the whole new setting when it was edited. The dots show on the
+/// page's one minimap preview.
+pub fn card(ui: &mut Ui, state: &AppState) -> Option<ApplesTunnels> {
     let current = state.profile.hud.apples_tunnels;
     let mut next = current;
     widgets::card(ui, |ui| {
         header(ui, &current, &mut next);
-        let wide = ui.available_width() >= 640.0;
-        if wide {
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_width(ui.available_width() - PREVIEW - 24.0);
-                    controls(ui, &current, &mut next);
-                });
-                ui.add_space(12.0);
-                preview(ui, &current, images);
-            });
-        } else {
-            controls(ui, &current, &mut next);
-        }
+        controls(ui, &current, &mut next);
     });
     (next != current).then_some(next)
 }
@@ -166,35 +150,18 @@ fn to_color32(c: Color) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
-fn preview(ui: &mut Ui, style: &ApplesTunnels, images: &mut Images) {
-    ui.vertical(|ui| {
-        let (rect, _) = ui.allocate_exact_size(vec2(PREVIEW, PREVIEW), Sense::hover());
-        let real = paint(&ui.painter().with_clip_rect(rect), rect, style, images);
-        ui.label(
-            RichText::new(if real {
-                "Your game's map, hero in the middle"
-            } else {
-                "Mock-up, hero in the middle"
-            })
-            .size(11.0)
-            .color(WEAK),
-        );
-    });
-}
-
-/// The dots over the game's map, framed as on the Minimap preview, or over a sketch of
-/// one; true when the map is the game's.
-fn paint(p: &Painter, rect: Rect, style: &ApplesTunnels, images: &mut Images) -> bool {
-    let map = rect.shrink(rect.width() * 20.0 / 400.0);
-    let real = crate::minimap_view::base(p, images, rect, map, Color32::WHITE, true);
+/// The dots over the map in `map` (the game map's square), the entrance radius drawn
+/// around the hero at `hero`. Dot sizes are game pixels on the game's 360 px map.
+pub fn overlay(p: &Painter, map: Rect, style: &ApplesTunnels, hero: Pos2) {
     let at = |u: f64, v: f64| -> Pos2 {
         pos2(
             map.left() + map.width() * u as f32,
             map.top() + map.height() * v as f32,
         )
     };
+    let k = map.width() / 360.0;
     let dot = |pos: Pos2, dots: Dots| {
-        let radius = (f32::from(dots.size_px) * 0.35).max(1.5);
+        let radius = (f32::from(dots.size_px) * k * 0.5).max(1.5);
         p.circle(
             pos,
             radius,
@@ -207,22 +174,22 @@ fn paint(p: &Painter, rect: Rect, style: &ApplesTunnels, images: &mut Images) ->
             dot(at(a.u, a.v), style.apples);
         }
     }
-    let hero = at(SAMPLE_HERO[0], SAMPLE_HERO[1]);
     if style.tunnels.on {
         let show = f64::from(style.tunnel_radius_pct) / 100.0;
         p.circle_stroke(
             hero,
             map.width() * show as f32,
-            Stroke::new(1.0, Color32::from_white_alpha(40)),
+            Stroke::new(1.0, Color32::from_white_alpha(60)),
+        );
+        let (hu, hv) = (
+            f64::from((hero.x - map.left()) / map.width()),
+            f64::from((hero.y - map.top()) / map.height()),
         );
         for e in &TUNNEL_ENTRANCES {
-            let (du, dv) = (e.u - SAMPLE_HERO[0], e.v - SAMPLE_HERO[1]);
+            let (du, dv) = (e.u - hu, e.v - hv);
             if du * du + dv * dv <= show * show {
                 dot(at(e.u, e.v), style.tunnels);
             }
         }
     }
-    p.circle_filled(hero, 4.5, Color32::from_rgb(0x4D, 0xA3, 0xFF));
-    p.circle_stroke(hero, 4.5, Stroke::new(1.0, Color32::WHITE));
-    real
 }

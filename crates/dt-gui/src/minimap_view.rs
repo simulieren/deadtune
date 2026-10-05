@@ -11,8 +11,8 @@ use dt_core::hud::minimap_style::{
 };
 use eframe::egui::color_picker::{Alpha, color_edit_button_srgba};
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, Layout, Painter, Pos2, Rect, RichText, Sense, Shape,
-    Stroke, Ui, Vec2, pos2, vec2,
+    self, Align, Color32, CornerRadius, CursorIcon, Id, Layout, Painter, Pos2, Rect, RichText,
+    Sense, Shape, Stroke, Ui, UiBuilder, Vec2, pos2, vec2,
 };
 
 use crate::hud_art::{Images, arc, cut_top};
@@ -20,7 +20,11 @@ use crate::state::{AppState, CUSTOM_UI_COLORS, ENEMY_UI_COLOR, MinimapPreset};
 use crate::theme::{ACCENT, BORDER, RAIL, TEXT, WARN, WEAK};
 use crate::widgets;
 
-const PREVIEW: f32 = 230.0;
+/// Below this page width the preview sits above the settings instead of beside them.
+const SIDE_BY_SIDE: f32 = 760.0;
+const GAP: f32 = 12.0;
+/// The card's frame around the map: inner margin and stroke on both sides.
+const CARD_PAD: f32 = 26.0;
 const GROUPS: [(&str, &[IconId]); 3] = [
     (
         "Heroes",
@@ -93,24 +97,26 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     let mut actions = Vec::new();
     let ctx = ui.ctx().clone();
     crate::hud_art::with(&ctx, state, |state, images| {
-        if ui.available_width() >= 760.0 {
+        let width = ui.available_width();
+        if width >= SIDE_BY_SIDE {
+            let side = (width * 0.4).clamp(280.0, 460.0);
             ui.horizontal_top(|ui| {
-                let gap = 12.0;
-                let left = ui.available_width() - PREVIEW - 28.0 - gap;
-                ui.vertical(|ui| {
-                    ui.set_width(left);
-                    settings(ui, state, images, &mut actions);
-                });
-                ui.add_space(gap - ui.spacing().item_spacing.x);
-                ui.vertical(|ui| {
-                    ui.set_width(PREVIEW + 28.0);
-                    preview_card(ui, state, images);
-                });
+                let left = ui.available_width() - side - GAP;
+                let settings = ui
+                    .vertical(|ui| {
+                        ui.set_width(left);
+                        settings(ui, state, images, &mut actions);
+                    })
+                    .response
+                    .rect;
+                ui.add_space(GAP - ui.spacing().item_spacing.x);
+                sticky_preview(ui, state, images, side, settings.height());
             });
         } else {
-            preview_card(ui, state, images);
+            preview_card(ui, state, images, width.min(420.0));
             settings(ui, state, images, &mut actions);
         }
+        enlarged(&ctx, state, images);
     });
     for action in actions {
         match action {
@@ -133,11 +139,11 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
 
 fn settings(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
     official(ui, state, actions);
-    map_style(ui, state, actions);
-    if let Some(next) = crate::apples_view::card(ui, state, images) {
+    map_style(ui, state, images, actions);
+    if let Some(next) = crate::apples_view::card(ui, state) {
         actions.push(Action::Apples(next));
     }
-    icons(ui, state, actions);
+    icons(ui, state, images, actions);
 }
 
 fn official(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
@@ -185,7 +191,7 @@ fn official(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
     });
 }
 
-fn map_style(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
+fn map_style(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
     let style = &state.profile.hud.minimap;
     widgets::card(ui, |ui| {
         ui.horizontal(|ui| {
@@ -233,6 +239,9 @@ fn map_style(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
                     if i > 0 {
                         ui.add_space(gap);
                     }
+                    let width = width - ICON - ICON_GAP;
+                    let icon = row.map_or(Icon::Map, |spec| Icon::Marker(group_icon(spec.group)));
+                    icon_slot(ui, state, images, icon);
                     match row {
                         None => {
                             let pct = style.map_opacity_pct;
@@ -302,7 +311,7 @@ where
     (v.into() != value.into()).then_some(v)
 }
 
-fn icons(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
+fn icons(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
     widgets::card(ui, |ui| {
         ui.horizontal(|ui| {
             widgets::caption(ui, "Minimap icons");
@@ -356,7 +365,8 @@ fn icons(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
                         if i > 0 {
                             ui.add_space(gap);
                         }
-                        icon_row(ui, state, id, width, actions);
+                        icon_slot(ui, state, images, Icon::Marker(id));
+                        icon_row(ui, state, id, width - ICON - ICON_GAP, actions);
                     }
                 });
             }
@@ -376,7 +386,7 @@ fn icon_row(ui: &mut Ui, state: &AppState, id: IconId, width: f32, actions: &mut
             ui.spacing_mut().item_spacing.x = 6.0;
             let top = ui.cursor().top();
             if set.is_some() {
-                let x = ui.max_rect().left() - 7.0;
+                let x = ui.max_rect().left() - ICON - ICON_GAP - 7.0;
                 ui.painter().rect_filled(
                     Rect::from_x_y_ranges(x..=x + 3.0, top + 2.0..=top + 22.0),
                     CornerRadius::same(2),
@@ -417,6 +427,76 @@ fn icon_row(ui: &mut Ui, state: &AppState, id: IconId, width: f32, actions: &mut
             });
         },
     );
+}
+
+const ICON: f32 = 20.0;
+const ICON_GAP: f32 = 8.0;
+
+#[derive(Clone, Copy)]
+enum Icon {
+    Map,
+    Marker(IconId),
+}
+
+/// The icon that stands for a size slider's markers.
+fn group_icon(group: MarkerGroup) -> IconId {
+    match group {
+        MarkerGroup::LocalHero => IconId::LocalHero,
+        MarkerGroup::AllyHeroes => IconId::AllyHero,
+        MarkerGroup::EnemyHeroes => IconId::EnemyHero,
+        MarkerGroup::Objectives => IconId::EnemyObjective,
+        MarkerGroup::Shops => IconId::Shop,
+    }
+}
+
+/// The game's own picture for a row, in the colour it has now, before the row's label.
+fn icon_slot(ui: &mut Ui, state: &AppState, images: &mut Images, icon: Icon) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ICON, 24.0), Sense::hover());
+    let rect = Rect::from_center_size(rect.center(), Vec2::splat(ICON));
+    ui.add_space(ICON_GAP);
+    let p = ui.painter();
+    let drawn = match icon {
+        Icon::Map => images.paint(p, art::MINIMAP_MAP, rect, Color32::WHITE),
+        Icon::Marker(id) => icon_art(p, images, rect, id, ink(state, id, Color32::WHITE)),
+    };
+    if !drawn {
+        let fill = match icon {
+            Icon::Map => FRAMED,
+            Icon::Marker(id) => ink(state, id, WEAK),
+        };
+        p.circle_filled(rect.center(), ICON * 0.3, fill);
+    }
+}
+
+/// Heroes are a bust on a disc of their colour and objectives a guardian, as on the
+/// preview; the rest have a picture of their own. False when the picture is missing.
+fn icon_art(p: &Painter, images: &mut Images, rect: Rect, id: IconId, tint: Color32) -> bool {
+    let hero = match id {
+        IconId::EnemyHero => Some(art::ENEMIES[0].marker),
+        IconId::AllyHero => Some(art::ALLIES[0].marker),
+        IconId::LocalHero => Some(art::ALLIES[3].marker),
+        _ => None,
+    };
+    if let Some(bust) = hero {
+        let r = rect.width() / 2.0;
+        p.circle_filled(rect.center(), r, tint);
+        return images.paint_disc(p, bust, rect.center(), r * 0.85, Color32::WHITE);
+    }
+    if matches!(id, IconId::EnemyObjective | IconId::AllyObjective) {
+        let g = art::GUARDIAN;
+        return images.paint(p, g.back, rect, tint) && images.paint(p, g.fill, rect, tint);
+    }
+    // Pictures whose mark is small inside its canvas, grown to read at row size.
+    // The arrows point right from the middle of theirs, so they shift left as they grow.
+    let (grow, shift) = match id {
+        IconId::EnemyHeroArrow | IconId::AllyHeroArrow => (1.6, -0.25),
+        IconId::SmallCamp | IconId::MediumCamp | IconId::LargeCamp | IconId::Vault => (1.5, 0.0),
+        _ => (1.0, 0.0),
+    };
+    let rect = rect
+        .scale_from_center(grow)
+        .translate(vec2(shift * rect.width(), 0.0));
+    art::marker(id).is_some_and(|a| images.paint(p, a, rect, tint))
 }
 
 /// Covers the picker's white swatch so an unset texture row doesn't read as white.
@@ -480,27 +560,103 @@ fn to_color32(c: Color) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
-fn preview_card(ui: &mut Ui, state: &AppState, images: &mut Images) {
-    widgets::section(ui, "Preview", |ui| {
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(PREVIEW), Sense::hover());
-        let real = minimap(ui.painter(), rect, state, images);
-        ui.add_space(2.0);
-        widgets::hint(
-            ui,
-            if real {
-                "Your game's map and icons with the settings above. Top is the enemy base; \
-                 heroes and objectives are placed by hand."
-            } else {
-                "A mock-up of the colours above. Top is the enemy base."
-            },
-        );
-        ui.add_space(6.0);
-        crate::game_shot::in_game(
-            ui,
-            dt_core::hud::elements::ElementId::Minimap,
-            Vec2::splat(PREVIEW),
-        );
+/// The preview column beside settings `height` tall; the card follows the scroll so the
+/// map stays in view while the settings below it are edited.
+fn sticky_preview(ui: &mut Ui, state: &AppState, images: &mut Images, side: f32, height: f32) {
+    let (column, _) = ui.allocate_exact_size(vec2(side, height), Sense::hover());
+    let id = Id::new("minimap-preview-height");
+    let card = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(side);
+    let top = (ui.clip_rect().top() + 4.0)
+        .clamp(column.top(), (column.bottom() - card).max(column.top()));
+    let area = Rect::from_min_max(pos2(column.left(), top), column.right_bottom());
+    let drawn = ui
+        .scope_builder(
+            UiBuilder::new()
+                .max_rect(area)
+                .layout(Layout::top_down(Align::Min)),
+            |ui| preview_card(ui, state, images, side),
+        )
+        .response
+        .rect;
+    ui.data_mut(|d| d.insert_temp(id, drawn.height()));
+}
+
+#[derive(Clone, Copy, Default, PartialEq)]
+enum View {
+    #[default]
+    Yours,
+    InGame,
+}
+
+const ENLARGED: &str = "minimap-enlarged";
+
+/// The one minimap on the page, `side` wide: your settings on the game's map, or the game's
+/// own minimap from a screenshot for comparison. Click the map to enlarge it.
+fn preview_card(ui: &mut Ui, state: &AppState, images: &mut Images, side: f32) {
+    let id = Id::new("minimap-preview-view");
+    let mut view: View = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+    ui.allocate_ui(vec2(side, 0.0), |ui| {
+        widgets::card(ui, |ui| {
+            ui.horizontal(|ui| {
+                widgets::caption(ui, "Preview");
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let labels = ["Your settings", "Game default"];
+                    let at = view as usize;
+                    if let Some(i) = widgets::segmented(ui, &labels, at) {
+                        view = [View::Yours, View::InGame][i];
+                    }
+                });
+            });
+            ui.add_space(4.0);
+            let size = Vec2::splat(side - CARD_PAD);
+            match view {
+                View::Yours => {
+                    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+                    let real = minimap(ui.painter(), rect, state, images);
+                    if response
+                        .on_hover_cursor(CursorIcon::ZoomIn)
+                        .on_hover_text("Click to enlarge")
+                        .clicked()
+                    {
+                        ui.data_mut(|d| d.insert_temp(Id::new(ENLARGED), true));
+                    }
+                    widgets::hint(
+                        ui,
+                        if real {
+                            "Your game's map with every setting on this page. Top is the enemy \
+                             base; heroes and objectives are placed by hand. Click to enlarge."
+                        } else {
+                            "A mock-up of the settings on this page. Top is the enemy base."
+                        },
+                    );
+                }
+                View::InGame => {
+                    crate::game_shot::in_game(ui, dt_core::hud::elements::ElementId::Minimap, size);
+                }
+            }
+        });
     });
+    ui.data_mut(|d| d.insert_temp(id, view));
+}
+
+/// The preview as large as the window allows, until clicked away or Escape.
+fn enlarged(ctx: &egui::Context, state: &AppState, images: &mut Images) {
+    let id = Id::new(ENLARGED);
+    if !ctx.data(|d| d.get_temp::<bool>(id).unwrap_or(false)) {
+        return;
+    }
+    let screen = ctx.content_rect();
+    let side = (screen.width().min(screen.height()) - 120.0).clamp(300.0, 900.0);
+    let modal = egui::Modal::new(Id::new("minimap-enlarged-modal")).show(ctx, |ui| {
+        let (rect, response) = ui.allocate_exact_size(Vec2::splat(side), Sense::click());
+        minimap(ui.painter(), rect, state, images);
+        ui.add_space(4.0);
+        widgets::hint(ui, "Click the map or press Escape to close.");
+        response.clicked()
+    });
+    if modal.inner || modal.should_close() {
+        ctx.data_mut(|d| d.remove::<bool>(id));
+    }
 }
 
 /// The colour an icon shows: the user's, else the game's, else a stand-in for its texture.
@@ -614,6 +770,8 @@ const LANE_PATHS: [Lane; 3] = [
     },
 ];
 
+/// Your hero, as map fractions; the tunnel entrance radius is drawn around it.
+const ME: (f32, f32) = (-0.12, -0.24);
 /// One guardian per lane, left to right: the enemy's, then ours.
 const GUARDIANS: [[(f32, f32); 3]; 2] = [
     [(-0.16, -0.67), (0.06, -0.56), (0.28, -0.67)],
@@ -670,6 +828,12 @@ fn minimap(p: &Painter, rect: Rect, state: &AppState, images: &mut Images) -> bo
     let map = Map::new(area);
     let fade = Color32::WHITE.gamma_multiply(f32::from(style.map_opacity_pct) / 100.0);
     let real = base(p, images, rect, area, fade, !style.minimal);
+    crate::apples_view::overlay(
+        p,
+        area,
+        &state.profile.hud.apples_tunnels,
+        map.at(ME.0, ME.1),
+    );
     let scale = |group| f32::from(style.scale(group)) / 100.0;
     let k = map.k;
 
@@ -840,7 +1004,7 @@ fn minimap(p: &Painter, rect: Rect, state: &AppState, images: &mut Images) -> bo
         }
     }
 
-    let me = map.at(-0.12, -0.24);
+    let me = map.at(ME.0, ME.1);
     let s = scale(MarkerGroup::LocalHero);
     let r = 15.0 * k * s;
     let look = 0.95_f32;

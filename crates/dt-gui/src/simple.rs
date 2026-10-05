@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use dt_core::addons::clutter;
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::catalog::{CatalogEntry, Impact, Kind};
-use dt_core::doctor::CheckStatus;
 use dt_core::practice::{Group, PracticeMode};
 use dt_core::preset::{self, PresetId};
 use dt_core::profile::BaseRef;
@@ -2533,71 +2532,6 @@ fn step(ui: &mut Ui, number: usize, done: bool, title: &str, body: impl FnOnce(&
 
 fn weak(ui: &mut Ui, text: &str) {
     ui.label(RichText::new(text).small().color(WEAK));
-}
-
-/// `plain` hides the technical detail behind a tooltip.
-pub fn check_setup(ui: &mut Ui, state: &mut AppState) {
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new("Check setup")
-                .text_style(egui::TextStyle::Heading)
-                .strong(),
-        );
-        let running = state.checks_running();
-        let label = match (running, state.checks.is_some()) {
-            (true, _) => "Checking…",
-            (false, true) => "Check again",
-            (false, false) => "Run checks",
-        };
-        if ui.add_enabled(!running, egui::Button::new(label)).clicked() {
-            state.run_checks();
-        }
-        if running {
-            ui.spinner();
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(100));
-        }
-        if ui
-            .button("Copy diagnostic report")
-            .on_hover_text(
-                "Plain text for a bug report: DeadTune version, the gameinfo.gi SearchPaths block, what is in \
-                 game/citadel/addons and who owns it, DeadTune's records, the launch guard, the last launch \
-                 arguments, the last 80 console.log lines and a read-back of every installed pak.",
-            )
-            .clicked()
-        {
-            ui.ctx().copy_text(state.diagnostic_report());
-            state.status = Some(Status::Info(
-                "Diagnostic report copied. Paste it into your notes or the bug report.".into(),
-            ));
-        }
-    });
-    let Some(checks) = &state.checks else { return };
-    for check in checks {
-        let (color, mark) = match check.status {
-            CheckStatus::Pass => (GOOD, "OK"),
-            CheckStatus::Warn => (WARN, "Warning"),
-            CheckStatus::Fail => (BAD, "Problem"),
-        };
-        ui.horizontal(|ui| {
-            ui.colored_label(color, RichText::new(mark).strong());
-            ui.label(RichText::new(check.name).strong());
-            ui.weak(&check.detail);
-        });
-        if check.status != CheckStatus::Pass
-            && let Some(fix) = &check.fix
-        {
-            ui.label(format!("    What to do: {fix}"));
-        }
-        if check.status != CheckStatus::Pass
-            && let Some(uri) = check.link
-        {
-            ui.horizontal(|ui| {
-                ui.add_space(24.0);
-                ui.hyperlink_to("Open Windows Settings", uri);
-            });
-        }
-    }
 }
 
 #[cfg(test)]

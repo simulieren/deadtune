@@ -874,7 +874,9 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
             ui.end_row();
         });
     });
-    widgets::card(ui, |ui| crate::simple::check_setup(ui, state));
+    widgets::caption(ui, "System check");
+    crate::checks_view::page(ui, state);
+    ui.add_space(10.0);
     widgets::section(ui, "Updates", |ui| {
         crate::update_view::settings(ui, state, false)
     });

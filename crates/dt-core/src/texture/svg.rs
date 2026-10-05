@@ -33,17 +33,25 @@ pub struct ViewBox {
 
 /// The SVG text of a compiled vector image.
 pub fn svg_text(compiled: &[u8]) -> Result<String, SvgError> {
-    let res = Resource::parse(compiled)?;
-    let text = resource::style_text(&res)?;
-    validate(text).map_err(|e| SvgError::Container(e.to_string()))?;
-    Ok(text.to_string())
+    text_of(&Resource::parse(compiled)?)
+}
+
+/// The icon's SVG text; a text that is not UTF-8 is read as Latin-1, which maps every byte.
+fn text_of(res: &Resource) -> Result<String, SvgError> {
+    let bytes = resource::style_bytes(res)?;
+    let text = match std::str::from_utf8(bytes) {
+        Ok(text) => text.to_string(),
+        Err(_) => bytes.iter().map(|&b| char::from(b)).collect(),
+    };
+    validate(&text).map_err(|e| SvgError::Container(e.to_string()))?;
+    Ok(text)
 }
 
 /// `original` (a whole `.vsvg_c`) carrying `svg` instead of its own text; every other block
 /// and the image table stay the game's.
 pub fn with_svg_text(original: &[u8], svg: &str) -> Result<Vec<u8>, SvgError> {
     let res = Resource::parse(original)?;
-    validate(resource::style_text(&res)?).map_err(|e| SvgError::Container(e.to_string()))?;
+    text_of(&res)?;
     validate(svg)?;
     Ok(resource::with_style_text(&res, svg)?.to_bytes())
 }
@@ -425,9 +433,13 @@ pub(crate) mod tests {
     /// A vsvg_c as the Panorama reader lays it out: RED2, then DATA with a CRC prefix whose
     /// source part is `0x1234_5678`, an empty image table and `svg`.
     pub fn compiled(svg: &str) -> Vec<u8> {
-        let mut data = (0x1234_5678 ^ crc32(svg.as_bytes())).to_le_bytes().to_vec();
+        compiled_bytes(svg.as_bytes())
+    }
+
+    fn compiled_bytes(svg: &[u8]) -> Vec<u8> {
+        let mut data = (0x1234_5678 ^ crc32(svg)).to_le_bytes().to_vec();
         data.extend_from_slice(&0u16.to_le_bytes());
-        data.extend_from_slice(svg.as_bytes());
+        data.extend_from_slice(svg);
         Resource {
             header_version: 12,
             type_version: 3,
@@ -463,6 +475,21 @@ pub(crate) mod tests {
             resource::source_crc(&b).unwrap()
         );
         assert_eq!(with_svg_text(&out, GAME_SVG).unwrap(), game, "and back");
+    }
+
+    #[test]
+    fn reads_and_swaps_an_icon_whose_text_is_latin1() {
+        let game = compiled_bytes(
+            b"<svg viewBox=\"0 0 8 8\"><!-- \xa9 2024 --><path d=\"M0 0h8z\"/></svg>",
+        );
+        let text = svg_text(&game).unwrap();
+        assert!(text.contains("\u{a9} 2024"), "{text}");
+        let out = with_svg_text(&game, GAME_SVG).unwrap();
+        assert_eq!(svg_text(&out).unwrap(), GAME_SVG);
+        assert_eq!(
+            resource::source_crc(&Resource::parse(&out).unwrap()).unwrap(),
+            0x1234_5678
+        );
     }
 
     #[test]

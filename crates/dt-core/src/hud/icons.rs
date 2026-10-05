@@ -251,6 +251,30 @@ pub fn adjust(
     Ok(changed)
 }
 
+/// Replaces `game_path`'s whole adjustment list (each entry clamped, identities dropped),
+/// starting an override from the game's image when there is none and dropping one left
+/// with nothing. `Ok(false)` when the list already was that.
+pub fn set_adjustments(
+    icons: &mut BTreeMap<String, IconOverride>,
+    game_path: &str,
+    list: &[Adjust],
+) -> Result<bool, IconError> {
+    target(game_path)?;
+    let mut clean = Vec::new();
+    for item in list {
+        adjust::set(&mut clean, *item);
+    }
+    let entry = icons
+        .entry(game_path.to_string())
+        .or_insert_with(|| IconOverride::new(Source::Game));
+    let changed = entry.adjust != clean;
+    entry.adjust = clean;
+    if entry.is_vanilla() {
+        icons.remove(game_path);
+    }
+    Ok(changed)
+}
+
 /// Takes one kind of adjustment off `game_path`; an override left with nothing goes.
 pub fn remove_adjust(
     icons: &mut BTreeMap<String, IconOverride>,
@@ -542,6 +566,28 @@ pub(crate) mod tests {
             adjust(&mut icons, "materials/x.vtex_c", tint(50)),
             Err(IconError::Path(_))
         ));
+    }
+
+    #[test]
+    fn a_whole_list_replaces_cleanly() {
+        let mut icons = BTreeMap::new();
+        let list = [
+            tint(255),
+            Adjust::Hue { degrees: 0 },
+            Adjust::Invert,
+            tint(40),
+        ];
+        assert!(set_adjustments(&mut icons, RASTER, &list).unwrap());
+        assert_eq!(
+            icons[RASTER].adjust,
+            [tint(40), Adjust::Invert],
+            "clamped, identities dropped, same kind replaced in place"
+        );
+        assert!(!set_adjustments(&mut icons, RASTER, &[tint(40), Adjust::Invert]).unwrap());
+        assert!(set_adjustments(&mut icons, RASTER, &[]).unwrap());
+        assert!(icons.is_empty());
+        assert!(!set_adjustments(&mut icons, RASTER, &[]).unwrap());
+        assert!(icons.is_empty());
     }
 
     #[test]

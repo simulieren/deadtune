@@ -630,9 +630,9 @@ const BASES: [[(f32, f32); 4]; 2] = [
 /// (`area`) faded by `fade`. True when the map is the game's.
 pub(crate) fn base(
     p: &Painter,
+    images: &mut Images,
     rect: Rect,
     area: Rect,
-    images: &mut Images,
     fade: Color32,
     frame: bool,
 ) -> bool {
@@ -670,7 +670,7 @@ fn minimap(p: &Painter, rect: Rect, state: &AppState, images: &mut Images) -> bo
     let area = rect.shrink(rect.width() * 20.0 / 400.0);
     let map = Map::new(area);
     let fade = Color32::WHITE.gamma_multiply(f32::from(style.map_opacity_pct) / 100.0);
-    let real = base(p, rect, area, images, fade, !style.minimal);
+    let real = base(p, images, rect, area, fade, !style.minimal);
     let scale = |group| f32::from(style.scale(group)) / 100.0;
     let k = map.k;
 

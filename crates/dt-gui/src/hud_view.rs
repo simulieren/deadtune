@@ -778,13 +778,7 @@ fn picture(p: &Painter, images: &mut Images, r: Rect, id: ElementId, tint: Color
             if images.get(art::MINIMAP_MAP, map.width()).is_none() {
                 return false;
             }
-            p.circle_filled(
-                frame.center(),
-                side * 0.47,
-                Color32::from_rgb(22, 18, 16).gamma_multiply(tint.a() as f32 / 255.0),
-            );
-            images.paint(p, art::MINIMAP_FRAME, frame, tint);
-            images.paint(p, art::MINIMAP_MAP, map, tint);
+            crate::minimap_view::base(p, images, frame, map, tint, true);
             true
         }
         ElementId::TopBar => {

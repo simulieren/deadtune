@@ -186,7 +186,7 @@ fn preview(ui: &mut Ui, style: &ApplesTunnels, images: &mut Images) {
 /// one; true when the map is the game's.
 fn paint(p: &Painter, rect: Rect, style: &ApplesTunnels, images: &mut Images) -> bool {
     let map = rect.shrink(rect.width() * 20.0 / 400.0);
-    let real = crate::minimap_view::base(p, rect, map, images, Color32::WHITE, true);
+    let real = crate::minimap_view::base(p, images, rect, map, Color32::WHITE, true);
     let at = |u: f64, v: f64| -> Pos2 {
         pos2(
             map.left() + map.width() * u as f32,

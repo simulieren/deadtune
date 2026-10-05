@@ -6,7 +6,6 @@ use dt_core::hud::apples_tunnels::{
     APPLES, ApplesTunnels, DOT_SIZE_RANGE, Dots, GAME_BUILD, RADIUS_RANGE, TUNNEL_ENTRANCES,
     TunnelHero,
 };
-use dt_core::hud::art;
 use dt_core::hud::minimap_colors::Color;
 use eframe::egui::color_picker::{Alpha, color_edit_button_srgba};
 use eframe::egui::{
@@ -16,7 +15,7 @@ use eframe::egui::{
 use crate::hud_art::Images;
 use crate::minimap_view::marked;
 use crate::state::AppState;
-use crate::theme::{ACCENT, BORDER, RAIL, TEXT, WARN, WEAK};
+use crate::theme::{ACCENT, TEXT, WARN, WEAK};
 use crate::widgets;
 
 const PREVIEW: f32 = 170.0;
@@ -183,25 +182,15 @@ fn preview(ui: &mut Ui, style: &ApplesTunnels, images: &mut Images) {
     });
 }
 
-/// The dots over the game's map, or over a sketch of one; true when the map is the game's.
+/// The dots over the game's map, framed as on the Minimap preview, or over a sketch of
+/// one; true when the map is the game's.
 fn paint(p: &Painter, rect: Rect, style: &ApplesTunnels, images: &mut Images) -> bool {
-    let c = rect.center();
-    let r = rect.width() / 2.0 - 2.0;
-    let real = images.paint(p, art::MINIMAP_MAP, rect, Color32::WHITE);
-    if !real {
-        p.circle_filled(c, r, RAIL);
-        let lane = Stroke::new(1.0, Color32::from_rgb(52, 57, 66));
-        for x in [0.3, 0.45, 0.55, 0.7] {
-            let x = rect.left() + rect.width() * x;
-            let dy = (r * r - (x - c.x).powi(2)).max(0.0).sqrt();
-            p.line_segment([pos2(x, c.y - dy), pos2(x, c.y + dy)], lane);
-        }
-    }
-    p.circle_stroke(c, r, Stroke::new(1.5, BORDER));
+    let map = rect.shrink(rect.width() * 20.0 / 400.0);
+    let real = crate::minimap_view::base(p, rect, map, images, Color32::WHITE, true);
     let at = |u: f64, v: f64| -> Pos2 {
         pos2(
-            rect.left() + rect.width() * u as f32,
-            rect.top() + rect.height() * v as f32,
+            map.left() + map.width() * u as f32,
+            map.top() + map.height() * v as f32,
         )
     };
     let dot = |pos: Pos2, dots: Dots| {
@@ -223,7 +212,7 @@ fn paint(p: &Painter, rect: Rect, style: &ApplesTunnels, images: &mut Images) ->
         let show = f64::from(style.tunnel_radius_pct) / 100.0;
         p.circle_stroke(
             hero,
-            rect.width() * show as f32,
+            map.width() * show as f32,
             Stroke::new(1.0, Color32::from_white_alpha(40)),
         );
         for e in &TUNNEL_ENTRANCES {

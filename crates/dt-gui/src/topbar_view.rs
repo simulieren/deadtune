@@ -19,17 +19,25 @@ use crate::state::{AppState, TopBarPreview};
 use crate::theme::{self, ACCENT, RAIL, TEXT, WARN, WEAK};
 use crate::widgets;
 
-/// The mock is laid out in bar units, 1400 wide, and scaled to the card.
-const BAR_WIDTH: f32 = 1400.0;
+/// The mock is laid out in bar units (1080p px): `#TeamsContainer` is 1260 wide, six 88 px
+/// player panels a side, and scaled to the card.
+const BAR_WIDTH: f32 = 1260.0;
 const BAR_HEIGHT: f32 = 150.0;
+const POPUP_HEIGHT: f32 = 28.0;
 const PORTRAIT_WIDTH: f32 = 88.0;
+/// `.TeamNetworth`; the panels squeeze it to the 204 px left between them, so the team
+/// souls run under the nearest portraits.
 const CENTRE_WIDTH: f32 = 300.0;
-const AMBER: Color32 = Color32::from_rgb(0xD9, 0xA0, 0x54);
-const SAPPHIRE: Color32 = Color32::from_rgb(0x4F, 0x8F, 0xD9);
-const ALLY_HEALTH: Color32 = Color32::from_rgb(0xFF, 0xEF, 0xD7);
+const DISC: f32 = 70.0;
+const DISC_BOTTOM: f32 = 100.0;
+const AMBER: Color32 = Color32::from_rgb(0xD4, 0x86, 0x0B);
+const SAPPHIRE: Color32 = Color32::from_rgb(0x4D, 0x75, 0xC3);
+const AMBER_TEXT: Color32 = Color32::from_rgb(0x20, 0x15, 0x00);
+const OFF_WHITE: Color32 = Color32::from_rgb(0xFF, 0xEF, 0xD7);
+const OFF_BLACK: Color32 = Color32::from_rgb(0x10, 0x13, 0x0D);
+const ALLY_HEALTH: Color32 = OFF_WHITE;
 const ENEMY_HEALTH: Color32 = Color32::from_rgb(0xFF, 0x56, 0x56);
 const RESPAWN: Color32 = Color32::from_rgb(0xFE, 0x42, 0x0E);
-const OFF_WHITE: Color32 = Color32::from_rgb(0xEC, 0xE8, 0xE1);
 const ALLIES: [(&str, Color32); 6] = [
     ("Ab", Color32::from_rgb(0x8C, 0x5A, 0x3C)),
     ("Be", Color32::from_rgb(0x4E, 0x7A, 0x8C)),
@@ -46,6 +54,9 @@ const ENEMIES: [(&str, Color32); 6] = [
     ("Se", Color32::from_rgb(0x3C, 0x8C, 0x8C)),
     ("Wr", Color32::from_rgb(0x8C, 0x7A, 0x4E)),
 ];
+const HEALTH: [f32; 6] = [0.7, 1.0, 0.85, 0.5, 1.0, 0.9];
+const SOULS: [&str; 6] = ["38", "35", "33", "35", "45", "35"];
+const ULTIMATE_READY: usize = 2;
 const MISSING_ENEMY: usize = 2;
 const DEAD_ALLY: usize = 4;
 const PURCHASE_ENEMY: usize = 0;
@@ -142,7 +153,8 @@ fn mock_card(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut V
         });
         ui.add_space(4.0);
         let width = ui.available_width();
-        let height = (width / BAR_WIDTH * BAR_HEIGHT).max(60.0);
+        let size = extent(style);
+        let height = (width / size.x * size.y).max(60.0);
         let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
         let real = bar(
             &ui.painter().with_clip_rect(rect),
@@ -557,6 +569,36 @@ impl Look {
     }
 }
 
+/// Bar units one portrait panel takes, its gap included.
+fn cell(style: &TopBarStyle) -> f32 {
+    PORTRAIT_WIDTH * f32::from(style.portrait_scale_pct) / 100.0 + f32::from(style.portrait_gap_px)
+}
+
+/// The mock's size in bar units: the game's 1260x150, wider when bigger or spaced-out
+/// portraits would crowd the centre, taller for bigger portraits and the purchase popup.
+fn extent(style: &TopBarStyle) -> egui::Vec2 {
+    let ps = f32::from(style.portrait_scale_pct) / 100.0;
+    let free = BAR_WIDTH - 12.0 * PORTRAIT_WIDTH;
+    let width = (12.0 * cell(style) + free).max(BAR_WIDTH);
+    let popup = if style.purchases { POPUP_HEIGHT } else { 0.0 };
+    vec2(width, (BAR_HEIGHT + popup) * ps.max(1.0))
+}
+
+/// Left edge of player panel `i` (0 is the outermost), allies from the bar's left edge
+/// inward, enemies from its right edge, so the centre keeps what is left.
+fn panel_left(style: &TopBarStyle, i: usize, enemy: bool) -> f32 {
+    let gap = f32::from(style.portrait_gap_px);
+    if enemy {
+        extent(style).x - (6 - i) as f32 * cell(style) + gap
+    } else {
+        i as f32 * cell(style)
+    }
+}
+
+/// `healthbar_backer_vert_mask` over its rect, as fractions: wide at the top, a narrow
+/// tip at the bottom.
+const HEALTH_SHAPE: [(f32, f32); 4] = [(0.99, 0.0), (0.46, 0.98), (0.04, 0.98), (0.0, 0.02)];
+
 /// Paints the preview into `rect`. Deterministic for a style, preview and the pictures
 /// ready; true when the portraits are the game's.
 fn bar(
@@ -566,22 +608,14 @@ fn bar(
     preview: TopBarPreview,
     images: &mut Images,
 ) -> bool {
-    let k = rect.width() / BAR_WIDTH;
+    let span = extent(style).x;
+    let k = rect.width() / span;
     let at = |x: f32, y: f32| pos2(rect.left() + x * k, rect.top() + y * k);
     p.rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(28, 30, 34));
-    let band = Rect::from_min_max(rect.min, at(BAR_WIDTH, 60.0));
-    p.rect_filled(
-        band,
-        CornerRadius::ZERO,
-        Color32::from_rgba_unmultiplied(0, 0, 0, 70),
-    );
+    centre_block(p, images, at, k, span / 2.0, style);
 
-    let ps = f32::from(style.portrait_scale_pct) / 100.0;
-    let cell = PORTRAIT_WIDTH * ps + f32::from(style.portrait_gap_px) * 2.0;
-    let centre = BAR_WIDTH / 2.0;
     let mut real = false;
     for (i, ((name, hue), hero)) in ALLIES.iter().zip(&art::ALLIES).enumerate() {
-        let x = centre - CENTRE_WIDTH / 2.0 - cell * (ALLIES.len() - i) as f32 + cell / 2.0;
         let dead = preview.dead_hero && i == DEAD_ALLY;
         let look = if dead { Look::dead(style) } else { Look::PLAIN };
         let hero = Stand {
@@ -589,11 +623,14 @@ fn bar(
             hue: *hue,
             art: hero.portrait,
             enemy: false,
+            health: HEALTH[i],
+            souls: SOULS[i],
+            ready: i == ULTIMATE_READY,
         };
-        real |= portrait(p, images, at, k, x, hero, style, look, dead, true);
+        let left = panel_left(style, i, false);
+        real |= portrait(p, images, at, k, left, hero, style, look, dead, true);
     }
     for (i, ((name, hue), hero)) in ENEMIES.iter().zip(&art::ENEMIES).enumerate() {
-        let x = centre + CENTRE_WIDTH / 2.0 + cell * i as f32 + cell / 2.0;
         let missing = preview.missing_enemy && i == MISSING_ENEMY;
         let look = if missing {
             Look::missing(style)
@@ -605,23 +642,30 @@ fn bar(
             hue: *hue,
             art: hero.portrait,
             enemy: true,
+            health: HEALTH[5 - i],
+            souls: SOULS[5 - i],
+            ready: i == 5 - ULTIMATE_READY,
         };
-        real |= portrait(p, images, at, k, x, hero, style, look, false, !missing);
+        let left = panel_left(style, i, true);
+        real |= portrait(p, images, at, k, left, hero, style, look, false, !missing);
         if style.purchases && i == PURCHASE_ENEMY {
-            purchase_popup(p, at, k, x, ps);
+            purchase_popup(p, at, k, left, style);
         }
     }
-    centre_block(p, images, at, k, style);
     real
 }
 
-/// One example hero: initials and a colour for the painted coin, the portrait otherwise.
+/// One example hero: initials and a colour for the painted coin, the portrait otherwise,
+/// and the numbers its panel shows.
 #[derive(Clone, Copy)]
 struct Stand<'a> {
     name: &'a str,
     hue: Color32,
     art: Art,
     enemy: bool,
+    health: f32,
+    souls: &'a str,
+    ready: bool,
 }
 
 /// `art` in `rect` if it is ready; false so the caller paints its shape instead.
@@ -638,14 +682,34 @@ fn icon(
     images.paint(p, art, Rect::from_center_size(centre, size), tint)
 }
 
-/// Paints one portrait; true when the hero's picture is the game's.
+/// A souls number the game's way: the number, then a small faded "k".
+fn souls_label(p: &Painter, anchor: Pos2, align: Align2, number: &str, size: f32, color: Color32) {
+    let big = p.layout_no_wrap(
+        number.into(),
+        FontId::new(size.max(5.0), theme::semibold()),
+        color,
+    );
+    let small = p.layout_no_wrap(
+        "k".into(),
+        FontId::new((size * 0.62).max(4.0), theme::semibold()),
+        color.gamma_multiply(0.45),
+    );
+    let (bw, bh) = (big.size().x, big.size().y);
+    let rect = align.anchor_size(anchor, vec2(bw + small.size().x, bh));
+    let small_top = rect.bottom() - small.size().y - bh * 0.1;
+    p.galley(rect.min, big, color);
+    p.galley(pos2(rect.left() + bw, small_top), small, color);
+}
+
+/// Paints one player panel whose left edge is `left`; true when the hero's picture is
+/// the game's.
 #[allow(clippy::too_many_arguments)]
 fn portrait(
     p: &Painter,
     images: &mut Images,
     at: impl Fn(f32, f32) -> Pos2,
     k: f32,
-    x: f32,
+    left: f32,
     hero: Stand,
     style: &TopBarStyle,
     look: Look,
@@ -657,122 +721,29 @@ fn portrait(
         hue,
         art: face,
         enemy,
+        health,
+        souls,
+        ready,
     } = hero;
     let ps = f32::from(style.portrait_scale_pct) / 100.0;
-    let radius = 34.0 * ps * k;
-    let centre = at(x, 58.0 * ps + 4.0);
-    let team = if enemy { SAPPHIRE } else { AMBER };
-    let health_color = if enemy {
-        style.enemy_color.map_or(ENEMY_HEALTH, to_color32)
+    let q = |x: f32, y: f32| at(left + x * ps, y * ps);
+    let s = ps * k;
+    let mid = PORTRAIT_WIDTH / 2.0;
+    let (team, team_text) = if enemy {
+        (AMBER, AMBER_TEXT)
     } else {
-        style.ally_color.map_or(ALLY_HEALTH, to_color32)
+        (SAPPHIRE, Color32::WHITE)
     };
-
-    let shown = if dead {
-        Look {
-            wash: 0.8,
-            gray: true,
-            ..look
-        }
+    let side_color = if enemy {
+        style.enemy_color
     } else {
-        look
+        style.ally_color
     };
-    p.circle_filled(
-        centre,
-        radius,
-        shown.apply(if dead { Color32::from_gray(40) } else { team }),
-    );
-    let real = images.paint_disc(p, face, centre, radius * 0.94, shown.apply(Color32::WHITE));
-    if real && shown.gray {
-        p.circle_filled(
-            centre,
-            radius,
-            Color32::from_rgba_unmultiplied(110, 110, 110, 130),
-        );
-    }
-    if !real {
-        let coin = if dead { Color32::from_gray(40) } else { hue };
-        p.circle_filled(centre, radius, look.apply(coin));
-        let initials = if dead { "" } else { name };
-        p.text(
-            centre,
-            Align2::CENTER_CENTER,
-            initials,
-            FontId::new((20.0 * ps * k).max(6.0), theme::semibold()),
-            look.apply(OFF_WHITE),
-        );
-    }
-    p.circle_stroke(
-        centre,
-        radius,
-        Stroke::new(2.0 * k, look.apply(team.gamma_multiply(0.9))),
-    );
-    if dead {
-        p.text(
-            centre + vec2(0.0, 2.0 * k),
-            Align2::CENTER_CENTER,
-            "23",
-            FontId::new((26.0 * ps * k).max(6.0), theme::semibold()),
-            RESPAWN,
-        );
-    }
-
-    if health_visible && !dead {
-        let w = 10.0 * ps * k;
-        let h = 44.0 * ps * k;
-        let side = if enemy { 1.0 } else { -1.0 };
-        let bx = centre.x + side * (radius + 7.0 * ps * k);
-        let bar = Rect::from_center_size(pos2(bx, centre.y), vec2(w, h));
-        p.rect_filled(
-            bar,
-            CornerRadius::same(2),
-            look.apply(Color32::from_rgb(12, 12, 14)),
-        );
-        let fill = Rect::from_min_max(pos2(bar.left(), bar.top() + h * 0.3), bar.max);
-        p.rect_filled(fill, CornerRadius::same(2), look.apply(health_color));
-        let border = bar.expand2(vec2(3.0, 3.0) * ps * k);
-        images.paint(p, art::PORTRAIT_HEALTH, border, look.apply(Color32::WHITE));
-    }
-
-    let dot = pos2(centre.x + radius * 0.75, centre.y - radius * 0.75);
-    p.circle_filled(dot, 6.0 * ps * k, look.apply(Color32::from_rgb(10, 10, 12)));
-    if !icon(
-        p,
-        images,
-        art::ULTIMATE,
-        dot,
-        10.0 * ps * k,
-        look.apply(OFF_WHITE),
-    ) {
-        p.circle_filled(dot, 4.0 * ps * k, look.apply(team));
-    }
-
-    if style.show_levels {
-        let badge = pos2(centre.x, centre.y + radius - 2.0 * k);
-        p.circle_filled(
-            badge,
-            8.0 * ps * k,
-            look.apply(Color32::from_rgb(14, 14, 16)),
-        );
-        p.circle_stroke(
-            badge,
-            8.0 * ps * k,
-            Stroke::new(1.0 * k, look.apply(OFF_WHITE)),
-        );
-        p.text(
-            badge,
-            Align2::CENTER_CENTER,
-            "14",
-            FontId::proportional((9.0 * ps * k).max(5.0)),
-            look.apply(OFF_WHITE),
-        );
-    }
+    let health_color =
+        side_color.map_or(if enemy { ENEMY_HEALTH } else { ALLY_HEALTH }, to_color32);
 
     if !style.hide_player_souls {
-        let tag = Rect::from_center_size(
-            pos2(centre.x, centre.y + radius + 12.0 * ps * k),
-            vec2(50.0 * ps * k, 14.0 * ps * k),
-        );
+        let tag = Rect::from_min_max(q(mid - 17.0, 76.0), q(mid + 17.0, 120.0));
         let tag_look = if dead {
             Look {
                 alpha: look.alpha * 0.3,
@@ -781,20 +752,164 @@ fn portrait(
         } else {
             look
         };
-        p.rect_filled(tag, CornerRadius::same(3), tag_look.apply(team));
-        p.text(
-            tag.center(),
+        let radius = (3.0 * s).round().clamp(0.0, 255.0) as u8;
+        p.rect_filled(
+            tag,
+            CornerRadius {
+                nw: 0,
+                ne: 0,
+                sw: radius,
+                se: radius,
+            },
+            tag_look.apply(side_color.map_or(team, to_color32)),
+        );
+        souls_label(
+            p,
+            q(mid, 110.5),
             Align2::CENTER_CENTER,
-            "12.4k",
-            FontId::new((10.0 * ps * k).max(5.0), theme::semibold()),
-            tag_look.apply(Color32::from_rgb(20, 18, 14)),
+            souls,
+            15.0 * s,
+            tag_look.apply(team_text),
+        );
+    }
+
+    let centre = q(mid, DISC_BOTTOM - DISC / 2.0);
+    let radius = DISC / 2.0 * s;
+    p.circle_filled(centre, radius, look.apply(team));
+    let card = Rect::from_min_max(q(mid - DISC / 2.0, 5.0), q(mid + DISC / 2.0, DISC_BOTTOM));
+    let mask = crate::hud_art::badge_mask(card);
+    let card_look = if dead {
+        Look {
+            gray: true,
+            wash: look.wash.max(0.25),
+            ..look
+        }
+    } else {
+        look
+    };
+    let real = images.paint_shape(p, face, card, &mask, card_look.apply(Color32::WHITE));
+    if real && card_look.gray {
+        // A tint only multiplies, so grey is a wash over the disc; the card's top above it
+        // is transparent around the bust and only darkens.
+        p.circle_filled(
+            centre,
+            radius,
+            Color32::from_rgba_unmultiplied(105, 105, 105, 170).gamma_multiply(look.alpha),
+        );
+    }
+    if !real {
+        let coin = if dead { Color32::from_gray(70) } else { hue };
+        p.circle_filled(centre, radius * 0.86, card_look.apply(coin));
+        if !dead {
+            p.text(
+                centre,
+                Align2::CENTER_CENTER,
+                name,
+                FontId::new((20.0 * s).max(6.0), theme::semibold()),
+                look.apply(OFF_WHITE),
+            );
+        }
+    }
+
+    if health_visible && !dead {
+        let x = if enemy {
+            PORTRAIT_WIDTH - 4.0 - 16.0
+        } else {
+            10.0
+        };
+        let (top, h) = (27.0, 50.0);
+        let body: Vec<Pos2> = HEALTH_SHAPE
+            .iter()
+            .map(|&(fx, fy)| q(x + fx * 16.0, top + fy * h))
+            .collect();
+        p.add(Shape::convex_polygon(
+            body.clone(),
+            look.apply(Color32::from_rgba_unmultiplied(0, 0, 0, 0xDE)),
+            Stroke::NONE,
+        ));
+        let line = q(0.0, top + h * 0.98 * (1.0 - health)).y;
+        p.add(Shape::convex_polygon(
+            crate::hud_art::cut_top(&body, line),
+            look.apply(health_color),
+            Stroke::NONE,
+        ));
+        let rect = Rect::from_min_max(q(x, top), q(x + 16.0, top + h));
+        images.paint(p, art::PORTRAIT_HEALTH, rect, look.apply(OFF_BLACK));
+    }
+
+    if style.show_levels {
+        let badge = q(mid, 82.0);
+        p.circle_filled(
+            badge,
+            10.0 * s,
+            look.apply(Color32::from_rgba_unmultiplied(0, 0, 0, 128)),
+        );
+        p.circle_stroke(
+            badge,
+            10.0 * s,
+            Stroke::new(1.5 * s, look.apply(OFF_WHITE.gamma_multiply(0.5))),
+        );
+        p.text(
+            badge,
+            Align2::CENTER_CENTER,
+            "14",
+            FontId::new((12.0 * s).max(5.0), theme::semibold()),
+            look.apply(OFF_WHITE),
+        );
+    }
+
+    if dead {
+        let font = FontId::new((32.0 * s).max(6.0), theme::semibold());
+        p.text(
+            centre + vec2(1.5, 1.5) * s,
+            Align2::CENTER_CENTER,
+            "23",
+            font.clone(),
+            Color32::from_rgba_unmultiplied(0, 0, 0, 170),
+        );
+        p.text(centre, Align2::CENTER_CENTER, "23", font, RESPAWN);
+    }
+
+    let status = q(mid, 136.0);
+    if ready {
+        if !icon(
+            p,
+            images,
+            art::ULTIMATE,
+            status,
+            22.0 * s,
+            look.apply(Color32::WHITE),
+        ) {
+            p.circle_filled(status, 9.0 * s, look.apply(OFF_WHITE));
+        }
+    } else {
+        let dim = Look {
+            alpha: look.alpha * 0.6,
+            ..look
+        };
+        p.circle_filled(status, 11.0 * s, dim.apply(team));
+        icon(
+            p,
+            images,
+            art::ULTIMATE_OFF,
+            status,
+            22.0 * s,
+            dim.apply(Color32::WHITE),
         );
     }
     real
 }
 
-fn purchase_popup(p: &Painter, at: impl Fn(f32, f32) -> Pos2, k: f32, x: f32, ps: f32) {
-    let rect = Rect::from_center_size(at(x, 118.0 * ps + 10.0), vec2(84.0 * k, 16.0 * k));
+fn purchase_popup(
+    p: &Painter,
+    at: impl Fn(f32, f32) -> Pos2,
+    k: f32,
+    left: f32,
+    style: &TopBarStyle,
+) {
+    let ps = f32::from(style.portrait_scale_pct) / 100.0;
+    let centre = at(left + PORTRAIT_WIDTH / 2.0 * ps, 162.0 * ps);
+    let rect = Rect::from_center_size(centre, vec2(84.0 * k, 16.0 * k));
     p.rect_filled(
         rect,
         CornerRadius::same(3),
@@ -815,46 +930,106 @@ fn purchase_popup(p: &Painter, at: impl Fn(f32, f32) -> Pos2, k: f32, x: f32, ps
     );
 }
 
+fn treatment_scale(t: Treatment, compact: f32) -> f32 {
+    match t {
+        Treatment::Vanilla => 1.0,
+        Treatment::Compact => compact,
+        Treatment::Hidden => 0.0,
+    }
+}
+
 fn centre_block(
     p: &Painter,
     images: &mut Images,
     at: impl Fn(f32, f32) -> Pos2,
     k: f32,
+    cx: f32,
     style: &TopBarStyle,
 ) {
-    let cx = BAR_WIDTH / 2.0;
-    let clock_scale = match style.clock {
-        Treatment::Vanilla => 1.0,
-        Treatment::Compact => 0.8,
-        Treatment::Hidden => 0.0,
-    };
+    let chip = Color32::from_rgba_unmultiplied(0, 0, 0, 144);
+    let clock_scale = treatment_scale(style.clock, 0.8);
     if clock_scale > 0.0 {
         let rect = Rect::from_center_size(
-            at(cx, 19.0),
-            vec2(84.0 * clock_scale * k, 24.0 * clock_scale * k),
+            at(cx, 8.0 + 15.0 * clock_scale),
+            vec2(90.0 * clock_scale * k, 30.0 * clock_scale * k),
         );
-        p.rect_filled(
-            rect,
-            CornerRadius::same(4),
-            Color32::from_rgba_unmultiplied(0, 0, 0, 144),
-        );
+        p.rect_filled(rect, CornerRadius::same((5.0 * k).round() as u8), chip);
         p.text(
             rect.center(),
             Align2::CENTER_CENTER,
-            "27:42",
+            "34:45",
             FontId::new((14.0 * clock_scale * k).max(5.0), theme::semibold()),
-            OFF_WHITE,
+            OFF_WHITE.gamma_multiply(0.9),
         );
+    }
+    let lead_scale = treatment_scale(style.soul_lead, 0.75);
+    if lead_scale > 0.0 {
+        let (top, height) = (45.0, 33.0);
+        let l = |dx: f32, dy: f32| at(cx + dx * lead_scale, top + dy * lead_scale);
+        let half = CENTRE_WIDTH / 2.0;
+        p.add(Shape::convex_polygon(
+            vec![
+                l(-half, 0.0),
+                l(-3.0, 0.0),
+                l(-3.0, height),
+                l(-half, height),
+            ],
+            SAPPHIRE,
+            Stroke::NONE,
+        ));
+        p.add(Shape::convex_polygon(
+            vec![l(3.0, 0.0), l(half, 0.0), l(half, height), l(3.0, height)],
+            AMBER,
+            Stroke::NONE,
+        ));
+        let size = 22.0 * lead_scale * k;
+        let mid = height / 2.0;
+        souls_label(
+            p,
+            l(-38.0, mid),
+            Align2::RIGHT_CENTER,
+            "221",
+            size,
+            Color32::WHITE,
+        );
+        souls_label(
+            p,
+            l(45.0, mid),
+            Align2::LEFT_CENTER,
+            "248",
+            size,
+            AMBER_TEXT,
+        );
+        for (dx, team, color) in [(-22.0, 1, Color32::WHITE), (28.0, 0, AMBER_TEXT)] {
+            let spot = l(dx, mid);
+            if !icon(
+                p,
+                images,
+                art::TEAM_ICONS[team],
+                spot,
+                30.0 * lead_scale * k,
+                color,
+            ) {
+                p.circle_stroke(spot, 7.0 * lead_scale * k, Stroke::new(2.0 * k, color));
+            }
+        }
+        if style.urn_lead {
+            let rect = Rect::from_center_size(l(0.0, height + 11.0), vec2(48.0 * k, 18.0 * k));
+            p.rect_filled(rect, CornerRadius::same(4), chip);
+            p.text(
+                rect.center(),
+                Align2::CENTER_CENTER,
+                "+6%",
+                FontId::new((13.0 * k).max(5.0), theme::semibold()),
+                OFF_WHITE,
+            );
+        }
     }
     if style.spawn_timers {
         for (i, (text, soon)) in [("3:18", false), ("0:24", true)].into_iter().enumerate() {
             let x = cx + (i as f32 - 0.5) * 78.0;
-            let rect = Rect::from_center_size(at(x, 46.0), vec2(70.0 * k, 18.0 * k));
-            p.rect_filled(
-                rect,
-                CornerRadius::same(4),
-                Color32::from_rgba_unmultiplied(0, 0, 0, 144),
-            );
+            let rect = Rect::from_center_size(at(x, 112.0), vec2(70.0 * k, 18.0 * k));
+            p.rect_filled(rect, CornerRadius::same(4), chip);
             let spot = pos2(rect.left() + 11.0 * k, rect.center().y);
             let tint = OFF_WHITE.gamma_multiply(0.8);
             if i == 0 {
@@ -885,68 +1060,10 @@ fn centre_block(
             );
         }
     }
-    let lead_scale = match style.soul_lead {
-        Treatment::Vanilla => 1.0,
-        Treatment::Compact => 0.75,
-        Treatment::Hidden => 0.0,
-    };
-    if lead_scale > 0.0 {
-        let y = 74.0;
-        let font = FontId::new((22.0 * lead_scale * k).max(6.0), theme::semibold());
-        let dx = 78.0 * lead_scale;
-        p.text(
-            at(cx - dx, y),
-            Align2::CENTER_CENTER,
-            "41.2k",
-            font.clone(),
-            OFF_WHITE,
-        );
-        p.text(
-            at(cx + dx, y),
-            Align2::CENTER_CENTER,
-            "38.9k",
-            font,
-            OFF_WHITE,
-        );
-        let side = 7.0 * lead_scale * k;
-        let spread = if style.urn_lead { 40.0 } else { 28.0 };
-        for (dx, team, color) in [(-spread, 0, AMBER), (spread, 1, SAPPHIRE)] {
-            let spot = at(cx + dx * lead_scale, y);
-            if !icon(
-                p,
-                images,
-                art::TEAM_ICONS[team],
-                spot,
-                side * 3.0,
-                Color32::WHITE,
-            ) {
-                p.circle_filled(spot, side, color);
-            }
-        }
-        if style.urn_lead {
-            let rect = Rect::from_center_size(at(cx, y), vec2(48.0 * k, 20.0 * k));
-            p.rect_filled(
-                rect,
-                CornerRadius::same(4),
-                Color32::from_rgba_unmultiplied(0, 0, 0, 144),
-            );
-            p.text(
-                rect.center(),
-                Align2::CENTER_CENTER,
-                "+6%",
-                FontId::new((13.0 * k).max(5.0), theme::semibold()),
-                OFF_WHITE,
-            );
-        }
-    }
-    let rejuv_scale = match style.rejuv_charges {
-        Treatment::Vanilla => 1.0,
-        Treatment::Compact => 0.8,
-        Treatment::Hidden => 0.0,
-    };
+    let rejuv_scale = treatment_scale(style.rejuv_charges, 0.8);
     if rejuv_scale > 0.0 {
-        let y = 112.0;
-        for (dx, color) in [(-56.0, AMBER), (56.0, SAPPHIRE)] {
+        let y = 135.0;
+        for (dx, color) in [(-56.0, SAPPHIRE), (56.0, AMBER)] {
             let c = at(cx + dx * rejuv_scale, y);
             let s = 9.0 * rejuv_scale * k;
             if icon(p, images, art::TEAM_REJUV, c, 40.0 * rejuv_scale * k, color) {
@@ -1045,6 +1162,29 @@ mod tests {
             count(&vanilla, none) >= base,
             "everyone in vision draws health bars"
         );
+    }
+
+    #[test]
+    fn panels_fill_the_bar_from_its_edges_and_leave_the_centre_free() {
+        let game = TopBarStyle::default();
+        assert_eq!(extent(&game), vec2(1260.0, 150.0));
+        assert_eq!(panel_left(&game, 0, false), 0.0);
+        assert_eq!(panel_left(&game, 5, false) + PORTRAIT_WIDTH, 528.0);
+        assert_eq!(panel_left(&game, 0, true), 732.0);
+        assert_eq!(panel_left(&game, 5, true) + PORTRAIT_WIDTH, 1260.0);
+
+        let big = TopBarStyle {
+            portrait_scale_pct: 130,
+            portrait_gap_px: 24,
+            purchases: true,
+            ..game.clone()
+        };
+        let size = extent(&big);
+        let panel = PORTRAIT_WIDTH * 1.3;
+        let centre_free = panel_left(&big, 0, true) - (panel_left(&big, 5, false) + panel);
+        assert!(centre_free >= 204.0 - 0.01, "centre keeps {centre_free}");
+        assert!((panel_left(&big, 5, true) + panel - size.x).abs() < 0.01);
+        assert!(size.y > 150.0 * 1.3, "room for the purchase popup");
     }
 
     #[test]

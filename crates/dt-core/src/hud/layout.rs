@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use super::apples_tunnels::{self, ApplesTunnels, ApplesTunnelsError};
 use super::css::CssError;
 use super::elements::{
     self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
@@ -65,6 +66,10 @@ pub struct HudLayout {
     pub top_bar: TopBarStyle,
     /// Experimental, untested in game: health bar styling.
     pub health: HealthStyle,
+    /// Experimental, untested in game: apple spots and tunnel entrances on the minimap
+    /// (`hud::apples_tunnels`).
+    #[serde(skip_serializing_if = "ApplesTunnels::is_vanilla")]
+    pub apples_tunnels: ApplesTunnels,
     /// Advanced: raw CSS appended after the generated rules, keyed by style file path
     /// (`panorama/styles/hud.vcss_c`). Must parse with balanced braces.
     pub extra_css: BTreeMap<String, String>,
@@ -114,6 +119,8 @@ pub enum LayoutError {
     TopBar(#[from] TopBarError),
     #[error("health bar: {0}")]
     Health(#[from] HealthError),
+    #[error("apples and tunnels: {0}")]
+    ApplesTunnels(#[from] ApplesTunnelsError),
     #[error("extra css for {0}: {1}")]
     ExtraCss(String, CssError),
 }
@@ -125,13 +132,14 @@ impl HudLayout {
             && self.minimap.is_vanilla()
             && self.top_bar.is_vanilla()
             && self.health.is_vanilla()
+            && self.apples_tunnels.is_vanilla()
             && self.extra_css.values().all(|c| c.trim().is_empty())
     }
 }
 
 /// Validates and emits one rule per non-identity element (sorted by `ElementId`),
 /// one rule per minimap colour (sorted by `IconId`), the minimap and health bar rules, the top
-/// bar's rules and files, then the minified extra CSS.
+/// bar's rules and files, the apples and tunnels rules and files, then the minified extra CSS.
 /// Deterministic.
 pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
     let mut files: BTreeMap<String, String> = BTreeMap::new();
@@ -177,6 +185,18 @@ pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
     if let Some(edit) = top_bar.layout {
         layouts.insert(TOP_BAR_LAYOUT.to_string(), edit);
     }
+    let mut own_files = top_bar.own_files;
+    let map = layout.apples_tunnels.compile()?;
+    if !map.css.is_empty() {
+        files
+            .entry(MINIMAP_STYLE.to_string())
+            .or_default()
+            .push_str(&map.css);
+    }
+    if let Some(edit) = map.layout {
+        layouts.insert(apples_tunnels::MINIMAP_LAYOUT.to_string(), edit);
+    }
+    own_files.extend(map.own_files);
     for (path, css) in &layout.extra_css {
         let css = super::css::parse_rules(css)
             .and_then(|_| super::css::minify(css))
@@ -188,7 +208,7 @@ pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
     Ok(HudPatch {
         styles: files,
         layouts,
-        own_files: top_bar.own_files,
+        own_files,
     })
 }
 
@@ -812,6 +832,38 @@ mod tests {
         l.elements.clear();
         assert!(l.is_vanilla());
         assert!(compile(&l).expect("valid").is_empty());
+    }
+
+    #[test]
+    fn apples_and_tunnels_join_the_patch_next_to_the_top_bar() {
+        let mut l = HudLayout::default();
+        l.apples_tunnels.apples.on = true;
+        l.apples_tunnels.clear_switching = true;
+        l.top_bar.spawn_timers = true;
+        l.minimap.map_opacity_pct = 60;
+        assert!(!l.is_vanilla());
+        let patch = compile(&l).expect("valid");
+        assert_eq!(
+            patch.layouts.keys().collect::<Vec<_>>(),
+            [TOP_BAR_LAYOUT, apples_tunnels::MINIMAP_LAYOUT]
+        );
+        assert_eq!(patch.own_files.len(), 4);
+        assert!(patch.own_files.contains_key(apples_tunnels::OWN_SCRIPT));
+        let minimap = &patch.styles[MINIMAP_STYLE];
+        assert!(minimap.starts_with("#hud_minimap .NewMinimapBackgroundsContainer{opacity:0.6;}"));
+        assert!(minimap.ends_with("backgroundImage3{opacity:1;brightness:1.15;}"));
+
+        let text = toml::to_string(&l).expect("serialize");
+        assert!(text.contains("[apples_tunnels.apples]"), "{text}");
+        assert_eq!(toml::from_str::<HudLayout>(&text).expect("parse"), l);
+        let vanilla = toml::to_string(&HudLayout::default()).expect("serialize");
+        assert!(!vanilla.contains("apples_tunnels"), "{vanilla}");
+
+        l.apples_tunnels.tunnel_radius_pct = 40;
+        assert_eq!(
+            compile(&l),
+            Err(LayoutError::ApplesTunnels(ApplesTunnelsError::Radius(40)))
+        );
     }
 
     #[test]

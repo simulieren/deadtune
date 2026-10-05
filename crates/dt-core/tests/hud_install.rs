@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use dt_core::addons::verify;
+use dt_core::hud::apples_tunnels::{self, MINIMAP_LAYOUT};
 use dt_core::hud::inject;
 use dt_core::hud::install::{self, ADDON_FILE, GAME_PAK, HudAction, HudError, InstalledState};
 use dt_core::hud::resource::{Resource, style_text};
@@ -58,6 +59,7 @@ impl Fake {
             files.insert(MINIMAP.to_string(), vanilla_hud());
             files.insert(TOP_BAR_STYLE.to_string(), vanilla_hud());
             files.insert(TOP_BAR_LAYOUT.to_string(), vanilla_top_bar());
+            files.insert(MINIMAP_LAYOUT.to_string(), vanilla_minimap_layout());
             files.insert("scripts/unrelated.txt".to_string(), b"unrelated".to_vec());
             fs::write(citadel.join(GAME_PAK), vpk::write(&files)).unwrap();
         }
@@ -108,6 +110,66 @@ fn vanilla_top_bar() -> Vec<u8> {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hud/top_bar_vanilla.vxml_c"),
     )
     .unwrap()
+}
+
+fn vanilla_minimap_layout() -> Vec<u8> {
+    fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hud/hud_minimap_vanilla.vxml_c"),
+    )
+    .unwrap()
+}
+
+#[test]
+fn apples_and_tunnels_rebuild_the_minimap_layout_beside_the_top_bar() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    hud.apples_tunnels.apples.on = true;
+    hud.apples_tunnels.tunnels.on = true;
+    hud.apples_tunnels.clear_switching = true;
+    hud.top_bar.spawn_timers = true;
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+
+    let addon = VpkDir::open(&fake.addon()).unwrap();
+    let mut entries: Vec<&str> = addon.entries.keys().map(String::as_str).collect();
+    entries.sort_unstable();
+    assert_eq!(
+        entries,
+        [
+            TOP_BAR_LAYOUT,
+            MINIMAP_LAYOUT,
+            apples_tunnels::OWN_SCRIPT,
+            OWN_SCRIPT,
+            apples_tunnels::OWN_STYLE,
+            OWN_STYLE,
+            MINIMAP,
+        ]
+    );
+    let original = inject::layout_text(&vanilla_minimap_layout()).unwrap();
+    let rebuilt = inject::layout_text(&addon.read(MINIMAP_LAYOUT).unwrap()).unwrap();
+    assert!(rebuilt.starts_with("<!-- Rebuilt by DeadTune from the game's own panorama/layout/hud_minimap.vxml_c; adds s2r://panorama/styles/deadtune/apples_tunnels.vcss_c, s2r://panorama/scripts/deadtune/apples_tunnels.vjs_c -->\n<root>\n"), "{rebuilt}");
+    assert!(inject::extends(&rebuilt, &original));
+    assert_eq!(rebuilt.lines().count(), original.lines().count() + 5);
+
+    let script = Resource::parse(&addon.read(apples_tunnels::OWN_SCRIPT).unwrap()).unwrap();
+    assert_eq!(script.type_version, 4);
+    assert!(
+        script.blocks[0]
+            .data
+            .starts_with(b"var DT_MAP = {\"apples\":[[0.76464844,")
+    );
+    let sheet = Resource::parse(&addon.read(apples_tunnels::OWN_STYLE).unwrap()).unwrap();
+    assert!(style_text(&sheet).unwrap().starts_with("#DtApples{"));
+    let minimap = Resource::parse(&addon.read(MINIMAP).unwrap()).unwrap();
+    assert!(
+        style_text(&minimap)
+            .unwrap()
+            .ends_with("backgroundImage3{opacity:1;brightness:1.15;}")
+    );
+
+    let expect = verify::expect_for_hud(&fake.paths, &addon);
+    let verified = verify::verify(&addon, &expect);
+    assert!(verified.is_ok(), "{verified}");
 }
 
 fn patch(css: &str) -> HudPatch {

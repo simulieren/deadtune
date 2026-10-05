@@ -10,6 +10,7 @@
 //! (reads the game's pak01, patches each style file via `resource`, rebuilds each
 //! layout via `inject`, packs via `vpk`) -> `install::execute`.
 
+pub mod apples_tunnels;
 pub mod convars;
 pub mod crc32;
 pub mod css;

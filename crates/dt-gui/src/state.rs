@@ -2975,7 +2975,8 @@ mod tests {
         state.set_convar(LIVE, "144".into()).unwrap();
         assert!(state.is_changed(LIVE));
         assert_eq!(state.preset_value(LIVE).as_deref(), Some("400"));
-        state.set_base(BaseRef::Preset(PresetId::KaizMinspec));
+        // Not Kaiz: its quoted `"fps_max" "400"` near the end overrides its earlier 0.
+        state.set_base(BaseRef::Preset(PresetId::BootMaxfps));
         assert_eq!(state.preset_value(LIVE).as_deref(), Some("0"));
         assert!(state.is_changed(LIVE), "edits survive a preset switch");
         state.set_convar(LIVE, "0".into()).unwrap();

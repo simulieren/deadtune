@@ -155,13 +155,13 @@ pub fn apply_overrides(text: &str, overrides: &Overrides) -> Result<ApplyOutcome
         let changes = match overrides.get(cv.name) {
             Some(Override::Set(value)) => {
                 let quoted = quote(value);
-                new_body.extend([cv.indent, cv.name, cv.pad, &quoted, cv.trail, line.eol]);
+                new_body.extend([cv.indent, cv.key, cv.pad, &quoted, cv.trail, line.eol]);
                 matched.insert(cv.name);
                 cv.slashes.is_some() || cv.value != quoted
             }
             Some(Override::Comment) if cv.slashes.is_none() => {
                 new_body.extend([
-                    cv.indent, "// ", cv.name, cv.pad, cv.value, cv.trail, line.eol,
+                    cv.indent, "// ", cv.key, cv.pad, cv.value, cv.trail, line.eol,
                 ]);
                 true
             }
@@ -287,6 +287,8 @@ fn eol_str(eol: Eol) -> &'static str {
 struct ConVarLine<'a> {
     indent: &'a str,
     slashes: Option<&'a str>,
+    /// `name` as written, quotes included.
+    key: &'a str,
     name: &'a str,
     pad: &'a str,
     value: &'a str,
@@ -304,13 +306,22 @@ impl ConVarLine<'_> {
         } else {
             (None, indent_end)
         };
+        // KeyValues allows a quoted key; some presets write every line as `"name" "value"`.
+        let open_quote = usize::from(content[name_start..].starts_with('"'));
         let name_end = name_start
-            + content[name_start..]
+            + open_quote
+            + content[name_start + open_quote..]
                 .bytes()
                 .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
                 .count();
-        let value_start = blank_end(name_end);
-        if name_end == name_start || value_start == name_end {
+        let key_end = name_end + open_quote;
+        if name_end == name_start + open_quote
+            || (open_quote == 1 && content.as_bytes().get(name_end) != Some(&b'"'))
+        {
+            return None;
+        }
+        let value_start = blank_end(key_end);
+        if value_start == key_end {
             return None;
         }
         let rest = &content[value_start..];
@@ -325,8 +336,9 @@ impl ConVarLine<'_> {
         Some(ConVarLine {
             indent: &content[..indent_end],
             slashes,
-            name: &content[name_start..name_end],
-            pad: &content[name_end..value_start],
+            key: &content[name_start..key_end],
+            name: &content[name_start + open_quote..name_end],
+            pad: &content[key_end..value_start],
             value: &rest[..value_len],
             trail: &rest[value_len..],
         })
@@ -510,6 +522,7 @@ mod line_tests {
         ConVarLine {
             indent,
             slashes,
+            key: name,
             name,
             pad,
             value,
@@ -560,11 +573,21 @@ mod line_tests {
             Some(cv("", Some("//"), "name", " ", "1", ""))
         );
         assert_eq!(ConVarLine::parse("name value more"), None);
+        assert_eq!(
+            ConVarLine::parse("\t// \"foo\"  \"bar\""),
+            Some(ConVarLine {
+                key: "\"foo\"",
+                ..cv("\t", Some("// "), "foo", "  ", "\"bar\"", "")
+            })
+        );
         for rejected in [
             "",
             "/",
             "// just prose words",
-            "\"foo\" \"bar\"",
+            "\"foo bar\" \"1\"",
+            "\"foo \"1\"",
+            "\"\" \"1\"",
+            "\"foo\"",
             "{",
             "rate",
             "rate  ",

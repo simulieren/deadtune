@@ -199,11 +199,13 @@ fn target_takes_base_block_plus_edits_and_keeps_live_outside_convars() {
         tgt.denied,
         [
             DENIED,
+            "citadel_trooper_outline_enabled",
             "citadel_use_pvs_for_players",
+            "cl_glow_brightness",
             "minimap_trooper_update_rate_hz",
             "r_citadel_npr_force_solid_outline",
         ],
-        "the profile edit plus the denylisted values kaiz sets"
+        "the profile edit plus the denylisted values kaiz sets, quoted names included"
     );
     let stock = effective_values(VANILLA).unwrap();
     for name in &tgt.denied {
@@ -288,8 +290,10 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
 #[test]
 fn plan_buckets_follow_catalog_apply_classes() {
     let install = fake_install(VANILLA, None);
-    let profile = kaiz_profile();
     let live_eff = effective_values(VANILLA).unwrap();
+    let mut profile = kaiz_profile();
+    let stock = live_eff.keys().find(|n| !catalog().is_denied(n)).unwrap();
+    profile.convars.comment.push(stock.clone());
     let base = resolve_base(&profile).unwrap();
     let target_eff = effective_values(
         &target(VANILLA, None, &base, &profile, catalog(), None, None)
@@ -367,7 +371,7 @@ fn plan_buckets_follow_catalog_apply_classes() {
             seen > 100,
             "kaiz changes many convars vs vanilla, saw {seen}"
         );
-        assert!(removed_count > 0, "kaiz comments out some stock convars");
+        assert!(removed_count > 0, "the profile comments out a stock convar");
         assert_eq!(
             live.len() + plan.queued_cheat.len() + plan.restart.len() + plan.ignored.len(),
             seen,

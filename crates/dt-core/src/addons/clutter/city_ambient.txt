@@ -1,0 +1,8 @@
+particles/environment/candle_flame.vpcf_c
+particles/environment/crows_circling_tower.vpcf_c
+particles/environment/industrial_smoke_stack_thin.vpcf_c
+particles/environment/street_steam_01.vpcf_c
+particles/environment/street_steam_02.vpcf_c
+particles/environment/street_steam_03.vpcf_c
+particles/environmental/street_light_glow_01.vpcf_c
+particles/environmental/street_light_glow_02.vpcf_c

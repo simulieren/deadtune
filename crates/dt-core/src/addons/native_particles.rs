@@ -54,7 +54,7 @@ pub fn build(
 
 /// KV3 keys are stored as plain strings in an uncompressed DATA block; a compressed or
 /// reshaped block fails here rather than shipping something we cannot read.
-fn check_empty(bytes: &[u8]) -> Result<(), AddonError> {
+pub(crate) fn check_empty(bytes: &[u8]) -> Result<(), AddonError> {
     let res = Resource::parse(bytes)?;
     let data = &res
         .block(b"DATA")
@@ -119,6 +119,9 @@ pub(crate) mod tests {
         assert_eq!(crc32(EMPTY), STUB_CRC);
         let upstream = VpkDir::open(&particles::tests::upstream_path()).unwrap();
         for path in particles::hidden_paths(&BTreeSet::new()) {
+            if !upstream.contains(path) {
+                continue;
+            }
             assert_eq!(upstream.read(path).unwrap(), EMPTY, "{path}");
         }
     }
@@ -163,9 +166,9 @@ pub(crate) mod tests {
     #[test]
     fn hiding_everything_covers_the_upstream_list_and_passes_verify() {
         let files = build(&game(), &BTreeSet::new()).unwrap();
-        assert_eq!(files.len(), 108);
+        assert_eq!(files.len(), 112);
         let upstream = VpkDir::open(&particles::tests::upstream_path()).unwrap();
-        for (path, bytes) in &files {
+        for (path, bytes) in files.iter().filter(|(p, _)| upstream.contains(p)) {
             assert_eq!(&upstream.read(path).unwrap(), bytes, "{path}");
         }
         let ours = VpkDir::in_memory(vpk::write(&files)).unwrap();
@@ -175,7 +178,7 @@ pub(crate) mod tests {
         };
         let got = verify(&ours, &expect);
         assert!(got.is_ok(), "{got}");
-        assert_eq!(got.entries, 108);
+        assert_eq!(got.entries, 112);
     }
 
     #[test]

@@ -346,7 +346,7 @@ fn inputs(
             let config = config.clone();
             Inputs {
                 input: fingerprint(&parts),
-                ships: native.ships(&config),
+                ships: native.ships(&config, &pak),
                 make: Box::new(move || {
                     let files = native.build(&pak, &config)?;
                     if files.is_empty() {
@@ -761,8 +761,8 @@ pub(crate) mod tests {
     use super::*;
     use crate::addons::native::tests::fake_game_files;
     use crate::addons::{
-        BlurOptions, ScopeOptions, TextureCategory, native_blur, native_particles, native_scope,
-        native_sinner, particles,
+        BlurOptions, ScopeOptions, TextureCategory, clutter, native_blur, native_particles,
+        native_scope, native_sinner, particles,
     };
     use crate::hud::vpk;
     use crate::texture::vtex::Vtex;
@@ -1342,6 +1342,55 @@ pub(crate) mod tests {
                 paths: vec![native_blur::STYLE.to_string()],
             }]
         );
+    }
+
+    #[test]
+    fn clutter_pak_holds_the_games_empty_particle_and_rebuilds_on_game_update() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        let mut files = fake_game_files();
+        files.insert("particles/a/fire.vpcf_c".into(), b"real".to_vec());
+        std::fs::write(paths.citadel_dir.join(GAME_PAK), vpk::write(&files)).unwrap();
+        let empty = native_particles::tests::EMPTY;
+
+        let mut config = AddonsConfig::default();
+        config.set_enabled(AddonId::ClutterRemover, true);
+        assert_eq!(
+            config.hide_clutter,
+            BTreeSet::from([clutter::CITY.to_string()])
+        );
+        let first = plan(&paths, &config, &state).unwrap();
+        let entry = first.get(AddonId::ClutterRemover).unwrap();
+        assert_eq!(entry.path, addons_dir(&paths).join("pak78_dir.vpk"));
+        assert!(entry.from_game);
+        execute(&first, &paths, &state).unwrap();
+        let ours = VpkDir::open(&entry.path).unwrap();
+        assert_eq!(ours.entries.len(), 8);
+        assert!(ours.contains("particles/environment/crows_circling_tower.vpcf_c"));
+        assert!(ours.entries.keys().all(|p| ours.read(p).unwrap() == empty));
+        assert!(plan(&paths, &config, &state).unwrap().is_empty());
+
+        config.hide_clutter = BTreeSet::from([clutter::EVERYTHING.to_string()]);
+        let all = plan(&paths, &config, &state).unwrap();
+        execute(&all, &paths, &state).unwrap();
+        let ours = VpkDir::open(&entry.path).unwrap();
+        assert_eq!(
+            ours.entries.keys().collect::<Vec<_>>(),
+            ["particles/a/fire.vpcf_c"]
+        );
+
+        write_manifest(&steam.path().join("steamapps"), "2");
+        assert!(matches!(
+            action(
+                &plan(&paths, &config, &state).unwrap(),
+                AddonId::ClutterRemover
+            ),
+            Action::Write(Build::Bytes(_))
+        ));
+
+        config.hide_clutter.clear();
+        let none = plan(&paths, &config, &state).unwrap();
+        assert_eq!(action(&none, AddonId::ClutterRemover), &Action::Remove);
     }
 
     #[test]

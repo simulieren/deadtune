@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 
 use super::verify::{Check, Expect};
 use super::{
-    AddonError, AddonsConfig, native_blur, native_particles, native_scope, native_sinner, particles,
+    AddonError, AddonsConfig, clutter, native_blur, native_particles, native_scope, native_sinner,
+    particles,
 };
 use crate::hud::vpk::VpkDir;
 
@@ -21,6 +22,8 @@ pub enum Native {
     Sinner,
     /// Tamara Mochaccinae's Vindicta scope downscale: the scope texture resampled smaller.
     Scope,
+    /// Laund's Clutter Be Gone: the game's empty particle at the paths of the hidden packs.
+    Clutter,
 }
 
 impl Native {
@@ -31,6 +34,7 @@ impl Native {
             Native::Blur => &[native_blur::STYLE],
             Native::Sinner => &[native_sinner::MASK, native_sinner::MODEL],
             Native::Scope => &[native_scope::TEXTURE],
+            Native::Clutter => &[native_particles::EMPTY_PARTICLE],
         }
     }
 
@@ -41,12 +45,19 @@ impl Native {
             Native::Blur => format!("hud={} menu={}", config.blur.hud, config.blur.menu),
             Native::Sinner => String::new(),
             Native::Scope => format!("side={}", config.scope.side),
+            Native::Clutter => config
+                .hide_clutter
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n"),
         }
     }
 
     /// The game paths our pak overrides, for the conflict scan. Empty when the options
-    /// leave nothing to install.
-    pub fn ships(self, config: &AddonsConfig) -> Vec<String> {
+    /// leave nothing to install. `game` is read only for the clutter remover's
+    /// "Everything", which lists the game's particles.
+    pub fn ships(self, config: &AddonsConfig, game: &VpkDir) -> Vec<String> {
         let own = |paths: &[&str]| paths.iter().map(|p| p.to_string()).collect();
         match self {
             Native::Particles => own(&particles::hidden_paths(&config.keep_particles)),
@@ -56,6 +67,7 @@ impl Native {
             Native::Blur => Vec::new(),
             Native::Sinner => own(&[native_sinner::MASK, native_sinner::MODEL]),
             Native::Scope => own(&[native_scope::TEXTURE]),
+            Native::Clutter => clutter::hidden_paths(&config.hide_clutter, game),
         }
     }
 
@@ -71,6 +83,9 @@ impl Native {
             Native::Blur => native_blur::build(game, &config.blur),
             Native::Sinner => native_sinner::build(game),
             Native::Scope => native_scope::build(game, &config.scope),
+            Native::Clutter => {
+                clutter::build(game, &clutter::hidden_paths(&config.hide_clutter, game))
+            }
         }
     }
 
@@ -79,7 +94,7 @@ impl Native {
     pub fn expect(self, game: &VpkDir) -> Result<Expect, AddonError> {
         let mut expect = Expect::default();
         match self {
-            Native::Particles => {
+            Native::Particles | Native::Clutter => {
                 expect.particle_stub = Some(game.read(native_particles::EMPTY_PARTICLE)?);
             }
             Native::Blur => {
@@ -122,12 +137,22 @@ pub(crate) mod tests {
     use crate::addons::{BlurOptions, ScopeOptions};
     use crate::hud::vpk;
 
-    const ALL: [Native; 4] = [
+    const ALL: [Native; 5] = [
         Native::Particles,
         Native::Blur,
         Native::Sinner,
         Native::Scope,
+        Native::Clutter,
     ];
+
+    /// Every option that makes each builder produce something.
+    fn config() -> AddonsConfig {
+        AddonsConfig {
+            scope: ScopeOptions { side: 256 },
+            hide_clutter: BTreeSet::from([clutter::CITY.to_string()]),
+            ..AddonsConfig::default()
+        }
+    }
 
     /// A pak01 carrying every file the four builders read.
     pub fn fake_game_files() -> BTreeMap<String, Vec<u8>> {
@@ -162,16 +187,13 @@ pub(crate) mod tests {
     #[test]
     fn every_builder_reads_only_the_files_it_declares_and_passes_its_own_check() {
         let game = fake_game();
-        let config = AddonsConfig {
-            scope: ScopeOptions { side: 256 },
-            ..AddonsConfig::default()
-        };
+        let config = config();
         for native in ALL {
             let files = native.build(&game, &config).unwrap();
             assert!(!files.is_empty(), "{native:?}");
             let mut shipped: Vec<&str> = files.keys().map(String::as_str).collect();
             shipped.sort_unstable();
-            let mut declared = native.ships(&config);
+            let mut declared = native.ships(&config, &game);
             declared.sort_unstable();
             assert_eq!(shipped, declared, "{native:?}");
             let pak = VpkDir::in_memory(vpk::write(&files)).unwrap();
@@ -198,10 +220,7 @@ pub(crate) mod tests {
         let empty = VpkDir::in_memory(vpk::write(&BTreeMap::new())).unwrap();
         for native in ALL {
             assert!(
-                matches!(
-                    native.build(&empty, &AddonsConfig::default()),
-                    Err(AddonError::Vpk(_))
-                ),
+                matches!(native.build(&empty, &config()), Err(AddonError::Vpk(_))),
                 "{native:?}"
             );
             assert!(native.expect(&empty).is_err(), "{native:?}");
@@ -219,14 +238,14 @@ pub(crate) mod tests {
             },
             ..AddonsConfig::default()
         };
-        for native in [Native::Particles, Native::Blur] {
+        for native in [Native::Particles, Native::Blur, Native::Clutter] {
             assert!(native.build(&game, &config).unwrap().is_empty());
-            assert!(native.ships(&config).is_empty());
+            assert!(native.ships(&config, &game).is_empty());
         }
         assert_eq!(Native::Sinner.options(&config), "");
         assert_eq!(Native::Scope.options(&config), "side=1080");
         config.keep_particles = BTreeSet::from(["low_health".to_string()]);
         assert!(!Native::Particles.options(&config).contains("low_health"));
-        assert_eq!(Native::Particles.ships(&config).len(), 108 - 4);
+        assert_eq!(Native::Particles.ships(&config, &game).len(), 112 - 4);
     }
 }

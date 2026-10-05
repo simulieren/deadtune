@@ -58,6 +58,7 @@ pub fn list(env: &Env, args: &Args) -> CliResult {
             Kind::Native(Native::Blur) => "HUD and menu blur, rebuilt from your game files",
             Kind::Native(Native::Sinner) => "on/off, rebuilt from your game files",
             Kind::Native(Native::Scope) => "scope size, rebuilt from your game files",
+            Kind::Native(Native::Clutter) => "per effect group, rebuilt from your game files",
             Kind::Textures => "built on demand",
         };
         println!("{enabled} {:<20} {:<40} {}", a.id.key(), a.name, a.credit());
@@ -72,6 +73,16 @@ pub fn list(env: &Env, args: &Args) -> CliResult {
     );
     for g in addons::particles::GROUPS {
         println!("    {:<12} {}", g.id, g.label);
+    }
+    println!(
+        "\nClutter groups (addons enable clutter_remover --hide <group>[,<group>]; {} when none given):",
+        addons::clutter::CITY
+    );
+    for g in &addons::clutter::GROUPS {
+        println!("    {:<12} {}: {}", g.id, g.label, g.detail);
+        if let Some(warning) = g.warning {
+            println!("    {:<12} {warning}", "");
+        }
     }
     Ok(())
 }
@@ -89,6 +100,20 @@ fn set_enabled(args: &Args, on: bool) -> CliResult {
                 return Err(usage(format!("unknown particle group {group:?}")));
             }
             profile.addons.keep_particles.insert(group.to_string());
+        }
+    }
+    if on && id == AddonId::ClutterRemover {
+        let picked: Vec<&str> = args
+            .value("hide")
+            .into_iter()
+            .flat_map(|k| k.split(','))
+            .map(str::trim)
+            .collect();
+        if let Some(bad) = picked.iter().find(|g| addons::clutter::group(g).is_none()) {
+            return Err(usage(format!("unknown clutter group {bad:?}")));
+        }
+        if !picked.is_empty() {
+            profile.addons.hide_clutter = picked.into_iter().map(String::from).collect();
         }
     }
     let text = profile.to_toml()?;

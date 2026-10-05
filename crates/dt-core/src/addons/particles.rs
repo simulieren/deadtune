@@ -1,6 +1,8 @@
 //! The screen-space particle disabler's path table. Upstream (Laund's `pak02_dir.vpk`)
-//! replaces 108 particle systems with the game's empty particle; here they are grouped
-//! by what the player sees on screen, so `native_particles` ships only the hidden ones.
+//! replaces 108 particle systems with the game's empty particle, and the Screenspace pack
+//! of his Clutter Be Gone (`clutter/screenspace.txt`) adds four more; here they are
+//! grouped by what the player sees on screen, so `native_particles` ships only the
+//! hidden ones.
 
 use std::collections::BTreeSet;
 
@@ -63,6 +65,18 @@ pub static GROUPS: &[ParticleGroup] = &[
         "Obscured by steam",
         "modifiers",
         ["obscured_by_steam_screen"]
+    ),
+    group!(
+        "hideout",
+        "Hideout: finding match",
+        "ui",
+        ["ui_hideout_findingmatch_screen"]
+    ),
+    group!(
+        "snowball",
+        "Snowball hit (Christmas event)",
+        "event/christmas",
+        ["snowball_tgt_screen"]
     ),
     group!(
         "items",
@@ -289,6 +303,15 @@ pub static GROUPS: &[ParticleGroup] = &[
         ]
     ),
     group!(
+        "ratking",
+        "Nibble debuff (ratking)",
+        "abilities/ratking",
+        [
+            "ratking_nibble_debuff_screen",
+            "ratking_nibble_debuff_screen_border",
+        ]
+    ),
+    group!(
         "shiv",
         "Shiv: Bloodletting dash and Killing Blow",
         "abilities/shiv",
@@ -361,7 +384,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn groups_cover_the_upstream_particle_list_exactly_once() {
+    fn groups_cover_both_upstream_particle_lists_exactly_once() {
         let upstream = upstream();
         let mut ours: Vec<&str> = hidden_paths(&BTreeSet::new());
         ours.sort_unstable();
@@ -371,8 +394,10 @@ pub(crate) mod tests {
             .map(String::as_str)
             .filter(|p| p.ends_with(".vpcf_c"))
             .collect();
+        theirs.extend(include_str!("clutter/screenspace.txt").lines());
         theirs.sort_unstable();
-        assert_eq!(ours.len(), 108);
+        theirs.dedup();
+        assert_eq!(ours.len(), 112);
         assert_eq!(upstream.entries.len(), 109);
         assert_eq!(ours, theirs);
         let mut ids: Vec<&str> = GROUPS.iter().map(|g| g.id).collect();

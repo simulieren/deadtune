@@ -54,8 +54,8 @@ DeadTune turns that into an app:
 
 The community's performance mods, each as one DeadTune-owned pak file that comes off with one click:
 
-- **Rebuilt from your game files, method by the original author.** The screen-edge particle disabler (Laund), the UI blur disabler (Sqooky, with Bytenode), the Sinner's Sacrifice light fix (HoppCX) and the Vindicta scope downscale (Tamara Mochaccinae) are made from your own `pak01` on Apply, so they never go stale: after a game update DeadTune rebuilds them. No download.
-- **Pick what to hide.** The particle disabler is split into 30 groups (low-health vignette, burns, hero debuffs); the blur disabler covers HUD and menus separately; the scope size is yours to choose.
+- **Rebuilt from your game files, method by the original author.** The screen-edge particle disabler and the world clutter remover (Laund, after his Clutter Be Gone packs), the UI blur disabler (Sqooky, with Bytenode), the Sinner's Sacrifice light fix (HoppCX) and the Vindicta scope downscale (Tamara Mochaccinae) are made from your own `pak01` on Apply, so they never go stale: after a game update DeadTune rebuilds them. No download.
+- **Pick what to hide.** The particle disabler is split into groups (low-health vignette, burns, hero debuffs); the clutter remover covers city steam and smoke, Graves and Walker effects, or everything for offline play; the blur disabler covers HUD and menus separately; the scope size is yours to choose.
 - **The optimized soul container** by Jayie is a hand-made model, so it stays a download from Sqooky's repository (or an import of the file).
 - **Checked before and after.** Every pak is read back against your game files before it goes into the game folder, and the next launch is a trial: if Deadlock fails to start, DeadTune removes the new addon and tells you.
 
@@ -199,6 +199,7 @@ DeadTune stands on the work of the Deadlock tuning community:
 - [Sqooky/OptimizationLock](https://github.com/Sqooky/OptimizationLock): presets, the override model DeadTune's `gameinfo.gi` editor is ported from, and the performance addons bundle whose methods DeadTune rebuilds (Laund, Sqooky with Bytenode, HoppCX, Tamara Mochaccinae, Jayie)
 - [dacooderr/OptiLock](https://github.com/dacooderr/OptiLock): presets including `video.txt` tuning
 - Kaizuchaneru and Boot: minimum-spec and max-FPS presets
+- [Laund](https://gamebanana.com/mods/722853): the screen-edge particle disabler and Clutter Be Gone, whose effect lists DeadTune's particle cleanup uses
 - [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager): reference for KeyValues handling and Steam paths
 - [ValveResourceFormat](https://github.com/ValveResourceFormat/ValveResourceFormat): the reference for compiled resource and VPK formats
 - [Inter](https://rsms.me/inter/) by Rasmus Andersson (SIL OFL 1.1), the UI font

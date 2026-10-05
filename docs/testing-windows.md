@@ -202,12 +202,22 @@ DeadTune remembers the set of addon paks (id plus sha256) that Deadlock last sta
 - [ ] **G-7 Safe mode**: the small menu beside Launch Deadlock > "Safe mode: launch without addons" removes every DeadTune pak (HUD too), other mods stay, the game starts clean; the button reads "Launch (safe mode)" until "Restore addons" from the same menu puts them back.
 - [ ] **G-8 Read-back**: `tools\deadtune-cli.exe addons verify` prints "ok" for every installed pak. Overwrite the last bytes of one pak with a hex editor: `addons verify` names the entry with "crc mismatch" and exits 1.
 
-### 13. Send the diagnostic report
+### 13. SideLock (downloaded preset)
+
+SideLock is CC BY-NC-ND, so DeadTune never ships it; it downloads the author's file from GameBanana and checks it against a pinned sha256.
+
+- [ ] **S-1 Download**: Overview > All presets > SideLock. The dropdown shows "by hitmeupwhenyourelonely, CC BY-NC-ND 4.0, downloaded from GameBanana"; the card says "SideLock isn't downloaded yet". Press **Download from GameBanana**: the status says "SideLock is ready" and Apply works. `%APPDATA%\DeadTune\presets\sidelock\gameinfo.gi` exists.
+- [ ] **S-2 Only settings**: after Apply, open `game\citadel\gameinfo.gi`: the ConVars block changed, but `SceneSystem`, `RenderSystem` and `FileSystem` are byte-for-byte what they were (compare with the original in DeadTune's backups). The outline and visibility settings it sets are refused (`deadtune-cli diff` lists them).
+- [ ] **S-3 Import offline**: delete the `presets\sidelock` folder, download `cfg.zip` from https://gamebanana.com/mods/722944 in a browser, paste its path into the Import box: same result as S-1. Importing a random file says it is not a game settings file.
+- [ ] **S-4 Review**: put any other `gameinfo.gi` (say a copy of your game's) into the Import box: the card says the file differs, "Show the N changed settings" lists them, nothing changes until **Accept**; **Discard** drops it.
+- [ ] **S-5 CLI**: `tools\deadtune-cli.exe presets` shows the licence and state; `presets fetch sidelock`, then `profile new side.toml --base sidelock` and `diff --profile side.toml` work.
+
+### 14. Send the diagnostic report
 
 Whenever something misbehaves, and once when everything works, press **Copy diagnostic report** on the System check page (or run `tools\deadtune-cli.exe doctor --report > report.txt`) and send the text along with your notes. It holds the DeadTune version, the `SearchPaths` block of `gameinfo.gi`, the files in `game\citadel\addons` with sizes and who owns each, DeadTune's addon and HUD records, the launch guard state, the last launch arguments, the last 80 lines of `console.log` and the read-back of every installed pak. It contains no account data; paths show your Windows user name.
 
 ### 10. Developer checks (repo checkout on Windows)
 - [ ] `cargo test --workspace --all-features` passes, including the Windows-only `push_uses_crlf_on_windows`.
 - [ ] With `core.autocrlf=true`, a fresh clone still passes the catalog drift test.
-- [ ] `cargo test -p dt-core --features fetch -- --ignored fetch_latest` downloads every preset.
+- [ ] `cargo test -p dt-core --features fetch -- --ignored fetch` downloads every preset, SideLock included, and SideLock still matches its pinned sha256.
 - [ ] `tools\deadtune-cli.exe doctor` matches the GUI's Check setup; its y/N confirm prompt works in cmd and PowerShell.

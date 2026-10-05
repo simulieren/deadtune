@@ -17,7 +17,7 @@ use super::AddonError;
 use crate::hud::resource::{Resource, ResourceError};
 use crate::hud::vpk::VpkDir;
 use crate::texture::resample::Image;
-use crate::texture::vtex::{Flags, Format, Layout, Vtex, VtexError, raw_mip_len};
+use crate::texture::vtex::{self, Flags, Format, Layout, Vtex, VtexError, raw_mip_len};
 
 pub const TEXTURE: &str = "panorama/images/hud/crosshair/scope_common_psd.vtex_c";
 /// Upstream's size, and the scope's height on a 1080p screen.
@@ -26,8 +26,6 @@ pub const MIN_SIDE: u16 = 256;
 
 /// Offsets inside the VTEX header (the start of the DATA block).
 const WIDTH_AT: usize = 20;
-const EXTRA_OFFSET_AT: usize = 32;
-const EXTRA_ENTRY: usize = 12;
 const EXTRA_COMPRESSED_MIP_SIZE: u32 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -75,20 +73,6 @@ fn channels(format: Format) -> Option<usize> {
     }
 }
 
-/// Kinds of the extra-data entries of a VTEX DATA block.
-fn extra_kinds(data: &[u8]) -> impl Iterator<Item = u32> + '_ {
-    let u32_at = move |at: usize| {
-        data.get(at..at + 4)
-            .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
-    };
-    let table = EXTRA_OFFSET_AT + u32_at(EXTRA_OFFSET_AT).unwrap_or(0) as usize;
-    let count = u32_at(EXTRA_OFFSET_AT + 4).unwrap_or(0) as usize;
-    (0..count)
-        .map(move |i| table + EXTRA_ENTRY * i)
-        .take_while(move |&at| at + EXTRA_ENTRY <= data.len())
-        .filter_map(u32_at)
-}
-
 /// Size of a `width` x `height` texture scaled so its longer side is `side` (clamped to
 /// `MIN_SIDE`), aspect kept; the input size when `side` is not smaller.
 pub fn target_dims(width: u16, height: u16, side: u16) -> (u16, u16) {
@@ -130,11 +114,10 @@ pub fn resize(original: &[u8], side: u16) -> Result<Vec<u8>, ScopeError> {
         return refuse("a METADATA display rect".into());
     }
     let res = Resource::parse(original)?;
-    let data = &res
-        .block(b"DATA")
-        .ok_or(ResourceError::MissingBlock("DATA"))?
-        .data;
-    if extra_kinds(data).any(|k| k == EXTRA_COMPRESSED_MIP_SIZE) {
+    if vtex::extras(original, v.header_at())?
+        .iter()
+        .any(|e| e.kind == EXTRA_COMPRESSED_MIP_SIZE)
+    {
         return refuse("a COMPRESSED_MIP_SIZE table (LZ4 mips)".into());
     }
     if v.width == 0 || v.height == 0 {
@@ -204,6 +187,7 @@ pub(crate) mod tests {
     use crate::texture::vtex::tests::{COLOR, MASK, synthetic};
 
     const UPSTREAM_HEADER: usize = 2132;
+    const EXTRA_ENTRY: usize = 12;
 
     fn upstream() -> Vec<u8> {
         VpkDir::open(&sources::tests::research(
@@ -243,7 +227,7 @@ pub(crate) mod tests {
         for (kind, payload) in extras {
             let at = d.len();
             d.extend_from_slice(&kind.to_le_bytes());
-            d.extend_from_slice(&((payload_at - at) as u32).to_le_bytes());
+            d.extend_from_slice(&((payload_at - at - 4) as u32).to_le_bytes());
             d.extend_from_slice(&(payload.len() as u32).to_le_bytes());
             payload_at += payload.len();
         }
@@ -336,8 +320,12 @@ pub(crate) mod tests {
             .map(|b| (&b.name[..], b.data.len()))
             .collect();
         assert_eq!(blocks, [(&b"RED2"[..], 1001), (&b"DATA"[..], 1076)]);
-        let data = &res.block(b"DATA").unwrap().data;
-        assert_eq!(extra_kinds(data).collect::<Vec<_>>(), [1]);
+        let kinds: Vec<u32> = vtex::extras(&up, v.header_at())
+            .unwrap()
+            .iter()
+            .map(|e| e.kind)
+            .collect();
+        assert_eq!(kinds, [1]);
         assert_eq!(
             resize(&up, DEFAULT_SIDE).unwrap(),
             up,

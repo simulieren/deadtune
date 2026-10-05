@@ -195,6 +195,8 @@ pub struct Vtex {
 
 const VTEX_HEADER: usize = 40;
 const DIM_AT: usize = 20;
+const EXTRA_OFFSET_AT: usize = 32;
+const EXTRA_ENTRY: usize = 12;
 const EXTRA_METADATA: u32 = 3;
 const EXTRA_COMPRESSED_MIP_SIZE: u32 = 4;
 
@@ -246,52 +248,44 @@ impl Vtex {
         let depth = u16_at(bytes, header_at + DIM_AT + 4)?;
         let format = Format(bytes[header_at + DIM_AT + 6]);
         let mip_count = bytes[header_at + DIM_AT + 7] as usize;
-        let extra_off = u32_at(bytes, header_at + 32)? as usize;
-        let extra_count = u32_at(bytes, header_at + 36)? as usize;
 
         let mut compressed = None;
         let mut display_rect = None;
         let mut display_rect_at = None;
         let mut sizes: Option<Vec<usize>> = None;
-        if extra_count > 0 {
-            let mut entry = header_at + 32 + extra_off;
-            for _ in 0..extra_count {
-                let kind = u32_at(bytes, entry)?;
-                let payload = entry + u32_at(bytes, entry + 4)? as usize;
-                let size = u32_at(bytes, entry + 8)? as usize;
-                if payload + size > pixel_start {
-                    return Err(VtexError::Malformed("extra data outside the DATA block"));
-                }
-                match kind {
-                    EXTRA_METADATA => {
-                        let w = u16_at(bytes, payload + 2)?;
-                        let h = u16_at(bytes, payload + 4)?;
-                        display_rect_at = Some(payload + 2);
-                        if w > 0 && h > 0 {
-                            display_rect = Some((w, h));
-                        }
+        for (i, extra) in extras(bytes, header_at)?.into_iter().enumerate() {
+            let payload = extra.payload.start;
+            if extra.payload.end > pixel_start {
+                return Err(VtexError::Malformed("extra data outside the DATA block"));
+            }
+            match extra.kind {
+                EXTRA_METADATA => {
+                    let w = u16_at(bytes, payload + 2)?;
+                    let h = u16_at(bytes, payload + 4)?;
+                    display_rect_at = Some(payload + 2);
+                    if w > 0 && h > 0 {
+                        display_rect = Some((w, h));
                     }
-                    EXTRA_COMPRESSED_MIP_SIZE => {
-                        let array_at = payload + 4 + u32_at(bytes, payload + 4)? as usize;
-                        let count = u32_at(bytes, payload + 8)? as usize;
-                        if count != mip_count {
-                            return Err(VtexError::Malformed("size table length != mip count"));
-                        }
-                        let mut v = Vec::with_capacity(count);
-                        for i in 0..count {
-                            v.push(u32_at(bytes, array_at + 4 * i)? as usize);
-                        }
-                        sizes = Some(v);
-                        compressed = Some(CompressedTable {
-                            entry_size_at: entry + 8,
-                            count_at: payload + 8,
-                            array_at,
-                            count,
-                        });
-                    }
-                    _ => {}
                 }
-                entry += 12;
+                EXTRA_COMPRESSED_MIP_SIZE => {
+                    let array_at = payload + 4 + u32_at(bytes, payload + 4)? as usize;
+                    let count = u32_at(bytes, payload + 8)? as usize;
+                    if count != mip_count {
+                        return Err(VtexError::Malformed("size table length != mip count"));
+                    }
+                    let mut v = Vec::with_capacity(count);
+                    for i in 0..count {
+                        v.push(u32_at(bytes, array_at + 4 * i)? as usize);
+                    }
+                    sizes = Some(v);
+                    compressed = Some(CompressedTable {
+                        entry_size_at: extra_table(bytes, header_at)? + EXTRA_ENTRY * i + 8,
+                        count_at: payload + 8,
+                        array_at,
+                        count,
+                    });
+                }
+                _ => {}
             }
         }
 
@@ -342,6 +336,11 @@ impl Vtex {
 
     pub fn pixel_start(&self) -> usize {
         self.pixel_start
+    }
+
+    /// Offset of the VTEX header, the start of the DATA block.
+    pub fn header_at(&self) -> usize {
+        self.header_at
     }
 
     /// How many of the largest mips can go while the largest kept side stays at or
@@ -406,6 +405,41 @@ impl Vtex {
     }
 }
 
+/// One extra-data entry of a VTEX header.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Extra {
+    pub kind: u32,
+    /// Absolute byte range of the payload in the file.
+    pub payload: std::ops::Range<usize>,
+}
+
+/// Absolute offset of the extra-data entry table of the VTEX header at `header_at`.
+fn extra_table(bytes: &[u8], header_at: usize) -> Result<usize, VtexError> {
+    Ok(header_at + EXTRA_OFFSET_AT + u32_at(bytes, header_at + EXTRA_OFFSET_AT)? as usize)
+}
+
+/// The extra-data entries of the VTEX header at `header_at`. Each offset counts from the
+/// offset field itself, like the header's own extra-data offset: real files tile their DATA
+/// block exactly that way.
+pub fn extras(bytes: &[u8], header_at: usize) -> Result<Vec<Extra>, VtexError> {
+    let count = u32_at(bytes, header_at + EXTRA_OFFSET_AT + 4)? as usize;
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    let table = extra_table(bytes, header_at)?;
+    (0..count)
+        .map(|i| {
+            let entry = table + EXTRA_ENTRY * i;
+            let start = entry + 4 + u32_at(bytes, entry + 4)? as usize;
+            let len = u32_at(bytes, entry + 8)? as usize;
+            Ok(Extra {
+                kind: u32_at(bytes, entry)?,
+                payload: start..start + len,
+            })
+        })
+        .collect()
+}
+
 /// (offset, length) of the DATA block, from the resource block table.
 fn data_block(bytes: &[u8]) -> Result<(usize, usize), VtexError> {
     let table_off = u32_at(bytes, 8)? as usize;
@@ -468,14 +502,49 @@ pub(crate) mod tests {
             assert_eq!(v.format.name(), fmt);
             assert_eq!(v.mips.len(), mips);
             assert_eq!(v.flags, flags);
-            assert_eq!(v.display_rect, None);
+            assert_eq!(v.display_rect.is_some(), side == 4, "{fmt} rect");
             assert_eq!(v.pixel_start + v.pixel_len(), bytes.len(), "{fmt} sizes");
             assert_eq!(v.mips[0].width, side);
             assert_eq!(v.mips.last().unwrap().width, mip_dim(side, mips as u8 - 1));
         }
         let v = Vtex::parse(TINY).unwrap();
         assert_eq!(v.pixel_len(), 8);
-        assert!(v.display_rect_at.is_some());
+        assert_eq!(
+            v.display_rect,
+            Some((1, 1)),
+            "a 1x1 source padded to one 4x4 block"
+        );
+    }
+
+    #[test]
+    fn extra_payloads_tile_the_data_block() {
+        let tiny = Vtex::parse(TINY).unwrap();
+        let h = tiny.header_at;
+        assert_eq!(
+            extras(TINY, h).unwrap(),
+            [
+                Extra {
+                    kind: 1,
+                    payload: h + 64..h + 1088
+                },
+                Extra {
+                    kind: EXTRA_METADATA,
+                    payload: h + 1088..h + 1216
+                },
+            ]
+        );
+        assert_eq!(h + 1216, tiny.pixel_start());
+        for bytes in [MASK, COLOR, NOLOD] {
+            let v = Vtex::parse(bytes).unwrap();
+            let h = v.header_at;
+            assert_eq!(
+                extras(bytes, h).unwrap(),
+                [Extra {
+                    kind: 1,
+                    payload: h + 52..v.pixel_start()
+                }]
+            );
+        }
     }
 
     #[test]
@@ -585,7 +654,7 @@ pub(crate) mod tests {
         ] {
             let at = d.len();
             d.extend_from_slice(&kind.to_le_bytes());
-            d.extend_from_slice(&((payload - at) as u32).to_le_bytes());
+            d.extend_from_slice(&((payload - at - 4) as u32).to_le_bytes());
             d.extend_from_slice(&size.to_le_bytes());
         }
         d.extend_from_slice(&0u16.to_le_bytes());

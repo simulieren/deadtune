@@ -3,9 +3,12 @@
 //! stylesheets. That layout is inferred from ValveResourceFormat's shared Panorama reader and
 //! not yet checked against a real game file, so both directions refuse a container whose
 //! text is not an SVG document rather than guess. `rasterize` (feature `svg`, resvg) draws
-//! an icon for previews.
+//! an icon for previews. `palette`, `remap` and `adjust` edit the colours in the text.
+
+use std::collections::BTreeMap;
 
 use crate::hud::resource::{self, Resource, ResourceError};
+use crate::texture::adjust::{Adjust, Rgb, adjust_rgb};
 #[cfg(feature = "svg")]
 use crate::texture::png::RgbaImage;
 
@@ -45,12 +48,137 @@ pub fn with_svg_text(original: &[u8], svg: &str) -> Result<Vec<u8>, SvgError> {
     Ok(resource::with_style_text(&res, svg)?.to_bytes())
 }
 
+mod colors;
+
+use colors::Paint;
+
+/// One colour the icon uses and how many places use it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Swatch {
+    pub rgb: Rgb,
+    pub uses: usize,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Palette {
+    pub colors: Vec<Swatch>,
+    pub current_color: bool,
+}
+
+/// Every colour the SVG text names, most used first (ties by hex), plus whether
+/// `currentColor` appears.
+pub fn palette(svg: &str) -> Palette {
+    let mut uses = BTreeMap::<Rgb, usize>::new();
+    let mut current_color = false;
+    for token in colors::tokens(svg) {
+        match token.paint {
+            Paint::Color(rgb) => *uses.entry(rgb).or_default() += 1,
+            Paint::Current => current_color = true,
+        }
+    }
+    let mut colors: Vec<Swatch> = uses
+        .into_iter()
+        .map(|(rgb, uses)| Swatch { rgb, uses })
+        .collect();
+    colors.sort_by_key(|s| std::cmp::Reverse(s.uses));
+    Palette {
+        colors,
+        current_color,
+    }
+}
+
+/// `svg` with every colour mapped through `f`; everything else byte for byte, and a colour
+/// `f` returns unchanged keeps its original spelling.
+pub fn map_colors(svg: &str, mut f: impl FnMut(Rgb) -> Rgb) -> String {
+    let mut out = String::with_capacity(svg.len());
+    let mut done = 0;
+    for token in colors::tokens(svg) {
+        let Paint::Color(rgb) = token.paint else {
+            continue;
+        };
+        let new = f(rgb);
+        if new != rgb {
+            out.push_str(&svg[done..token.at.start]);
+            out.push_str(&colors::rewrite(&svg[token.at.clone()], new));
+            done = token.at.end;
+        }
+    }
+    out.push_str(&svg[done..]);
+    out
+}
+
+/// `svg` with each key colour replaced by its value (exact matches only).
+pub fn remap(svg: &str, map: &BTreeMap<Rgb, Rgb>) -> String {
+    map_colors(svg, |rgb| map.get(&rgb).copied().unwrap_or(rgb))
+}
+
 /// `svg` with every colour in it (fills, strokes, gradient stops, style attributes and
-/// `<style>` rules) put through `list` via `adjust::adjust_rgb`, `Swap` entries matched
-/// exactly, and `Opacity` folded into the root's `opacity`; everything else byte for byte.
-pub fn adjust(svg: &str, list: &[crate::texture::adjust::Adjust]) -> String {
-    let _ = (svg, list);
-    todo!("workstream B")
+/// `<style>` rules) put through `list` in order via `adjust_rgb`, `Swap` entries matched
+/// exactly, and `Opacity` multiplied into the root's `opacity`; everything else byte for
+/// byte.
+pub fn adjust(svg: &str, list: &[Adjust]) -> String {
+    let mapped = map_colors(svg, |rgb| {
+        list.iter().fold(rgb, |color, op| match *op {
+            Adjust::Swap { from, to } if color == from => to,
+            Adjust::Swap { .. } | Adjust::Opacity { .. } => color,
+            _ => Rgb(adjust_rgb(color.0, op)),
+        })
+    });
+    let factor: f64 = list
+        .iter()
+        .filter_map(|op| match *op {
+            Adjust::Opacity { percent } => Some(f64::from(percent) / 100.0),
+            _ => None,
+        })
+        .product();
+    if factor == 1.0 {
+        return mapped;
+    }
+    with_root_opacity(&mapped, factor)
+}
+
+/// `svg` with the root element's `opacity` multiplied by `factor` (added when absent),
+/// rounded to three decimals.
+fn with_root_opacity(svg: &str, factor: f64) -> String {
+    let mut at = 0;
+    let root = loop {
+        let Some(open) = svg[at..].find('<').map(|i| at + i) else {
+            return svg.to_string();
+        };
+        let rest = &svg[open..];
+        if !(rest.starts_with("<?") || rest.starts_with("<!")) {
+            break open + 1;
+        }
+        let end = if rest.starts_with("<!--") { "-->" } else { ">" };
+        let Some(past) = rest.find(end) else {
+            return svg.to_string();
+        };
+        at = open + past + end.len();
+    };
+    let Some(end) = tag_end(&svg[root - 1..]) else {
+        return svg.to_string();
+    };
+    let tag = &svg[root..root - 1 + end];
+    let old = colors::attributes(tag)
+        .into_iter()
+        .find(|(name, _)| *name == "opacity")
+        .map(|(_, value)| root + value.start..root + value.end);
+    let current = old.clone().map_or(1.0, |at| {
+        let text = svg[at].trim();
+        match text.strip_suffix('%') {
+            Some(p) => p.trim().parse().map_or(1.0, |p: f64| p / 100.0),
+            None => text.parse().unwrap_or(1.0),
+        }
+    });
+    let value = ((current * factor).clamp(0.0, 1.0) * 1000.0).round() / 1000.0;
+    match old {
+        Some(at) => format!("{}{value}{}", &svg[..at.start], &svg[at.end..]),
+        None => {
+            let name = root + tag.find(char::is_whitespace).unwrap_or(tag.len());
+            let name = name.min(root + tag.trim_end_matches('/').len());
+            format!("{} opacity=\"{value}\"{}", &svg[..name], &svg[name..])
+        }
+    }
 }
 
 /// An SVG document wrapping `png` as an embedded image filling `view`, so a raster image can
@@ -408,6 +536,326 @@ pub(crate) mod tests {
         assert!(svg.contains("width=\"24\" height=\"24\""));
     }
 
+    const GRADIENT: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E6A000"/>
+      <stop offset="0.5" stop-color='#ffffff'/>
+      <stop offset="1" style="stop-color:#fff;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <path id="ffffff" d="M0 0h32v32H0z" fill="url(#g)" fill-opacity="0.5" fill-rule="evenodd"/>
+</svg>"##;
+
+    const ILLUSTRATOR: &str = r##"<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 27.0.0, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 64 64" style="enable-background:new 0 0 64 64;" xml:space="preserve">
+<style type="text/css">
+	.st0{fill:#FFFFFF;}
+	.st1{fill:none;stroke:#E6A000;stroke-width:2;stroke-miterlimit:10;}
+</style>
+<path class="st0" d="M32,4L4,60h56L32,4z"/>
+<circle class="st1" cx="32" cy="36" r="12"/>
+<text class="st0">white #fff</text>
+</svg>
+"##;
+
+    const INKSCAPE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <g id="layer1">
+    <path style="fill:#ece8e1;fill-opacity:1;stroke:none;stroke-width:0.5" d="m 2,2 h 20 v 20 h -20 z"/>
+    <rect style="fill:#ece8e1;stroke:#000000;stroke-opacity:0.8" x="6" y="6" width="12" height="12"/>
+  </g>
+</svg>"##;
+
+    const MIXED: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" color="#333">
+  <circle r="4" fill="white" stroke="Gold"/>
+  <rect width="2" height="2" fill="rgb(255, 0, 0)" stroke="rgba(0,128,255,0.5)"/>
+  <rect width="3" height="3" fill="rgb(100%, 50%, 0%)" stroke="#fff"/>
+  <path d="M0 0" fill="currentColor" stroke="#11223380"/>
+  <rect fill="none" stroke="transparent" flood-color="inherit" lighting-color="#0f08"/>
+</svg>"##;
+
+    const CURRENT: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M2 2h20v20H2z"/><path stroke="currentColor" fill="none" d="M4 4h16"/></svg>"#;
+
+    const STYLED: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><style><![CDATA[
+/* fill: red; } */
+.a:hover { fill: Gold !important; stroke : rgb(10%, 20%, 30%) }
+@media (min-width: 1px) { .b{stop-color:#abc} }
+.c{fill-opacity:.5;color:#AbCdEf}
+]]></style><rect class="a" width="8" height="8"/></svg>"##;
+
+    const NOT_COLOURS: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8" class="red"><rect id="white" class="gold" fill="none" stroke="transparent" color="inherit" fill-opacity="0.5" fill-rule="evenodd" stroke-width="2" stroke-linecap="round" d="M0 0" data-fill="red"/><path fill="url(#red)" style="fill-opacity:0.5;stroke-width:2"/><text x="1">white #fff rgb(1,2,3)</text></svg>"##;
+
+    const SHAPES: [&str; 7] = [
+        GRADIENT,
+        ILLUSTRATOR,
+        INKSCAPE,
+        MIXED,
+        CURRENT,
+        STYLED,
+        NOT_COLOURS,
+    ];
+
+    fn rgb(hex: &str) -> Rgb {
+        hex.parse().unwrap()
+    }
+
+    fn swatches(svg: &str) -> Vec<(String, usize)> {
+        palette(svg)
+            .colors
+            .iter()
+            .map(|s| (s.rgb.hex(), s.uses))
+            .collect()
+    }
+
+    fn map(pairs: &[(&str, &str)]) -> BTreeMap<Rgb, Rgb> {
+        pairs.iter().map(|(a, b)| (rgb(a), rgb(b))).collect()
+    }
+
+    fn replaced(svg: &str, pairs: &[(&str, &str)]) -> String {
+        pairs.iter().fold(svg.to_string(), |text, (from, to)| {
+            assert_eq!(text.matches(from).count(), 1, "{from}");
+            text.replacen(from, to, 1)
+        })
+    }
+
+    fn valid(svg: &str) -> &str {
+        validate(svg).unwrap_or_else(|e| panic!("{e}: {svg}"));
+        svg
+    }
+
+    #[test]
+    fn palette_counts_every_colour_most_used_first() {
+        let owned = |list: &[(&str, usize)]| -> Vec<(String, usize)> {
+            list.iter().map(|(h, n)| (h.to_string(), *n)).collect()
+        };
+        assert_eq!(swatches(GRADIENT), owned(&[("#ffffff", 2), ("#e6a000", 1)]));
+        assert_eq!(
+            swatches(ILLUSTRATOR),
+            owned(&[("#e6a000", 1), ("#ffffff", 1)]),
+            "ties by hex"
+        );
+        assert_eq!(swatches(INKSCAPE), owned(&[("#ece8e1", 2), ("#000000", 1)]));
+        assert_eq!(
+            swatches(MIXED),
+            owned(&[
+                ("#ffffff", 2),
+                ("#0080ff", 1),
+                ("#00ff00", 1),
+                ("#112233", 1),
+                ("#333333", 1),
+                ("#ff0000", 1),
+                ("#ff8000", 1),
+                ("#ffd700", 1),
+            ])
+        );
+        assert_eq!(
+            swatches(STYLED),
+            owned(&[
+                ("#1a334d", 1),
+                ("#aabbcc", 1),
+                ("#abcdef", 1),
+                ("#ffd700", 1)
+            ])
+        );
+        assert!(palette(MIXED).current_color);
+        assert!(!palette(GRADIENT).current_color);
+        assert_eq!(
+            palette(CURRENT),
+            Palette {
+                colors: vec![],
+                current_color: true
+            }
+        );
+        assert_eq!(palette(NOT_COLOURS), Palette::default());
+    }
+
+    #[test]
+    fn unchanged_colours_keep_their_bytes() {
+        for svg in SHAPES {
+            assert_eq!(remap(svg, &BTreeMap::new()), svg);
+            assert_eq!(map_colors(svg, |c| c), svg);
+            assert_eq!(adjust(svg, &[]), svg);
+        }
+        assert_eq!(
+            map_colors(NOT_COLOURS, |_| Rgb::BLACK),
+            NOT_COLOURS,
+            "none, transparent, inherit, url(), lookalike names, ids, classes and text"
+        );
+        assert_eq!(map_colors(CURRENT, |_| Rgb::BLACK), CURRENT);
+    }
+
+    #[test]
+    fn remap_rewrites_only_the_colour_tokens() {
+        let out = remap(ILLUSTRATOR, &map(&[("#e6a000", "#00ff00")]));
+        assert_eq!(out, replaced(ILLUSTRATOR, &[("#E6A000", "#00ff00")]));
+        let out = remap(valid(&out), &map(&[("#ffffff", "#000000")]));
+        assert_eq!(
+            out,
+            replaced(
+                ILLUSTRATOR,
+                &[("#E6A000", "#00ff00"), ("fill:#FFFFFF", "fill:#000000")]
+            ),
+            "the text's #fff stays"
+        );
+
+        let out = remap(GRADIENT, &map(&[("#ffffff", "#102030")]));
+        assert_eq!(
+            valid(&out),
+            replaced(
+                GRADIENT,
+                &[("'#ffffff'", "'#102030'"), (":#fff;", ":#102030;")]
+            )
+        );
+
+        let out = remap(
+            INKSCAPE,
+            &map(&[("#ece8e1", "#d4860b"), ("#000000", "#ffffff")]),
+        );
+        assert_eq!(
+            valid(&out),
+            INKSCAPE
+                .replace("#ece8e1", "#d4860b")
+                .replace("stroke:#000000", "stroke:#ffffff")
+        );
+    }
+
+    #[test]
+    fn named_short_and_functional_forms_are_written_back() {
+        let out = remap(
+            MIXED,
+            &map(&[
+                ("#ffffff", "#123456"),
+                ("#ffd700", "#abcdef"),
+                ("#ff0000", "#010203"),
+                ("#0080ff", "#090909"),
+                ("#00ff00", "#ff00ff"),
+                ("#112233", "#445566"),
+            ]),
+        );
+        assert_eq!(
+            valid(&out),
+            replaced(
+                MIXED,
+                &[
+                    ("fill=\"white\"", "fill=\"#123456\""),
+                    ("stroke=\"Gold\"", "stroke=\"#abcdef\""),
+                    ("rgb(255, 0, 0)", "rgb(1, 2, 3)"),
+                    ("rgba(0,128,255,0.5)", "rgba(9, 9, 9, 0.5)"),
+                    ("stroke=\"#fff\"", "stroke=\"#123456\""),
+                    ("#11223380", "#44556680"),
+                    ("#0f08", "#ff00ff88"),
+                ]
+            )
+        );
+        let out = remap(MIXED, &map(&[("#ff8000", "#000000")]));
+        assert_eq!(
+            out,
+            replaced(MIXED, &[("rgb(100%, 50%, 0%)", "rgb(0, 0, 0)")])
+        );
+    }
+
+    #[test]
+    fn style_rules_are_css() {
+        let out = remap(
+            STYLED,
+            &map(&[
+                ("#ffd700", "#000000"),
+                ("#1a334d", "#ffffff"),
+                ("#aabbcc", "#010101"),
+                ("#abcdef", "#020202"),
+            ]),
+        );
+        assert_eq!(
+            valid(&out),
+            replaced(
+                STYLED,
+                &[
+                    ("Gold", "#000000"),
+                    ("rgb(10%, 20%, 30%)", "rgb(255, 255, 255)"),
+                    ("#abc}", "#010101}"),
+                    ("#AbCdEf", "#020202"),
+                ]
+            ),
+            "the commented-out red stays"
+        );
+    }
+
+    #[test]
+    fn opacity_multiplies_the_roots() {
+        let half = [Adjust::Opacity { percent: 50 }];
+        let once = adjust(INKSCAPE, &half);
+        assert_eq!(
+            valid(&once),
+            INKSCAPE.replacen("<svg ", "<svg opacity=\"0.5\" ", 1)
+        );
+        let twice = adjust(&once, &half);
+        assert_eq!(
+            valid(&twice),
+            INKSCAPE.replacen("<svg ", "<svg opacity=\"0.25\" ", 1)
+        );
+        assert_eq!(adjust(INKSCAPE, &[half[0], half[0]]), twice);
+        let own = "<svg opacity='0.8' viewBox=\"0 0 1 1\"><path opacity='0.8'/></svg>";
+        assert_eq!(
+            adjust(own, &[Adjust::Opacity { percent: 33 }]),
+            "<svg opacity='0.264' viewBox=\"0 0 1 1\"><path opacity='0.8'/></svg>"
+        );
+        let out = adjust(ILLUSTRATOR, &half);
+        assert_eq!(
+            valid(&out),
+            ILLUSTRATOR.replacen("<svg version", "<svg opacity=\"0.5\" version", 1),
+            "after the prolog and comment"
+        );
+        assert_eq!(
+            adjust(INKSCAPE, &[Adjust::Opacity { percent: 100 }]),
+            INKSCAPE
+        );
+    }
+
+    #[test]
+    fn swaps_through_adjust_match_remap_in_list_order() {
+        let swap = |from: &str, to: &str| Adjust::Swap {
+            from: rgb(from),
+            to: rgb(to),
+        };
+        let out = adjust(
+            MIXED,
+            &[swap("#ffffff", "#ff0000"), swap("#ff0000", "#0000ff")],
+        );
+        assert_eq!(
+            valid(&out),
+            remap(
+                MIXED,
+                &map(&[("#ffffff", "#0000ff"), ("#ff0000", "#0000ff")])
+            )
+        );
+        let out = adjust(
+            GRADIENT,
+            &[swap("#e6a000", "#00ff00"), Adjust::Opacity { percent: 50 }],
+        );
+        assert_eq!(
+            valid(&out),
+            remap(GRADIENT, &map(&[("#e6a000", "#00ff00")])).replacen(
+                "<svg ",
+                "<svg opacity=\"0.5\" ",
+                1
+            )
+        );
+    }
+
+    #[test]
+    fn colour_operations_go_through_adjust_rgb() {
+        let out = adjust(INKSCAPE, &[Adjust::Invert]);
+        assert_eq!(
+            valid(&out),
+            remap(
+                INKSCAPE,
+                &map(&[("#ece8e1", "#13171e"), ("#000000", "#ffffff")])
+            )
+        );
+    }
+
     #[cfg(feature = "svg")]
     const RECT: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="4" height="8" fill="#f00"/></svg>"##;
 
@@ -479,7 +927,9 @@ pub(crate) mod tests {
     }
 
     /// `DEADTUNE_GAME_SAMPLES=<snapshot folder>`: every `.vsvg_c` under `raw/panorama/images`
-    /// must hold SVG text (and rasterise, with the feature); prints a feature survey.
+    /// must hold SVG text (and rasterise, with the feature), survive an empty `remap` byte for
+    /// byte, have a palette when it names a hex colour, and stay valid with every colour
+    /// inverted; prints a feature survey.
     #[test]
     fn game_samples() {
         let Some(root) = std::env::var_os("DEADTUNE_GAME_SAMPLES") else {
@@ -503,6 +953,7 @@ pub(crate) mod tests {
             "<image",
         ];
         let mut counts = [0usize; 11];
+        let (mut colored, mut current) = (0, 0);
         let mut failures = Vec::new();
         for path in &files {
             let text = match svg_text(&std::fs::read(path).unwrap()) {
@@ -519,8 +970,33 @@ pub(crate) mod tests {
             if let Err(e) = rasterize(&text, 64) {
                 failures.push(format!("{}: {e}", path.display()));
             }
+            if remap(&text, &BTreeMap::new()) != text {
+                failures.push(format!("{}: an empty remap changed it", path.display()));
+            }
+            let found = palette(&text);
+            let squeezed: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+            let hex_paint = ["fill", "stroke", "stop-color"].iter().any(|p| {
+                ["=\"#", "='#", ":#"]
+                    .iter()
+                    .any(|sep| squeezed.contains(&format!("{p}{sep}")))
+            });
+            if hex_paint && found.colors.is_empty() {
+                failures.push(format!("{}: a hex colour but no palette", path.display()));
+            }
+            colored += usize::from(!found.colors.is_empty());
+            current += usize::from(found.current_color);
+            let inverted = map_colors(&text, |c| Rgb(c.0.map(|v| 255 - v)));
+            if let Err(e) = validate(&inverted) {
+                failures.push(format!("{}: inverted: {e}", path.display()));
+            }
+            #[cfg(feature = "svg")]
+            if let Err(e) = rasterize(&inverted, 64) {
+                failures.push(format!("{}: inverted: {e}", path.display()));
+            }
         }
         eprintln!("{} .vsvg_c files under {}", files.len(), images.display());
+        eprintln!("  with colours    {colored}");
+        eprintln!("  currentColor    {current}");
         for (needle, count) in features.iter().zip(counts) {
             eprintln!("  {needle:<16} {count}");
         }

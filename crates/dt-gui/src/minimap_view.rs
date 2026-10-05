@@ -1,4 +1,4 @@
-//! HUD tab, Minimap colours page: the game's own enemy colour ConVars, the experimental
+//! Minimap colours page (simple-view section, advanced HUD tab): the game's own enemy colour ConVars, the experimental
 //! per-icon CSS colours (`hud::minimap_colors`), and a painted minimap mock of both.
 
 use dt_core::hud::minimap_colors::{self, Color, IconId};
@@ -75,6 +75,7 @@ enum Action {
 }
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
+    crate::hud_view::hud_error(ui, state);
     let mut actions = Vec::new();
     if ui.available_width() >= 760.0 {
         ui.horizontal_top(|ui| {

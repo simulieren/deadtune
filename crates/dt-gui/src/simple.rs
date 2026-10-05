@@ -362,7 +362,8 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
                     match page {
                         Page::Results => results(ui, state, inline_help, &mut edits),
                         Page::Section(Section::Overview) => overview(ui, state, &mut edits),
-                        Page::Section(Section::Hud) => crate::hud_view::hud(ui, state),
+                        Page::Section(Section::Hud) => crate::hud_view::layout_page(ui, state),
+                        Page::Section(Section::Minimap) => crate::minimap_view::page(ui, state),
                         Page::Section(Section::Addons) => crate::addons_view::addons(ui, state),
                         Page::Section(Section::System) => system(ui, state),
                         Page::Section(Section::Safety) => safety(ui, state, &mut edits),
@@ -400,6 +401,7 @@ fn section_changes(state: &AppState, section: Section) -> usize {
     match section {
         Section::Overview => state.tweak_count(),
         Section::Hud => state.hud_changed_count(),
+        Section::Minimap => state.minimap_changed_count(),
         Section::Addons => state.addons_enabled_count(),
         Section::System => state.check_problems(),
         Section::Safety => 0,

@@ -1,4 +1,4 @@
-//! HUD tab: a 16:9 monitor you place HUD pieces on, an inspector for the selected
+//! HUD layout page: a 16:9 monitor you place HUD pieces on, an inspector for the selected
 //! piece, layout presets and an element list. Edits live in the profile and go out
 //! with the normal Apply.
 
@@ -59,6 +59,13 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
         state.ui.hud_page = pages[i];
     }
     ui.add_space(8.0);
+    match state.ui.hud_page {
+        HudPage::Layout => layout_page(ui, state),
+        HudPage::Colors => crate::minimap_view::page(ui, state),
+    }
+}
+
+pub fn hud_error(ui: &mut Ui, state: &AppState) {
     if let Some(e) = state.hud_error() {
         ui.colored_label(
             WARN,
@@ -66,10 +73,10 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
         )
         .on_hover_text(e);
     }
-    if state.ui.hud_page == HudPage::Colors {
-        crate::minimap_view::page(ui, state);
-        return;
-    }
+}
+
+pub fn layout_page(ui: &mut Ui, state: &mut AppState) {
+    hud_error(ui, state);
     let mut actions = Vec::new();
     toolbar(ui, state, &mut actions);
     ui.add_space(6.0);

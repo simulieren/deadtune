@@ -167,10 +167,11 @@ impl App {
                         .find(|s| s.label.to_lowercase().starts_with(&name.to_lowercase()))
                         .map(|s| s.id);
                 }
-                // `DEADTUNE_HUD_PAGE=colors` opens the HUD tab's Minimap colours page;
+                // `DEADTUNE_HUD_PAGE=colors` opens the Minimap colours page in either view;
                 // `DEADTUNE_MINIMAP_PRESET=colourblind` (or `contrast`) applies a colour preset.
                 if std::env::var("DEADTUNE_HUD_PAGE").is_ok_and(|v| v.starts_with("colo")) {
                     state.ui.hud_page = HudPage::Colors;
+                    state.ui.section = Section::Minimap;
                 }
                 self.startup_profile(&mut state);
                 if let Ok(name) = std::env::var("DEADTUNE_MINIMAP_PRESET") {

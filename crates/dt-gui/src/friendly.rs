@@ -386,9 +386,12 @@ pub const KEY_SETTINGS: &[&str] = &[
 
 pub fn groups(section: Section) -> &'static [Group] {
     match section {
-        Section::Overview | Section::Hud | Section::Addons | Section::System | Section::Safety => {
-            &[]
-        }
+        Section::Overview
+        | Section::Hud
+        | Section::Minimap
+        | Section::Addons
+        | Section::System
+        | Section::Safety => &[],
         Section::Display => &[
             Group {
                 title: "Resolution",

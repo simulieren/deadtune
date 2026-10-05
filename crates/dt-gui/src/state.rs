@@ -180,13 +180,14 @@ pub enum Section {
     World,
     Performance,
     Hud,
+    Minimap,
     Addons,
     System,
     Safety,
 }
 
 impl Section {
-    pub const ALL: [Section; 10] = [
+    pub const ALL: [Section; 11] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -194,6 +195,7 @@ impl Section {
         Section::World,
         Section::Performance,
         Section::Hud,
+        Section::Minimap,
         Section::Addons,
         Section::System,
         Section::Safety,
@@ -208,6 +210,7 @@ impl Section {
             Section::World => "World detail",
             Section::Performance => "Performance",
             Section::Hud => "HUD",
+            Section::Minimap => "Minimap",
             Section::Addons => "Addons",
             Section::System => "System check",
             Section::Safety => "Safety & setup",
@@ -223,6 +226,7 @@ impl Section {
             Section::World => "How far and how detailed the world is drawn.",
             Section::Performance => "Frame rate caps, menus and CPU.",
             Section::Hud => "Move and resize parts of the in-game HUD.",
+            Section::Minimap => "Colours for heroes, objectives and pickups on the minimap.",
             Section::Addons => {
                 "Community performance mods, rebuilt by DeadTune so they survive game updates."
             }
@@ -1576,6 +1580,17 @@ impl AppState {
         self.profile.hud.elements.len()
     }
 
+    /// Recoloured minimap icons plus the game's own enemy colour settings that are set.
+    pub fn minimap_changed_count(&self) -> usize {
+        let set = &self.profile.convars.set;
+        self.profile.hud.minimap_colors.len()
+            + ENEMY_UI_COLOR
+                .iter()
+                .chain([&CUSTOM_UI_COLORS])
+                .filter(|name| set.contains_key(**name))
+                .count()
+    }
+
     /// Layout presets leave the minimap colours alone; those have their own page.
     pub fn apply_hud_preset(&mut self, preset: HudPreset) {
         let minimap_colors = std::mem::take(&mut self.profile.hud.minimap_colors);
@@ -2797,6 +2812,28 @@ mod tests {
         state.apply_minimap_preset(None);
         assert!(state.profile.hud.minimap_colors.is_empty());
         assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn minimap_changes_count_icons_and_enemy_colour_settings() {
+        let (_dir, mut state) = state();
+        assert_eq!(state.minimap_changed_count(), 0);
+        state.set_minimap_color(IconId::Shop, Color([0, 0x72, 0xB2, 255]));
+        state.set_enemy_ui_color([0, 50, 50]);
+        state.set_custom_ui_colors(true);
+        assert_eq!(state.minimap_changed_count(), 3);
+        state.set_hud_element(
+            ElementId::Minimap,
+            ElementEdit {
+                offset_x: 10,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            state.minimap_changed_count(),
+            3,
+            "layout edits belong to the HUD page"
+        );
     }
 
     #[test]

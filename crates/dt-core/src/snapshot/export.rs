@@ -16,7 +16,6 @@ use crate::backup::{atomic_write, sha256_hex};
 use crate::hud::install::GAME_PAK;
 use crate::hud::vpk::VpkDir;
 use crate::locate::{self, GamePaths};
-use crate::texture::vtex::Vtex;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Progress<'a> {
@@ -62,10 +61,8 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), SnapshotError> {
 }
 
 fn stored_kind(candidate: &Candidate, selection: &Selection) -> Stored {
-    if selection.size_cap.is_none_or(|cap| candidate.size <= cap) {
+    if selection.stores_full(candidate) {
         Stored::Full
-    } else if candidate.path.ends_with(".vtex_c") {
-        Stored::Header
     } else {
         Stored::None
     }
@@ -151,18 +148,8 @@ pub fn take(
             None => {
                 let data = read_candidate(candidate, &pak, paths)?;
                 let raw = folder.join(store::RAW).join(&candidate.path);
-                match stored {
-                    Stored::Full => write_file(&raw, &data)?,
-                    Stored::Header => {
-                        let end = Vtex::parse(&data)
-                            .map(|v| v.pixel_start())
-                            .unwrap_or(data.len());
-                        let header = folder
-                            .join(store::RAW)
-                            .join(format!("{}.header", candidate.path));
-                        write_file(&header, &data[..end])?;
-                    }
-                    Stored::None => {}
+                if stored == Stored::Full {
+                    write_file(&raw, &data)?;
                 }
                 let (text, decoded) = match (want_text, kind) {
                     (true, Some(kind)) => match decode::decode(kind, &data) {
@@ -255,7 +242,7 @@ pub fn source_label(source: Source) -> &'static str {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use super::*;
     use crate::addons::native_particles::EMPTY_PARTICLE;
@@ -410,13 +397,14 @@ pub(crate) mod tests {
         assert_eq!(big.decoded, Decoded::Text, "text is still decoded");
         assert!(text("panorama/scripts/hud_big.js").starts_with("// padding"));
         let texture = entry(TEXTURE);
-        assert_eq!(texture.stored, Stored::Header);
-        let header = std::fs::read(raw(&format!("{TEXTURE}.header"))).unwrap();
-        assert_eq!(header, &COLOR[..Vtex::parse(COLOR).unwrap().pixel_start()]);
+        assert!(COLOR.len() > 20_000);
         assert_eq!(
-            texture.raw_path(&out.folder),
-            Some(raw(&format!("{TEXTURE}.header")))
+            texture.stored,
+            Stored::Full,
+            "a generator input ignores the cap"
         );
+        assert_eq!(std::fs::read(raw(TEXTURE)).unwrap(), COLOR);
+        assert_eq!(texture.raw_path(&out.folder), Some(raw(TEXTURE)));
         assert_eq!(entry("gameinfo.gi").source, Source::Loose);
 
         let list = std::fs::read_to_string(out.folder.join("pak01.tsv")).unwrap();
@@ -489,6 +477,55 @@ pub(crate) mod tests {
         assert_ne!(fifth.folder, first.folder);
         assert_eq!(fifth.written, 12);
         assert_eq!(store::list(&store::dir(&data)).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn every_generator_input_is_stored_in_full_and_old_header_entries_are_replaced() {
+        let (tmp, paths) = fake_install(&vpk::write(&fake_files()), "100");
+        let data = tmp.path().join("data");
+        let tiny = Selection {
+            size_cap: Some(1),
+            ..Selection::default()
+        };
+        let first = take(&paths, &data, &tiny, &mut go).unwrap();
+        let deadtune: BTreeSet<&str> = crate::snapshot::dependencies()
+            .into_iter()
+            .flat_map(|(_, paths)| paths)
+            .collect();
+        let pak = VpkDir::open(&paths.citadel_dir.join(GAME_PAK)).unwrap();
+        let mut inputs = 0;
+        for e in &first.manifest.files {
+            let wanted = deadtune.contains(e.path.as_str());
+            assert_eq!(e.stored == Stored::Full, wanted, "{}", e.path);
+            if wanted && e.source == Source::Pak01 {
+                let raw = std::fs::read(e.raw_path(&first.folder).unwrap()).unwrap();
+                assert_eq!(raw, pak.read(&e.path).unwrap(), "{}", e.path);
+                inputs += 1;
+            }
+        }
+        assert_eq!(inputs, 6);
+
+        let mut old = first.manifest.clone();
+        let at = old.files.iter().position(|e| e.path == TEXTURE).unwrap();
+        old.files[at].stored = Stored::Header;
+        old.save(&first.folder).unwrap();
+        std::fs::remove_file(first.folder.join("raw").join(TEXTURE)).unwrap();
+        std::fs::write(
+            first.folder.join("raw").join(format!("{TEXTURE}.header")),
+            b"header",
+        )
+        .unwrap();
+        let again = take(&paths, &data, &tiny, &mut go).unwrap();
+        assert_eq!(again.folder, first.folder);
+        assert_eq!(
+            again.written, 1,
+            "only the header-only texture is taken again"
+        );
+        assert_eq!(again.manifest.entry(TEXTURE).unwrap().stored, Stored::Full);
+        assert_eq!(
+            std::fs::read(again.folder.join("raw").join(TEXTURE)).unwrap(),
+            COLOR
+        );
     }
 
     #[test]

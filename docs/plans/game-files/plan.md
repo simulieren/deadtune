@@ -21,7 +21,7 @@ A `SnapshotSpec` is a set of categories. Each category is a path rule over the p
 | DeadTune targets | every pak path a DeadTune generator reads, derived from the code (`Native::game_files()` for each native addon in the `ADDONS` registry, the HUD style and layout constants, the planned settings layout) | on |
 | Config | `gameinfo.gi`, `cfg/*.cfg`, `cfg/*.vcfg`, `cfg/*.txt`, the Steam `appmanifest_1422450.acf` (buildid) | on |
 
-Models, sounds, maps and textures stay out unless a DeadTune generator reads them (the scope texture, the Sinner mask and model, the empty particle). A size cap (default 8 MB) keeps big binaries out: a file over the cap is still listed in the manifest with its CRC, so the diff sees it change, but only a `.vtex_c` gets its header stored (`raw/<path>.header`, everything before the pixel data) and other files store nothing.
+Models, sounds, maps and textures stay out unless a DeadTune generator reads them (the scope texture, the Sinner mask and model, the empty particle). A size cap (default 8 MB) keeps big binaries out: a file over the cap is still listed in the manifest with its CRC, so the diff sees it change, but stores nothing. Files a DeadTune feature reads (the `deadtune` category, including `gameinfo.gi` and `video.txt`) ignore the cap, so a snapshot always holds every generator input; the 16 MB scope texture is the one that needs it. DeadTune 0.9.0 stored only a header (`stored = "header"`, `raw/<path>.header`) for textures over the cap; a later take of the same build replaces it.
 
 "ConVar info" means what the files hold: the `ConVars` block of `gameinfo.gi` and the archived values in the cfg files. The engine's full ConVar list only exists in a running game (`cvarlist`), outside a snapshot.
 
@@ -50,7 +50,7 @@ size = 3154
 crc = "7a1c0f33"            # VPK tree CRC; crc32 of the bytes for loose files
 sha256 = "..."
 categories = ["hud", "panorama", "deadtune"]
-stored = "full"             # full | header | none (over the size cap)
+stored = "full"             # full | none (over the size cap) | header (0.9.0 only)
 text = "panorama/layout/citadel_hud_top_bar.xml"
 decoded = "text"            # text | strings | none
 ```

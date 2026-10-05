@@ -112,6 +112,7 @@ How it works now: DeadTune writes `cfg\deadtune_boot.cfg` (binds F8, sets the pr
 
 ### 4. Ranked
 - [ ] **P0-3**: with modified ConVars, can you queue matchmaking? With Ranked-safe mode on? With only the HUD addon installed (**H0-4**)?
+- [ ] Practice mode (section 13): is queueing refused with it on, and does Ranked-safe mode make queueing work again?
 
 ### 5. Restart loop
 - [ ] Apply + relaunch (Advanced): closes `deadlock.exe`, starts it through Steam, the countdown runs and "restart pending" clears.
@@ -211,6 +212,22 @@ SideLock is CC BY-NC-ND, so DeadTune never ships it; it downloads the author's f
 - [ ] **S-3 Import offline**: delete the `presets\sidelock` folder, download `cfg.zip` from https://gamebanana.com/mods/722944 in a browser, paste its path into the Import box: same result as S-1. Importing a random file says it is not a game settings file.
 - [ ] **S-4 Review**: put any other `gameinfo.gi` (say a copy of your game's) into the Import box: the card says the file differs, "Show the N changed settings" lists them, nothing changes until **Accept**; **Discard** drops it.
 - [ ] **S-5 CLI**: `tools\deadtune-cli.exe presets` shows the licence and state; `presets fetch sidelock`, then `profile new side.toml --base sidelock` and `diff --profile side.toml` work.
+
+### 15. Practice mode (Performance page)
+
+Since the September 2026 update the game ignores the big shadow and fog ConVars in `gameinfo.gi`. Practice mode edits the `SceneSystem` section instead, the way the SideLock config (GameBanana 722944) does: shadows (`CSMCascadeResolution`, the shadow atlas and texture sizes, `DynamicShadowResolution` to 0), fog (`VolumetricFog`, `CubemapFog`, `NonTexturedGradientFog` to 0) and batching (`LayerBatchThresholdFullsort 20`, `DisableLateAllocatedTransformBuffer 1`, `MinimumLateAllocatedVertexCacheBufferSizeMB 64`). The game's matchmaking check refuses "unsupported changes" to `Engine2`, `MaterialSystem2`, `NetworkSystem`, `Particles`, `RenderSystem`, `SceneSystem` and `WorldRenderer`, so we expect queueing to be refused while it is on. Nothing here could be proven on the Mac. DeadTune only ever touches keys it wrote itself: before it writes a practice value it records what the key held (`practice.toml` in its data folder), and switching the group off puts that back. Keys it never wrote are left exactly as they are, so a hand-installed SideLock `SceneSystem` survives a normal Apply. Ranked-safe mode is the explicit "make me queueable" action and resets all of them to Valve's stock values, whoever wrote them; leaving Ranked-safe returns to the profile's state.
+
+Setup: a `gameinfo.gi` that is otherwise stock (Vanilla preset or Ranked-safe on), the FPS counter on (`cl_showfps 1` in the console, or Steam's overlay), and the same sandbox spot for every measurement. Note the FPS at that spot before you start.
+
+- [ ] **PM-1 Writes**: Performance > Practice mode, turn on all three, Apply. The action bar says the changes take effect next launch, the sidebar shows "Practice mode on", and Overview > Status shows the same with a Performance button. In `game\citadel\gameinfo.gi` the `SceneSystem` block has the eleven zeroed values and the three batching lines just before its closing brace; nothing else in the file changed, and the file still uses CRLF.
+- [ ] **PM-2 Loads**: launch, open the sandbox. Are shadows gone and fog gone? Write down the FPS at the reference spot with all three on, then with only shadows, only fog, only batching (Apply and relaunch each time). Note anything odd (black areas, missing lighting, crashes at map load).
+- [ ] **PM-3 System check**: with practice mode on, the "Matchmaking sections" row is a Warning saying practice mode is on and matchmaking may refuse to queue. Copy the diagnostic report once in this state.
+- [ ] **PM-4 Queueing refused?** (critical): with practice mode on, go to Play and queue for an unranked match, then a ranked one. Does the game refuse with an "unsupported changes" or similar message, or does it queue? Copy the exact wording. Then try a bot match and the sandbox: those should work.
+- [ ] **PM-5 Ranked-safe restores queueing** (critical): leave practice mode's switches on, turn on Ranked-safe mode (Safety & setup), relaunch. The `SceneSystem` block is back to stock (`CSMCascadeResolution 2048`, `VolumetricFog 1`, no `LayerBatchThresholdFullsort` line) and the "Matchmaking sections" row is OK. Can you queue now? Turn Ranked-safe off, relaunch: practice mode is back without touching the switches.
+- [ ] **PM-6 Off restores what was there**: turn the three switches off, Apply. `gameinfo.gi` is byte for byte what it was before PM-1 (compare with the backup in Advanced > Backups, or `fc /b`), and `practice.toml` is gone from the data folder. Queueing works.
+- [ ] **PM-7 The record survives a restart**: turn shadows on, Apply, close DeadTune. `practice.toml` in the data folder lists the shadow keys with their old values. Reopen DeadTune, switch shadows off, Apply: the old values are back.
+- [ ] **PM-8 SideLock stays yours**: with the SideLock `gameinfo.gi` installed by hand and practice mode off, press Apply on any preset. The `SceneSystem` block is untouched (its zeros and the three batching lines are still there). System check's "Matchmaking sections" row lists those keys plus SideLock's other edits (for example `RenderSystem/SwapChainSampleableDepth`), says Ranked-safe mode resets the shadow, fog and batching keys and points to Verify integrity for the rest. Turn practice mode on and off again: the block is still SideLock's, because DeadTune never changed those values. Does queueing fail in that state too?
+- [ ] **PM-9 CLI**: `tools\deadtune-cli.exe practice on --fog --profile my.toml`, then `diff --profile my.toml` lists the three fog keys under "practice mode", `apply --profile my.toml --yes` writes them, `ranked-safe --yes` restores stock, `practice off --profile my.toml` drops the table from the profile.
 
 ### 14. Send the diagnostic report
 

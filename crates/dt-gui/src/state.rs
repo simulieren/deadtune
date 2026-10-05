@@ -30,6 +30,7 @@ use dt_core::hud::minimap_style::{
 };
 use dt_core::launch::{self, LaunchArgs};
 use dt_core::locate::GamePaths;
+use dt_core::practice::{self, PracticeMode};
 use dt_core::preset::{self, PresetId, remote};
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 use dt_core::watch::{self, Change, Watcher};
@@ -46,12 +47,16 @@ use dt_core::doctor::Check;
 pub struct LiveFiles {
     pub gameinfo: String,
     pub video: Option<String>,
+    /// What gameinfo.gi holds right now, for the "practice mode on" chips.
+    pub practice: PracticeMode,
 }
 
 impl LiveFiles {
     pub fn read(paths: &GamePaths) -> io::Result<LiveFiles> {
+        let gameinfo = std::fs::read_to_string(&paths.gameinfo)?;
         Ok(LiveFiles {
-            gameinfo: std::fs::read_to_string(&paths.gameinfo)?,
+            practice: practice::detect(&gameinfo).unwrap_or_default(),
+            gameinfo,
             video: std::fs::read_to_string(&paths.video).ok(),
         })
     }
@@ -316,6 +321,7 @@ impl PlanSummary {
             live_now,
             queued: plan.queued_cheat.len(),
             next_launch: plan.restart.len()
+                + plan.sections.len()
                 + plan.video_changes.len()
                 + plan.addon_changes()
                 + (plan.live.len() - live_now),
@@ -650,6 +656,7 @@ pub fn default_profile() -> Profile {
         video: BTreeMap::new(),
         hud: HudLayout::default(),
         addons: AddonsConfig::default(),
+        practice: PracticeMode::default(),
     }
 }
 
@@ -941,8 +948,11 @@ impl AppState {
                     &base.texts,
                     &self.profile,
                     self.catalog,
-                    hud,
-                    addons,
+                    apply::Extras {
+                        hud,
+                        addons,
+                        practice: practice::Record::load(&self.store.root).unwrap_or_default(),
+                    },
                 ),
                 Err(e) => {
                     self.preview = Err(e.clone());
@@ -1164,6 +1174,11 @@ impl AppState {
     /// Downloaded and imported remote presets.
     pub fn presets_dir(&self) -> PathBuf {
         preset::cache_dir(&self.data_dir)
+    }
+
+    pub fn set_practice(&mut self, mode: PracticeMode) {
+        self.profile.practice = mode;
+        self.refresh_preview();
     }
 
     pub fn set_base(&mut self, base: BaseRef) {
@@ -1847,6 +1862,7 @@ impl AppState {
                 .restart
                 .iter()
                 .chain(&plan.queued_cheat)
+                .chain(&plan.sections)
                 .chain(plan.video_changes.keys())
                 .cloned()
                 .collect();
@@ -2448,6 +2464,81 @@ mod tests {
         assert_eq!(state.settings.source, TargetSource::Profile);
         assert!(plan(&state).is_empty(), "profile written back");
         assert_ne!(state.live.gameinfo, stock);
+    }
+
+    #[test]
+    fn practice_mode_lands_in_the_files_and_ranked_safe_takes_it_out() {
+        let (_dir, mut state) = state();
+        assert!(state.live.practice.is_off());
+        let fog = PracticeMode {
+            fog: true,
+            ..PracticeMode::default()
+        };
+        state.set_practice(fog);
+        assert_eq!(state.profile.practice, fog);
+        assert_eq!(state.pending(), Pending::Other);
+        assert_eq!(plan(&state).sections.len(), 3);
+        assert_eq!(state.timing(), Timing::NextLaunch);
+        assert!(state.live.practice.is_off(), "not written before Apply");
+
+        let applied = state.apply().unwrap();
+        assert!(applied.report.wrote_gameinfo && applied.report.needs_restart);
+        assert_eq!(state.live.practice, fog);
+        assert_eq!(
+            practice::detect(&std::fs::read_to_string(&state.paths.gameinfo).unwrap()).unwrap(),
+            fog
+        );
+        assert!(plan(&state).is_empty());
+        let names = &state.pending_restart.as_ref().unwrap().names;
+        assert!(names.contains(&"SceneSystem/VolumetricFog".to_string()));
+
+        let record = practice::Record::load(&state.store.root).unwrap();
+        assert_eq!(record.prior("VolumetricFog"), Some(Some("1")));
+
+        state.toggle_ranked_safe().unwrap();
+        assert!(state.live.practice.is_off(), "ranked-safe restored stock");
+        assert_eq!(state.profile.practice, fog, "the profile remembers it");
+        assert_eq!(
+            practice::Record::load(&state.store.root).unwrap(),
+            record,
+            "ranked-safe leaves the record"
+        );
+        state.toggle_ranked_safe().unwrap();
+        assert_eq!(state.live.practice, fog);
+
+        let stock = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../research/configs/OptimizationLock/clean gameinfo.gi/gameinfo.gi"
+        ))
+        .unwrap();
+        state.set_practice(PracticeMode::default());
+        state.apply().unwrap();
+        assert_eq!(state.live.gameinfo, stock, "off restored the prior values");
+        assert!(!state.store.root.join(practice::RECORD_FILE).exists());
+
+        let theirs = stock.replacen(
+            "VolumetricFog                     \"1\"",
+            "VolumetricFog                     \"0\"",
+            1,
+        );
+        std::fs::write(&state.paths.gameinfo, &theirs).unwrap();
+        state.live = LiveFiles::read(&state.paths).unwrap();
+        state.known_gameinfo_sha = sha256_hex(state.live.gameinfo.as_bytes());
+        state.set_convar(LIVE, "90".into()).unwrap();
+        state.apply().unwrap();
+        assert!(
+            state
+                .live
+                .gameinfo
+                .contains("VolumetricFog                     \"0\""),
+            "a value DeadTune never wrote stays"
+        );
+        assert!(state.live.practice.is_off(), "one key is not the fog group");
+
+        state.set_practice(PracticeMode::default());
+        state.apply().unwrap();
+        assert!(state.live.practice.is_off());
+        assert!(!state.profile.to_toml().unwrap().contains("practice"));
     }
 
     #[test]

@@ -47,6 +47,8 @@ pub enum GiError {
     /// `line` is 1-based, unlike `ConVarEntry::line`.
     #[error("unbalanced braces near line {line}")]
     UnbalancedBraces { line: usize },
+    #[error("no {0} section found")]
+    NoSection(String),
 }
 
 pub fn detect_eol(text: &str) -> Eol {
@@ -251,12 +253,12 @@ const MANAGED_TAGS: [(&str, &str); 2] = [
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Line<'a> {
-    content: &'a str,
-    eol: &'a str,
+pub(crate) struct Line<'a> {
+    pub(crate) content: &'a str,
+    pub(crate) eol: &'a str,
 }
 
-fn split_lines(text: &str) -> Vec<Line<'_>> {
+pub(crate) fn split_lines(text: &str) -> Vec<Line<'_>> {
     text.split_inclusive('\n')
         .map(|raw| {
             let content = raw
@@ -271,12 +273,12 @@ fn split_lines(text: &str) -> Vec<Line<'_>> {
         .collect()
 }
 
-fn push_line(out: &mut String, line: &Line) {
+pub(crate) fn push_line(out: &mut String, line: &Line) {
     out.push_str(line.content);
     out.push_str(line.eol);
 }
 
-fn eol_str(eol: Eol) -> &'static str {
+pub(crate) fn eol_str(eol: Eol) -> &'static str {
     match eol {
         Eol::Lf => "\n",
         Eol::CrLf => "\r\n",
@@ -351,7 +353,7 @@ fn is_trail(s: &str) -> bool {
     after_blanks.is_empty() || (after_blanks.len() < s.len() && after_blanks.starts_with("//"))
 }
 
-fn unquote(value: &str) -> &str {
+pub(crate) fn unquote(value: &str) -> &str {
     value
         .strip_prefix('"')
         .and_then(|v| v.strip_suffix('"'))
@@ -367,14 +369,14 @@ fn quote(value: &str) -> String {
 }
 
 /// Braces and the `ConVars` keyword count only outside `//` comments and quoted strings.
-struct LineScan {
-    opens: usize,
-    closes: usize,
+pub(crate) struct LineScan {
+    pub(crate) opens: usize,
+    pub(crate) closes: usize,
     mentions_convars: bool,
 }
 
 impl LineScan {
-    fn new(content: &str) -> Self {
+    pub(crate) fn new(content: &str) -> Self {
         let mut code = String::with_capacity(content.len());
         let (mut opens, mut closes, mut in_quote) = (0, 0, false);
         let mut chars = content.chars().peekable();

@@ -421,6 +421,7 @@ pub fn profiles(ui: &mut egui::Ui, state: &mut AppState) {
                         video: Default::default(),
                         hud: Default::default(),
                         addons: Default::default(),
+                        practice: Default::default(),
                     };
                     picked = Some((profile, false));
                     state.ui.new_profile_name.clear();

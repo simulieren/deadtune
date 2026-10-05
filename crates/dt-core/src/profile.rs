@@ -9,6 +9,7 @@ use serde::de::{Error as _, IntoDeserializer};
 use crate::addons::AddonsConfig;
 use crate::gi::{Override, Overrides};
 use crate::hud::HudLayout;
+use crate::practice::PracticeMode;
 use crate::preset::PresetId;
 
 /// Serialized as `"kaiz_minspec"` or `"file:<path>"`.
@@ -40,6 +41,9 @@ pub struct Profile {
     pub hud: HudLayout,
     #[serde(default, skip_serializing_if = "AddonsConfig::is_default")]
     pub addons: AddonsConfig,
+    /// SceneSystem keys for bots, sandbox and unranked; see `practice`.
+    #[serde(default, skip_serializing_if = "PracticeMode::is_off")]
+    pub practice: PracticeMode,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -223,6 +227,7 @@ pub fn builtin_suggestions() -> Vec<Profile> {
             video: BTreeMap::new(),
             hud: HudLayout::default(),
             addons: AddonsConfig::default(),
+            practice: PracticeMode::default(),
         },
         Profile {
             name: "Battery".into(),
@@ -244,6 +249,7 @@ pub fn builtin_suggestions() -> Vec<Profile> {
             ]),
             hud: HudLayout::default(),
             addons: AddonsConfig::default(),
+            practice: PracticeMode::default(),
         },
     ]
 }
@@ -293,6 +299,7 @@ names = ["citadel_camera_hero_fov"]
             .into(),
             hud: HudLayout::default(),
             addons: AddonsConfig::default(),
+            practice: PracticeMode::default(),
         }
     }
 
@@ -313,6 +320,7 @@ names = ["citadel_camera_hero_fov"]
             video: BTreeMap::new(),
             hud: HudLayout::default(),
             addons: AddonsConfig::default(),
+            practice: PracticeMode::default(),
         });
         for p in profiles {
             let text = p.to_toml().unwrap();
@@ -338,6 +346,33 @@ names = ["citadel_camera_hero_fov"]
         let text = p.to_toml().unwrap();
         assert!(text.contains("[hud.elements.minimap]"), "{text}");
         assert_eq!(Profile::from_toml(&text).unwrap(), p, "{text}");
+    }
+
+    #[test]
+    fn practice_mode_round_trips_and_is_omitted_when_off() {
+        let mut p = plan_profile();
+        assert!(
+            !p.to_toml().unwrap().contains("practice"),
+            "off adds no table"
+        );
+        p.practice.fog = true;
+        let text = p.to_toml().unwrap();
+        assert!(
+            text.contains("[practice]\nshadows = false\nfog = true\nbatching = false\n"),
+            "{text}"
+        );
+        assert_eq!(Profile::from_toml(&text).unwrap(), p, "{text}");
+        let partial =
+            Profile::from_toml("name = \"x\"\nbase = \"vanilla\"\n[practice]\nshadows = true\n")
+                .unwrap();
+        assert_eq!(
+            partial.practice,
+            PracticeMode {
+                shadows: true,
+                fog: false,
+                batching: false
+            }
+        );
     }
 
     #[test]

@@ -14,6 +14,7 @@ use dt_core::hud::install::{ADDON_FILE, GAME_PAK, HudAction, addons_dir};
 use dt_core::hud::searchpaths::has_addons;
 use dt_core::hud::{ElementEdit, ElementId, HudLayout};
 use dt_core::locate::{GamePaths, from_game_root};
+use dt_core::practice::{self, PracticeMode, Record};
 use dt_core::preset::{self, PresetId, remote};
 use dt_core::profile::{BaseRef, ConVarEdits, Profile};
 
@@ -66,6 +67,7 @@ fn kaiz_profile() -> Profile {
         video: BTreeMap::new(),
         hud: HudLayout::default(),
         addons: AddonsConfig::default(),
+        practice: PracticeMode::default(),
     }
 }
 
@@ -146,8 +148,11 @@ fn plan_for(install: &FakeInstall, profile: &Profile, ctx: ApplyContext) -> Appl
         &base,
         profile,
         catalog(),
-        None,
-        addons,
+        Extras {
+            hud: None,
+            addons,
+            practice: Record::load(&install.store.root).unwrap(),
+        },
     )
     .unwrap();
     plan(
@@ -221,7 +226,7 @@ fn remote_preset_uses_only_its_convars_block_with_the_denylist_and_ignored_marks
     let presets = sidelock_cache();
     let profile = sidelock_profile();
     let base = resolve_base(&profile, presets.path()).unwrap();
-    let tgt = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
+    let tgt = target(VANILLA, None, &base, &profile, catalog(), Extras::default()).unwrap();
 
     assert_eq!(
         outside_convars(&tgt.gameinfo),
@@ -264,7 +269,7 @@ fn remote_preset_uses_only_its_convars_block_with_the_denylist_and_ignored_marks
 fn target_takes_base_block_plus_edits_and_keeps_live_outside_convars() {
     let profile = kaiz_profile();
     let base = resolve_base(&profile, no_cache()).unwrap();
-    let tgt = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
+    let tgt = target(VANILLA, None, &base, &profile, catalog(), Extras::default()).unwrap();
 
     let effective = effective_values(&tgt.gameinfo).unwrap();
     let base_effective = effective_values(KAIZ).unwrap();
@@ -326,8 +331,7 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
         &base,
         &profile,
         catalog(),
-        None,
-        None,
+        Extras::default(),
     )
     .unwrap();
     let video = tgt.video.unwrap();
@@ -358,8 +362,7 @@ fn target_video_swaps_base_settings_then_applies_profile_video() {
         &base,
         &kaiz_video_edit,
         catalog(),
-        None,
-        None,
+        Extras::default(),
     )
     .unwrap();
     let video = tgt.video.unwrap();
@@ -379,7 +382,7 @@ fn plan_buckets_follow_catalog_apply_classes() {
     profile.convars.comment.push(stock.clone());
     let base = resolve_base(&profile, no_cache()).unwrap();
     let target_eff = effective_values(
-        &target(VANILLA, None, &base, &profile, catalog(), None, None)
+        &target(VANILLA, None, &base, &profile, catalog(), Extras::default())
             .unwrap()
             .gameinfo,
     )
@@ -481,7 +484,7 @@ fn commenting_out_a_live_convar_pushes_its_catalog_default() {
         ..kaiz_profile()
     };
     let base = resolve_base(&profile, no_cache()).unwrap();
-    let applied = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
+    let applied = target(VANILLA, None, &base, &profile, catalog(), Extras::default()).unwrap();
     let install = fake_install(&applied.gameinfo, None);
 
     let unknown_restart = read_convars(&applied.gameinfo)
@@ -676,7 +679,7 @@ fn ranked_safe_restores_stock_block_and_keeps_modified_search_paths() {
     );
     let profile = kaiz_profile();
     let base = resolve_base(&profile, no_cache()).unwrap();
-    let tuned = target(&modded, None, &base, &profile, catalog(), None, None).unwrap();
+    let tuned = target(&modded, None, &base, &profile, catalog(), Extras::default()).unwrap();
     let install = fake_install(&tuned.gameinfo, None);
 
     let safe = ranked_safe_target(&tuned.gameinfo, &install.store, None, None).unwrap();
@@ -756,7 +759,18 @@ fn plan_with_hud(install: &FakeInstall, profile: &Profile) -> ApplyPlan {
     let live = read(&install.paths.gameinfo);
     let hud = hud_plan(&install.paths, &profile.hud, &install.store).unwrap();
     let base = resolve_base(profile, no_cache()).unwrap();
-    let tgt = target(&live, None, &base, profile, catalog(), hud, None).unwrap();
+    let tgt = target(
+        &live,
+        None,
+        &base,
+        profile,
+        catalog(),
+        Extras {
+            hud,
+            ..Extras::default()
+        },
+    )
+    .unwrap();
     plan(
         &install.paths,
         &live,
@@ -918,7 +932,7 @@ fn no_preset_writes_a_denylisted_value() {
             ..kaiz_profile()
         };
         let base = resolve_base(&profile, presets.path()).unwrap();
-        let tgt = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
+        let tgt = target(VANILLA, None, &base, &profile, catalog(), Extras::default()).unwrap();
         for (name, value) in effective_values(&tgt.gameinfo).unwrap() {
             if catalog().is_denied(&name) {
                 assert_eq!(
@@ -930,4 +944,159 @@ fn no_preset_writes_a_denylisted_value() {
             }
         }
     }
+}
+
+#[test]
+fn practice_mode_writes_scene_system_keys_and_ranked_safe_restores_them() {
+    let mut profile = kaiz_profile();
+    profile.practice = PracticeMode {
+        shadows: true,
+        fog: false,
+        batching: true,
+    };
+    let base = resolve_base(&profile, no_cache()).unwrap();
+    let tuned = target(VANILLA, None, &base, &profile, catalog(), Extras::default()).unwrap();
+    assert_eq!(practice::detect(&tuned.gameinfo).unwrap(), profile.practice);
+    let install = fake_install(VANILLA, None);
+    let plan_on = plan(
+        &install.paths,
+        VANILLA,
+        None,
+        &tuned,
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap();
+    assert_eq!(plan_on.sections.len(), 10, "{:?}", plan_on.sections);
+    assert!(
+        plan_on
+            .sections
+            .iter()
+            .all(|s| s.starts_with("SceneSystem/"))
+    );
+    assert!(
+        plan_on
+            .sections
+            .contains(&"SceneSystem/LayerBatchThresholdFullsort".to_string())
+    );
+    let report = execute(&install.paths, &plan_on, &install.store, None).unwrap();
+    assert!(report.needs_restart);
+    let live = read(&install.paths.gameinfo);
+    assert_eq!(practice::detect(&live).unwrap(), profile.practice);
+    let record = Record::load(&install.store.root).unwrap();
+    assert_eq!(
+        record.prior("CSMCascadeResolution"),
+        Some(Some("2048")),
+        "execute saved what the keys held"
+    );
+    assert_eq!(record.prior("VolumetricFog"), None, "fog was never written");
+
+    profile.practice = PracticeMode::default();
+    let off = target(
+        &live,
+        None,
+        &base,
+        &profile,
+        catalog(),
+        Extras {
+            practice: record.clone(),
+            ..Extras::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        outside_convars(&off.gameinfo),
+        outside_convars(VANILLA),
+        "off puts back what the record holds"
+    );
+    assert!(off.practice_record.as_ref().unwrap().is_empty());
+    let plan_off = plan_for(&install, &profile, ApplyContext::default());
+    execute(&install.paths, &plan_off, &install.store, None).unwrap();
+    assert!(
+        !install.store.root.join(practice::RECORD_FILE).exists(),
+        "an empty record removes its file"
+    );
+    assert_eq!(
+        outside_convars(&read(&install.paths.gameinfo)),
+        outside_convars(VANILLA)
+    );
+
+    let safe = ranked_safe_target(&live, &install.store, None, None).unwrap();
+    assert_eq!(safe.gameinfo, VANILLA, "ranked-safe is stock byte for byte");
+    let plan_safe = plan(
+        &install.paths,
+        &live,
+        None,
+        &safe,
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap();
+    assert_eq!(plan_safe.sections.len(), 10);
+    let unchanged = plan(
+        &install.paths,
+        VANILLA,
+        None,
+        &ranked_safe_target(VANILLA, &install.store, None, None).unwrap(),
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap();
+    assert!(unchanged.sections.is_empty() && unchanged.gameinfo.is_none());
+}
+
+/// A SideLock user's zeroed SceneSystem is theirs: a normal Apply never touches keys DeadTune
+/// did not write, and the record only ever holds what DeadTune changed.
+#[test]
+fn apply_leaves_foreign_scene_system_edits_alone_unless_practice_wrote_them() {
+    let foreign = VANILLA
+        .replacen(
+            "CSMCascadeResolution           \"2048\"",
+            "CSMCascadeResolution           \"0\"",
+            1,
+        )
+        .replacen(
+            "VolumetricFog                     \"1\"",
+            "VolumetricFog                     \"0\"",
+            1,
+        );
+    let install = fake_install(&foreign, None);
+    let mut profile = kaiz_profile();
+    let plan_off = plan_for(&install, &profile, ApplyContext::default());
+    assert!(plan_off.sections.is_empty(), "{:?}", plan_off.sections);
+    execute(&install.paths, &plan_off, &install.store, None).unwrap();
+    let after = read(&install.paths.gameinfo);
+    assert_eq!(outside_convars(&after), outside_convars(&foreign));
+    assert!(!install.store.root.join(practice::RECORD_FILE).exists());
+
+    profile.practice = PracticeMode {
+        shadows: true,
+        ..PracticeMode::default()
+    };
+    let plan_on = plan_for(&install, &profile, ApplyContext::default());
+    execute(&install.paths, &plan_on, &install.store, None).unwrap();
+    let record = Record::load(&install.store.root).unwrap();
+    assert_eq!(
+        record.prior("CSMCascadeResolution"),
+        None,
+        "already the practice value: the player's own"
+    );
+    assert_eq!(record.prior("DynamicShadowResolution"), Some(Some("1")));
+
+    profile.practice = PracticeMode::default();
+    let plan_back = plan_for(&install, &profile, ApplyContext::default());
+    execute(&install.paths, &plan_back, &install.store, None).unwrap();
+    let back = read(&install.paths.gameinfo);
+    assert_eq!(outside_convars(&back), outside_convars(&foreign));
+    assert!(back.contains("CSMCascadeResolution           \"0\""));
+
+    let safe = ranked_safe_target(&back, &install.store, None, None).unwrap();
+    assert!(
+        safe.gameinfo
+            .contains("CSMCascadeResolution           \"2048\"")
+    );
+    assert!(
+        safe.gameinfo
+            .contains("VolumetricFog                     \"1\"")
+    );
 }

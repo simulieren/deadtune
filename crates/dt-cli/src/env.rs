@@ -165,14 +165,18 @@ pub fn profile_plan(
     let base = apply::resolve_base(profile, &preset::cache_dir(&env.data_dir))?;
     let hud = apply::hud_plan(paths, &profile.hud, &store)?;
     let addons = apply::addons_plan(paths, &profile.addons, &store)?;
+    let practice = dt_core::practice::Record::load(&store.root)?;
     let target = apply::target(
         &live,
         live_video.as_deref(),
         &base,
         profile,
         catalog,
-        hud,
-        addons,
+        apply::Extras {
+            hud,
+            addons,
+            practice,
+        },
     )?;
     let ctx = ApplyContext {
         in_sandbox,
@@ -211,6 +215,10 @@ pub fn print_plan(plan: &ApplyPlan, diffs: bool) {
     print_list("live now", &live);
     print_list("queued until sandbox (cheat)", &plan.queued_cheat);
     print_list("next launch", &plan.restart);
+    print_list(
+        "practice mode (next launch; matchmaking may refuse to queue)",
+        &plan.sections,
+    );
     print_list("video settings", &video);
     print_list(
         "ignored by the game (gameinfo_cannot_override)",

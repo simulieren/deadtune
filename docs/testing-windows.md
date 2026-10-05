@@ -307,3 +307,11 @@ The Game files page (sidebar, under More) copies the HUD, settings menu and main
 - [ ] **GF-7 Compare by hand**: pick the two snapshots in the pickers (older left, newer right) and press **Compare with previous**; the report is the same as GF-6. Swap the order and compare again: added and removed swap.
 - [ ] **GF-8 Cancel and delete**: start a snapshot and press **Cancel** mid-way (easiest right after a game update, when nothing is reused): the status says "Snapshot cancelled" and no half folder is left in `game-files\`. **Delete** on a snapshot asks once ("Really delete?") and removes the folder.
 - [ ] **GF-9 CLI**: `tools\deadtune-cli.exe snapshot list` shows the same snapshots; `snapshot take --categories hud,config` writes only the HUD and settings files into the current build's folder; `snapshot diff previous latest` prints the summary and the report path.
+- [ ] **GF-10 UI images**: `tools\deadtune-cli.exe snapshot take --images all` copies every `panorama\images` file (about 3.3 GB, 2706 files) into the current build's folder and writes `text\panorama\images\...\*.png` and `*.svg` next to the layouts. Note the time and the folder size. The command ends by listing every file it could not decode; ideally that list is empty, otherwise paste it into the notes. Open a few PNGs in Explorer (`text\panorama\images\minimap\base\minimap_midtown_mid_psd.png` should be the map, `hud\top_bar\chat_texture_png.png` the chat backer) and an SVG (`hud\top_bar\icon_ultimate.svg` in a browser). Then, from a repo checkout, run the decode census over the folder and paste its output (the format distribution and the SVG feature survey) into the notes:
+
+  ```powershell
+  $env:DEADTUNE_GAME_SAMPLES = "$env:APPDATA\DeadTune\game-files\<build>-<date>"
+  cargo test -p dt-core --lib --features svg -- texture --nocapture
+  ```
+
+  Both `game_samples` tests must pass. Also try `tools\deadtune-cli.exe texture png "<folder>\raw\panorama\images\hud\crosshair\scope_common_psd.vtex_c" scope.png` and look at `scope.png` (the 4096 scope vignette).

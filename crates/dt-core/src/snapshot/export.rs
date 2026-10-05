@@ -61,8 +61,8 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), SnapshotError> {
     Ok(())
 }
 
-fn stored_kind(candidate: &Candidate, selection: &Selection) -> Stored {
-    if selection.size_cap.is_none_or(|cap| candidate.size <= cap) {
+fn stored_kind(candidate: &Candidate, selection: &Selection, exempt: bool) -> Stored {
+    if exempt || selection.size_cap.is_none_or(|cap| candidate.size <= cap) {
         Stored::Full
     } else if candidate.path.ends_with(".vtex_c") {
         Stored::Header
@@ -136,7 +136,8 @@ pub fn take(
     let (mut written, mut reused, mut bytes) = (0, 0, 0u64);
     for (i, candidate) in selected.iter().enumerate() {
         let crc = format!("{:08x}", candidate.crc);
-        let stored = stored_kind(candidate, selection);
+        let exempt = inventory.in_scope(selection.images, candidate);
+        let stored = stored_kind(candidate, selection, exempt);
         let kind = Kind::of(&candidate.path);
         let want_text = selection.decode && kind.is_some();
         let keep = previous
@@ -168,8 +169,8 @@ pub fn take(
                     (true, Some(kind)) => match decode::decode(kind, &data) {
                         Ok(text) => {
                             let rel = kind.text_path(&candidate.path);
-                            write_file(&folder.join(store::TEXT).join(&rel), text.as_bytes())?;
-                            (Some(rel), Decoded::Text)
+                            write_file(&folder.join(store::TEXT).join(&rel), &text)?;
+                            (Some(rel), kind.decoded())
                         }
                         Err(error) => {
                             let rel = decode::strings_path(&candidate.path);
@@ -190,6 +191,9 @@ pub fn take(
                     stored,
                     text,
                     decoded,
+                    image: (kind == Some(Kind::Texture))
+                        .then(|| store::ImageInfo::of(&data))
+                        .flatten(),
                 });
                 written += 1;
                 if stored == Stored::Full {
@@ -217,6 +221,7 @@ pub fn take(
         decode: selection.decode,
         size_cap: selection.size_cap,
         categories: selection.categories.clone(),
+        images: selection.images,
         files,
     };
     manifest.save(&folder)?;
@@ -417,12 +422,133 @@ pub(crate) mod tests {
             texture.raw_path(&out.folder),
             Some(raw(&format!("{TEXTURE}.header")))
         );
+        assert_eq!(texture.decoded, Decoded::Image);
+        assert_eq!(texture.image.as_ref().unwrap().to_string(), "512x512 BC7");
+        let png = std::fs::read(texture.text_path(&out.folder).unwrap()).unwrap();
+        assert_eq!(
+            crate::texture::png::read(&png).unwrap().width,
+            512,
+            "a DeadTune target texture is still decoded with the images scope off"
+        );
+        assert_eq!(m.images, crate::snapshot::ImageScope::None);
         assert_eq!(entry("gameinfo.gi").source, Source::Loose);
 
         let list = std::fs::read_to_string(out.folder.join("pak01.tsv")).unwrap();
         assert_eq!(list.lines().count(), 9);
         assert!(list.contains("models/heroes/x/x.vmdl_c\t3\t"));
         assert_eq!(out.bytes, m.bytes_stored());
+    }
+
+    #[test]
+    fn images_in_scope_are_stored_whole_and_decoded_to_png_and_svg() {
+        use crate::snapshot::ImageScope;
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        let mut files = fake_files();
+        files.insert(
+            "panorama/images/minimap/gold_psd.vtex_c".into(),
+            COLOR.to_vec(),
+        );
+        files.insert(
+            "panorama/images/hud/top_bar/icon_ultimate.vsvg_c".into(),
+            inject::style_resource(svg),
+        );
+        files.insert(
+            "panorama/images/hud/death_icon_png.vtex_c".into(),
+            b"not a texture".to_vec(),
+        );
+        files.insert(
+            "panorama/images/heroes/frog_mm_psd.vtex_c".into(),
+            COLOR.to_vec(),
+        );
+        files.insert(
+            "panorama/styles/hud_minimap.vcss_c".into(),
+            inject::style_resource(
+                r#".a{background-image:url("s2r://panorama/images/heroes/frog_mm_psd.vtex")}"#,
+            ),
+        );
+        let (tmp, paths) = fake_install(&vpk::write(&files), "100");
+        let data = tmp.path().join("data");
+        let selection = Selection {
+            categories: [Category::Config].into_iter().collect(),
+            images: ImageScope::MinimapTopbar,
+            size_cap: Some(20_000),
+            ..Selection::default()
+        };
+        let out = take(&paths, &data, &selection, &mut go).unwrap();
+        let names: Vec<&str> = out
+            .manifest
+            .files
+            .iter()
+            .filter(|f| f.source == Source::Pak01)
+            .map(|f| f.path.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "panorama/images/heroes/frog_mm_psd.vtex_c",
+                "panorama/images/hud/top_bar/icon_ultimate.vsvg_c",
+                "panorama/images/minimap/gold_psd.vtex_c",
+            ]
+        );
+        assert_eq!(out.manifest.images, ImageScope::MinimapTopbar);
+        let entry = |p: &str| out.manifest.entry(p).unwrap().clone();
+        let gold = entry("panorama/images/minimap/gold_psd.vtex_c");
+        assert_eq!(gold.stored, Stored::Full, "over the cap but in scope");
+        assert_eq!(gold.categories, [Category::Images]);
+        assert_eq!(gold.decoded, Decoded::Image);
+        assert_eq!(
+            gold.text.as_deref(),
+            Some("panorama/images/minimap/gold_psd.png")
+        );
+        assert_eq!(gold.image.as_ref().unwrap().to_string(), "512x512 BC7");
+        let png = std::fs::read(gold.text_path(&out.folder).unwrap()).unwrap();
+        assert_eq!(crate::texture::png::read(&png).unwrap().height, 512);
+        assert_eq!(
+            std::fs::read(gold.raw_path(&out.folder).unwrap()).unwrap(),
+            COLOR
+        );
+        let icon = entry("panorama/images/hud/top_bar/icon_ultimate.vsvg_c");
+        assert_eq!(icon.decoded, Decoded::Text);
+        assert_eq!(icon.image, None);
+        assert_eq!(
+            std::fs::read_to_string(icon.text_path(&out.folder).unwrap()).unwrap(),
+            svg
+        );
+        assert!(
+            icon.text_path(&out.folder)
+                .unwrap()
+                .ends_with("panorama/images/hud/top_bar/icon_ultimate.svg")
+        );
+        assert_eq!(out.bytes, m_bytes(&out.manifest));
+
+        let hud = Selection {
+            images: ImageScope::Hud,
+            ..selection.clone()
+        };
+        let out = take(&paths, &data, &hud, &mut go).unwrap();
+        assert_eq!(
+            (out.written, out.reused),
+            (2, 7),
+            "the broken icon, and the scope texture now stored whole instead of its header"
+        );
+        assert_eq!(entry_of(&out.manifest, TEXTURE).stored, Stored::Full);
+        let broken = entry_of(&out.manifest, "panorama/images/hud/death_icon_png.vtex_c");
+        assert_eq!(broken.decoded, Decoded::Strings);
+        assert_eq!(broken.image, None);
+        assert_eq!(broken.stored, Stored::Full);
+        let strings = std::fs::read_to_string(broken.text_path(&out.folder).unwrap()).unwrap();
+        assert!(
+            strings.starts_with("DeadTune could not decode"),
+            "{strings}"
+        );
+    }
+
+    fn m_bytes(m: &Manifest) -> u64 {
+        m.bytes_stored()
+    }
+
+    fn entry_of<'a>(m: &'a Manifest, path: &str) -> &'a FileEntry {
+        m.entry(path).unwrap()
     }
 
     #[test]
@@ -433,6 +559,7 @@ pub(crate) mod tests {
             categories: [Category::Config].into_iter().collect(),
             decode: false,
             size_cap: None,
+            ..Selection::default()
         };
         let out = take(&paths, &data, &selection, &mut go).unwrap();
         assert_eq!(out.written, 4);
@@ -442,6 +569,7 @@ pub(crate) mod tests {
             categories: [Category::Hud].into_iter().collect(),
             decode: false,
             size_cap: None,
+            ..Selection::default()
         };
         let out = take(&paths, &data, &selection, &mut go).unwrap();
         assert_eq!(out.written, 5);

@@ -25,8 +25,8 @@ pub mod store;
 
 pub use diff::{ChangeKind, Counts, FileChange, SnapshotDiff, compare};
 pub use export::{Outcome, Progress, take};
-pub use spec::{Candidate, Category, Inventory, Selection, Source};
-pub use store::{Decoded, FileEntry, Manifest, SnapshotInfo, Stored};
+pub use spec::{Candidate, Category, ImageScope, Inventory, Selection, Source};
+pub use store::{Decoded, FileEntry, ImageInfo, Manifest, SnapshotInfo, Stored};
 
 /// The settings menu layout the in-game settings plan rebuilds rows into
 /// (docs/plans/ingame-settings/plan.md, Phase 2).

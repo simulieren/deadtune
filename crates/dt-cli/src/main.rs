@@ -10,6 +10,7 @@ mod cmd_info;
 mod cmd_presets;
 mod cmd_profile;
 mod cmd_snapshot;
+mod cmd_texture;
 mod cmd_update;
 mod commands;
 mod env;

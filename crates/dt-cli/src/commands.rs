@@ -4,7 +4,7 @@ use crate::args::{Args, CliResult};
 use crate::env::Env;
 use crate::{
     cmd_addons, cmd_apply, cmd_bench, cmd_game, cmd_hud, cmd_info, cmd_presets, cmd_profile,
-    cmd_snapshot, cmd_update,
+    cmd_snapshot, cmd_texture, cmd_update,
 };
 
 pub struct Command {
@@ -309,9 +309,9 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "snapshot take",
-        usage: "snapshot take [--categories hud,settings,menu,panorama,deadtune,config] [--no-decode] [--size-cap <MB>|none]",
-        summary: "copy the game's interface and settings files into the data folder, decoded, with a manifest",
-        values: &["categories", "size-cap"],
+        usage: "snapshot take [--categories hud,settings,menu,panorama,deadtune,config] [--images none|minimap_topbar|hud|all] [--no-decode] [--size-cap <MB>|none]",
+        summary: "copy the game's interface and settings files (and, with --images, its pictures as PNG and SVG) into the data folder, decoded, with a manifest",
+        values: &["categories", "images", "size-cap"],
         switches: &["no-decode"],
         run: cmd_snapshot::take,
     },
@@ -330,6 +330,22 @@ pub const COMMANDS: &[Command] = &[
         values: &[],
         switches: &["full"],
         run: cmd_snapshot::diff,
+    },
+    Command {
+        name: "texture png",
+        usage: "texture png <in.vtex_c> <out.png>",
+        summary: "decode one compiled texture (the top mip) to a PNG",
+        values: &[],
+        switches: &[],
+        run: cmd_texture::to_png,
+    },
+    Command {
+        name: "texture svg",
+        usage: "texture svg <in.vsvg_c> <out.svg>",
+        summary: "write the SVG source out of one compiled vector icon",
+        values: &[],
+        switches: &[],
+        run: cmd_texture::to_svg,
     },
     Command {
         name: "self-update",

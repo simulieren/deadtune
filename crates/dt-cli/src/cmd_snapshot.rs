@@ -2,7 +2,7 @@
 
 use std::ops::ControlFlow;
 
-use dt_core::snapshot::{self, Category, Selection, diff, human_bytes, store};
+use dt_core::snapshot::{self, Category, Decoded, ImageScope, Selection, diff, human_bytes, store};
 
 use crate::args::{Args, CliResult, usage};
 use crate::env::Env;
@@ -26,6 +26,15 @@ pub fn take(env: &Env, args: &Args) -> CliResult {
                 })
             })
             .collect::<Result<_, _>>()?;
+    }
+    if let Some(scope) = args.value("images") {
+        selection.images = ImageScope::parse(scope).ok_or_else(|| {
+            let keys: Vec<&str> = ImageScope::ALL.iter().map(|s| s.key()).collect();
+            usage(format!(
+                "unknown image scope {scope:?}; expected one of {}",
+                keys.join(", ")
+            ))
+        })?;
     }
     selection.decode = !args.switch("no-decode");
     if let Some(cap) = args.value("size-cap") {
@@ -56,6 +65,22 @@ pub fn take(env: &Env, args: &Args) -> CliResult {
         human_bytes(out.bytes),
         out.elapsed.as_secs_f64()
     );
+    let undecoded: Vec<&str> = out
+        .manifest
+        .files
+        .iter()
+        .filter(|f| f.decoded == Decoded::Strings)
+        .map(|f| f.path.as_str())
+        .collect();
+    if !undecoded.is_empty() {
+        println!(
+            "{} files could not be decoded (text/<path>.strings.txt says why):",
+            undecoded.len()
+        );
+        for path in undecoded {
+            println!("  {path}");
+        }
+    }
     Ok(())
 }
 

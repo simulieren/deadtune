@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 
 use super::SnapshotError;
-use super::spec::{Category, Source};
+use super::spec::{Category, ImageScope, Source};
 use crate::backup::atomic_write;
+use crate::texture::vtex::Vtex;
 
 pub const DIR: &str = "game-files";
 pub const MANIFEST: &str = "manifest.toml";
@@ -41,9 +42,39 @@ pub enum Stored {
 #[serde(rename_all = "snake_case")]
 pub enum Decoded {
     Text,
+    /// A texture, as a PNG under `text/`.
+    Image,
     /// Decoding failed; `text` points at the readable strings.
     Strings,
     None,
+}
+
+/// A texture's header facts, read without decoding pixels.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ImageInfo {
+    pub width: u16,
+    pub height: u16,
+    pub format: String,
+    pub mips: u8,
+}
+
+impl ImageInfo {
+    pub fn of(bytes: &[u8]) -> Option<ImageInfo> {
+        let v = Vtex::parse(bytes).ok()?;
+        let (width, height) = v.display_rect.unwrap_or((v.width, v.height));
+        Some(ImageInfo {
+            width,
+            height,
+            format: v.format.name().to_string(),
+            mips: v.mips.len() as u8,
+        })
+    }
+}
+
+impl std::fmt::Display for ImageInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x{} {}", self.width, self.height, self.format)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -59,6 +90,9 @@ pub struct FileEntry {
     /// Relative to `text/`.
     pub text: Option<String>,
     pub decoded: Decoded,
+    /// Textures only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<ImageInfo>,
 }
 
 impl FileEntry {
@@ -84,6 +118,8 @@ pub struct Manifest {
     pub decode: bool,
     pub size_cap: Option<u64>,
     pub categories: BTreeSet<Category>,
+    #[serde(default)]
+    pub images: ImageScope,
     pub files: Vec<FileEntry>,
 }
 
@@ -236,6 +272,7 @@ mod tests {
             decode: true,
             size_cap: None,
             categories: BTreeSet::from([Category::Hud]),
+            images: ImageScope::None,
             files: vec![FileEntry {
                 path: "panorama/styles/hud.vcss_c".into(),
                 source: Source::Pak01,
@@ -246,8 +283,21 @@ mod tests {
                 stored: Stored::Full,
                 text: Some("panorama/styles/hud.css".into()),
                 decoded: Decoded::Text,
+                image: None,
             }],
         }
+    }
+
+    #[test]
+    fn image_info_reads_the_header_only() {
+        use crate::texture::vtex::tests::{COLOR, TINY};
+        let info = ImageInfo::of(COLOR).unwrap();
+        assert_eq!(info.to_string(), "512x512 BC7");
+        assert_eq!(info.mips, 8);
+        assert_eq!(ImageInfo::of(TINY).unwrap().to_string(), "1x1 ATI1N");
+        assert_eq!(ImageInfo::of(b"nope"), None);
+        let entry = manifest(None, 0).files.remove(0);
+        assert!(!toml::to_string(&entry).unwrap().contains("image"));
     }
 
     #[test]

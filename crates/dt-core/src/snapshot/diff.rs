@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 
 use super::spec::{Category, Source};
-use super::store::{self, FileEntry, Manifest};
+use super::store::{self, FileEntry, ImageInfo, Manifest};
 use super::{SnapshotError, features_of};
 use crate::backup::atomic_write;
 
@@ -83,6 +83,22 @@ pub struct FileChange {
     pub new_text: Option<String>,
     /// Unified diff of the decoded text, for a changed file decoded on both sides.
     pub text_diff: Option<String>,
+    /// Texture header facts, for images.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old_image: Option<ImageInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_image: Option<ImageInfo>,
+}
+
+impl FileChange {
+    /// " (128x128 BGRA8888 to 64x64 BGRA8888)" or " (128x128 BGRA8888)", for a texture.
+    pub fn image_note(&self) -> String {
+        match (&self.old_image, &self.new_image) {
+            (Some(a), Some(b)) if a != b => format!(" ({a} to {b})"),
+            (Some(a), _) | (_, Some(a)) => format!(" ({a})"),
+            _ => String::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -241,7 +257,7 @@ impl SnapshotDiff {
                     (Some(a), _) | (_, Some(a)) => format!(" ({a} bytes)"),
                     _ => String::new(),
                 };
-                out.push_str(&format!("- `{}`{size}\n", f.path));
+                out.push_str(&format!("- `{}`{size}{}\n", f.path, f.image_note()));
             }
             out.push('\n');
         }
@@ -362,6 +378,8 @@ pub fn compare(old_folder: &Path, new_folder: &Path) -> Result<SnapshotDiff, Sna
             old_text: before.and_then(|e| e.text.clone()),
             new_text: after.and_then(|e| e.text.clone()),
             text_diff,
+            old_image: before.and_then(|e| e.image.clone()),
+            new_image: after.and_then(|e| e.image.clone()),
         });
     }
 
@@ -576,6 +594,59 @@ mod tests {
         assert_eq!(load_latest(&old), None);
         let info = store::find(&store::dir(&tmp.path().join("data")), "latest").unwrap();
         assert_eq!(info.reports, ["diff-100-to-101.md"]);
+    }
+
+    #[test]
+    fn image_changes_carry_their_dimensions() {
+        use crate::snapshot::store::ImageInfo;
+        let info = |w: u16, h: u16| {
+            Some(ImageInfo {
+                width: w,
+                height: h,
+                format: "BGRA8888".into(),
+                mips: 1,
+            })
+        };
+        let mut change = FileChange {
+            path: "panorama/images/minimap/gold_psd.vtex_c".into(),
+            kind: ChangeKind::Changed,
+            categories: vec![Category::Images],
+            old_size: Some(10),
+            new_size: Some(12),
+            features: Vec::new(),
+            old_text: None,
+            new_text: None,
+            text_diff: None,
+            old_image: info(128, 128),
+            new_image: info(64, 64),
+        };
+        assert_eq!(change.image_note(), " (128x128 BGRA8888 to 64x64 BGRA8888)");
+        change.new_image = info(128, 128);
+        assert_eq!(change.image_note(), " (128x128 BGRA8888)");
+        change.old_image = None;
+        assert_eq!(change.image_note(), " (128x128 BGRA8888)");
+        change.new_image = None;
+        assert_eq!(change.image_note(), "");
+        let toml = toml::to_string(&change).unwrap();
+        assert!(!toml.contains("_image"), "{toml}");
+
+        let (_tmp, old, new) = two_snapshots();
+        let mut diff = compare(&old, &new).unwrap();
+        change.old_image = info(128, 128);
+        change.new_image = info(64, 64);
+        diff.files.push(change);
+        let md = diff.markdown();
+        assert!(
+            md.contains(
+                "- `panorama/images/minimap/gold_psd.vtex_c` (10 to 12 bytes) (128x128 BGRA8888 to 64x64 BGRA8888)"
+            ),
+            "{md}"
+        );
+        assert_eq!(
+            diff.categories.get(&Category::Images),
+            None,
+            "counted only when a take saw images"
+        );
     }
 
     #[test]

@@ -1,9 +1,10 @@
 //! What a snapshot holds: categories as path rules over the pak tree, the loose files,
-//! and the player's selection.
+//! the image scope, and the player's selection.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use super::decode::{self, Kind};
 use super::{SnapshotError, dependencies};
 use crate::hud::crc32::crc32;
 use crate::hud::install::GAME_PAK;
@@ -21,9 +22,12 @@ pub enum Category {
     Panorama,
     Deadtune,
     Config,
+    /// `panorama/images/**`, chosen by [`ImageScope`] rather than a checkbox.
+    Images,
 }
 
 impl Category {
+    /// The checkbox categories; `Images` is selected through `Selection::images`.
     pub const ALL: [Category; 6] = [
         Category::Hud,
         Category::Settings,
@@ -42,9 +46,11 @@ impl Category {
             Category::Panorama => "panorama",
             Category::Deadtune => "deadtune",
             Category::Config => "config",
+            Category::Images => "images",
         }
     }
 
+    /// A checkbox category by key.
     pub fn parse(text: &str) -> Option<Category> {
         Category::ALL.into_iter().find(|c| c.key() == text)
     }
@@ -57,6 +63,7 @@ impl Category {
             Category::Panorama => "Every interface file",
             Category::Deadtune => "Files DeadTune builds from",
             Category::Config => "Game settings files",
+            Category::Images => "Interface images",
         }
     }
 
@@ -74,6 +81,79 @@ impl Category {
                 "Every game file a DeadTune feature reads: the addons, the HUD pages and the planned settings rows."
             }
             Category::Config => "gameinfo.gi, the cfg folder and the Steam build id.",
+            Category::Images => "The game's interface pictures and icons, saved as PNG and SVG.",
+        }
+    }
+}
+
+/// Which interface images a snapshot includes. The levels nest.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageScope {
+    #[default]
+    None,
+    /// `minimap/`, `hud/top_bar/` and every image the minimap and top bar layouts,
+    /// stylesheets and scripts name.
+    MinimapTopbar,
+    /// All of `hud/` plus the minimap level.
+    Hud,
+    All,
+}
+
+const MINIMAP_TOPBAR_DIRS: [&str; 2] = ["panorama/images/minimap/", "panorama/images/hud/top_bar/"];
+const HUD_DIRS: [&str; 2] = ["panorama/images/hud/", "panorama/images/minimap/"];
+
+impl ImageScope {
+    pub const ALL: [ImageScope; 4] = [
+        ImageScope::None,
+        ImageScope::MinimapTopbar,
+        ImageScope::Hud,
+        ImageScope::All,
+    ];
+
+    /// The CLI and manifest name.
+    pub fn key(self) -> &'static str {
+        match self {
+            ImageScope::None => "none",
+            ImageScope::MinimapTopbar => "minimap_topbar",
+            ImageScope::Hud => "hud",
+            ImageScope::All => "all",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<ImageScope> {
+        ImageScope::ALL.into_iter().find(|s| s.key() == text)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ImageScope::None => "No images",
+            ImageScope::MinimapTopbar => "Minimap and top bar",
+            ImageScope::Hud => "Whole HUD",
+            ImageScope::All => "Every image",
+        }
+    }
+
+    /// Whether an image path is in scope. `referenced` is `Inventory::referenced_images`.
+    pub fn covers(self, path: &str, referenced: &BTreeSet<String>) -> bool {
+        let under = |dirs: &[&str]| dirs.iter().any(|d| path.starts_with(d));
+        match self {
+            ImageScope::None => false,
+            ImageScope::MinimapTopbar => under(&MINIMAP_TOPBAR_DIRS) || referenced.contains(path),
+            ImageScope::Hud => under(&HUD_DIRS) || referenced.contains(path),
+            ImageScope::All => true,
         }
     }
 }
@@ -91,6 +171,17 @@ pub enum Source {
 
 const PANORAMA_DIRS: [&str; 3] = ["panorama/layout/", "panorama/styles/", "panorama/scripts/"];
 const PANORAMA_EXTS: [&str; 3] = [".vxml_c", ".vcss_c", ".vjs_c"];
+const IMAGES_DIR: &str = "panorama/images/";
+const IMAGE_EXTS: [&str; 2] = [".vtex_c", ".vsvg_c"];
+/// Source extensions an image reference may carry, with the compiled name's suffix.
+const IMAGE_REF_EXTS: [(&str, &str); 6] = [
+    (".vtex", ".vtex_c"),
+    (".vsvg", ".vsvg_c"),
+    (".png", "_png.vtex_c"),
+    (".psd", "_psd.vtex_c"),
+    (".tga", "_tga.vtex_c"),
+    (".svg", ".vsvg_c"),
+];
 const HUD_STEMS: [&str; 5] = ["hud", "citadel_hud", "minimap", "top_bar", "health"];
 const MENU_STEMS: [&str; 1] = ["base"];
 const MENU_PARTS: [&str; 2] = ["dashboard", "main_menu"];
@@ -104,6 +195,55 @@ fn file_name(path: &str) -> &str {
 fn is_panorama(path: &str) -> bool {
     PANORAMA_DIRS.iter().any(|d| path.starts_with(d))
         && PANORAMA_EXTS.iter().any(|e| path.ends_with(e))
+}
+
+fn is_image(path: &str) -> bool {
+    path.starts_with(IMAGES_DIR) && IMAGE_EXTS.iter().any(|e| path.ends_with(e))
+}
+
+/// Compiled image paths named in decoded layout, stylesheet or script text:
+/// `s2r://panorama/images/minimap/x_psd.vtex` and `file://{images}/hud/y.png` both become
+/// `panorama/images/.../..._c`.
+pub fn image_refs(text: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for marker in [IMAGES_DIR, "{images}/"] {
+        for (at, _) in text.match_indices(marker) {
+            let rest = &text[at + marker.len()..];
+            let end = rest
+                .find(|c: char| matches!(c, '"' | '\'' | ')' | '<' | '>') || c.is_whitespace())
+                .unwrap_or(rest.len());
+            let name = &rest[..end];
+            if let Some((ext, suffix)) = IMAGE_REF_EXTS.iter().find(|(e, _)| name.ends_with(e)) {
+                out.insert(format!(
+                    "{IMAGES_DIR}{}{suffix}",
+                    &name[..name.len() - ext.len()]
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// Images the minimap and top bar layouts, stylesheets and scripts name: a dozen small
+/// files read from the pak and decoded.
+pub fn referenced_images(pak: &VpkDir) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for path in pak.entries.keys() {
+        let name = file_name(path);
+        if !is_panorama(path) || !(name.contains("minimap") || name.contains("top_bar")) {
+            continue;
+        }
+        let Some(kind) = Kind::of(path) else {
+            continue;
+        };
+        let Ok(bytes) = pak.read(path) else {
+            continue;
+        };
+        if let Ok(text) = decode::decode(kind, &bytes) {
+            out.extend(image_refs(&String::from_utf8_lossy(&text)));
+        }
+    }
+    out
 }
 
 /// The categories a pak entry belongs to. `deadtune` is the dependency path set.
@@ -127,6 +267,9 @@ pub fn categories_of(path: &str, deadtune: &BTreeSet<&str>) -> Vec<Category> {
     if deadtune.contains(path) {
         out.push(Category::Deadtune);
     }
+    if is_image(path) {
+        out.push(Category::Images);
+    }
     out
 }
 
@@ -138,7 +281,9 @@ pub struct Selection {
     /// Write decoded text next to the raw bytes.
     pub decode: bool,
     /// Files above this many bytes are listed but not stored (`None` stores everything).
+    /// Images in scope are exempt.
     pub size_cap: Option<u64>,
+    pub images: ImageScope,
 }
 
 pub const DEFAULT_SIZE_CAP: u64 = 8 << 20;
@@ -149,13 +294,8 @@ impl Default for Selection {
             categories: Category::ALL.into_iter().collect(),
             decode: true,
             size_cap: Some(DEFAULT_SIZE_CAP),
+            images: ImageScope::None,
         }
-    }
-}
-
-impl Selection {
-    pub fn includes(&self, categories: &[Category]) -> bool {
-        categories.iter().any(|c| self.categories.contains(c))
     }
 }
 
@@ -175,6 +315,8 @@ pub struct Candidate {
 pub struct Inventory {
     pub files: Vec<Candidate>,
     pub pak_entries: usize,
+    /// What the minimap and top bar interface files name; `ImageScope::MinimapTopbar`.
+    pub referenced_images: BTreeSet<String>,
 }
 
 impl Inventory {
@@ -212,6 +354,7 @@ impl Inventory {
         Inventory {
             files,
             pak_entries: pak.entries.len(),
+            referenced_images: referenced_images(pak),
         }
     }
 
@@ -223,16 +366,34 @@ impl Inventory {
             .fold((0, 0), |(n, b), c| (n + 1, b + c.size))
     }
 
-    pub fn selected<'a>(&'a self, selection: &'a Selection) -> impl Iterator<Item = &'a Candidate> {
+    /// Files and bytes an image scope adds.
+    pub fn scope_totals(&self, scope: ImageScope) -> (usize, u64) {
         self.files
             .iter()
-            .filter(move |c| selection.includes(&c.categories))
+            .filter(|c| self.in_scope(scope, c))
+            .fold((0, 0), |(n, b), c| (n + 1, b + c.size))
+    }
+
+    /// An image the scope includes: stored whole whatever the size cap.
+    pub fn in_scope(&self, scope: ImageScope, candidate: &Candidate) -> bool {
+        candidate.categories.contains(&Category::Images)
+            && scope.covers(&candidate.path, &self.referenced_images)
+    }
+
+    pub fn selected<'a>(&'a self, selection: &'a Selection) -> impl Iterator<Item = &'a Candidate> {
+        self.files.iter().filter(move |c| {
+            c.categories.iter().any(|cat| match cat {
+                Category::Images => self.in_scope(selection.images, c),
+                cat => selection.categories.contains(cat),
+            })
+        })
     }
 
     /// Files and bytes the selection would store (the size cap applied).
     pub fn selected_totals(&self, selection: &Selection) -> (usize, u64) {
         self.selected(selection).fold((0, 0), |(n, b), c| {
-            let stored = selection.size_cap.is_none_or(|cap| c.size <= cap);
+            let stored = self.in_scope(selection.images, c)
+                || selection.size_cap.is_none_or(|cap| c.size <= cap);
             (n + 1, b + if stored { c.size } else { 0 })
         })
     }
@@ -313,6 +474,11 @@ pub(crate) mod tests {
             "panorama/scripts/main_menu_news.vjs_c",
             "panorama/images/hud/icon_psd.vtex_c",
             "panorama/images/hud/crosshair/scope_common_psd.vtex_c",
+            "panorama/images/hud/top_bar/icon_ultimate.vsvg_c",
+            "panorama/images/minimap/gold_psd.vtex_c",
+            "panorama/images/heroes/frog_mm_psd.vtex_c",
+            "panorama/images/icons/icon_x.vsvg_c",
+            "panorama/images/readme.txt",
             "particles/empty.vpcf_c",
             "models/heroes/x/x.vmdl_c",
             "maps/dl_midtown.vpk",
@@ -339,7 +505,7 @@ pub(crate) mod tests {
     #[test]
     fn rules_pick_interface_files_and_deadtune_targets_only() {
         let inv = inventory();
-        assert_eq!(inv.pak_entries, 19);
+        assert_eq!(inv.pak_entries, 24);
         assert_eq!(
             paths_in(&inv, Category::Hud),
             [
@@ -380,12 +546,23 @@ pub(crate) mod tests {
                 "particles/empty.vpcf_c",
             ]
         );
+        assert_eq!(
+            paths_in(&inv, Category::Images),
+            [
+                "panorama/images/heroes/frog_mm_psd.vtex_c",
+                "panorama/images/hud/crosshair/scope_common_psd.vtex_c",
+                "panorama/images/hud/icon_psd.vtex_c",
+                "panorama/images/hud/top_bar/icon_ultimate.vsvg_c",
+                "panorama/images/icons/icon_x.vsvg_c",
+                "panorama/images/minimap/gold_psd.vtex_c",
+            ]
+        );
         let all: Vec<&str> = inv.files.iter().map(|c| c.path.as_str()).collect();
         for noise in [
             "models/heroes/x/x.vmdl_c",
             "maps/dl_midtown.vpk",
             "sounds/ui/click.vsnd_c",
-            "panorama/images/hud/icon_psd.vtex_c",
+            "panorama/images/readme.txt",
             "panorama/layout/shop/shop.vxml_c",
         ] {
             assert_eq!(
@@ -416,8 +593,15 @@ pub(crate) mod tests {
         assert_eq!(n_capped, n, "capped files stay listed");
         assert!(bytes_capped < bytes);
         assert_eq!(Selection::default().categories.len(), 6);
+        assert_eq!(Selection::default().images, ImageScope::None);
         assert_eq!(Category::parse("deadtune"), Some(Category::Deadtune));
         assert_eq!(Category::parse("nope"), None);
+        assert_eq!(Category::parse("images"), None, "a scope, not a checkbox");
+        assert_eq!(
+            ImageScope::parse("minimap_topbar"),
+            Some(ImageScope::MinimapTopbar)
+        );
+        assert_eq!(ImageScope::parse("nope"), None);
         assert_eq!(
             toml::to_string(&Selection::default())
                 .unwrap()
@@ -426,6 +610,117 @@ pub(crate) mod tests {
             Some(
                 "categories = [\"hud\", \"settings\", \"menu\", \"panorama\", \"deadtune\", \"config\"]"
             )
+        );
+    }
+
+    #[test]
+    fn image_scopes_nest_and_exempt_their_files_from_the_cap() {
+        let inv = inventory();
+        let scope_texture = "panorama/images/hud/crosshair/scope_common_psd.vtex_c";
+        let selected = |scope: ImageScope| -> Vec<String> {
+            let sel = Selection {
+                categories: BTreeSet::from([Category::Config]),
+                images: scope,
+                size_cap: Some(20),
+                ..Selection::default()
+            };
+            inv.selected(&sel).map(|c| c.path.clone()).collect()
+        };
+        assert!(selected(ImageScope::None).is_empty());
+        assert_eq!(
+            selected(ImageScope::MinimapTopbar),
+            [
+                "panorama/images/hud/top_bar/icon_ultimate.vsvg_c",
+                "panorama/images/minimap/gold_psd.vtex_c",
+            ]
+        );
+        assert_eq!(
+            selected(ImageScope::Hud),
+            [
+                scope_texture,
+                "panorama/images/hud/icon_psd.vtex_c",
+                "panorama/images/hud/top_bar/icon_ultimate.vsvg_c",
+                "panorama/images/minimap/gold_psd.vtex_c",
+            ]
+        );
+        assert_eq!(selected(ImageScope::All).len(), 6);
+        assert_eq!(inv.scope_totals(ImageScope::MinimapTopbar).0, 2);
+        assert_eq!(inv.scope_totals(ImageScope::All).0, 6);
+
+        let over_cap = Selection {
+            categories: BTreeSet::from([Category::Deadtune]),
+            images: ImageScope::Hud,
+            size_cap: Some(20),
+            ..Selection::default()
+        };
+        let (_, bytes) = inv.selected_totals(&over_cap);
+        assert_eq!(
+            bytes,
+            inv.scope_totals(ImageScope::Hud).1,
+            "images in scope count whole; everything else is over the 20-byte cap"
+        );
+        let scope = inv.files.iter().find(|c| c.path == scope_texture).unwrap();
+        assert!(inv.in_scope(ImageScope::Hud, scope));
+        assert!(!inv.in_scope(ImageScope::MinimapTopbar, scope));
+        let layout = inv
+            .files
+            .iter()
+            .find(|c| c.path.ends_with(".vxml_c"))
+            .unwrap();
+        assert!(!inv.in_scope(ImageScope::All, layout), "not an image");
+    }
+
+    #[test]
+    fn minimap_and_top_bar_files_pull_in_the_images_they_name() {
+        use crate::hud::inject;
+        let mut files = fake_list();
+        files.insert(
+            "panorama/styles/hud_minimap.vcss_c".into(),
+            inject::style_resource(
+                r#".a{background-image:url("s2r://panorama/images/heroes/frog_mm_psd.vtex")}.b{background-image:url("file://{images}/icons/icon_x.svg")}"#,
+            ),
+        );
+        files.insert(
+            "panorama/styles/shop.vcss_c".into(),
+            inject::style_resource(
+                r#".c{background-image:url("s2r://panorama/images/hud/icon_psd.vtex")}"#,
+            ),
+        );
+        let inv = Inventory::from_pak(&VpkDir::in_memory(vpk::write(&files)).unwrap(), Vec::new());
+        assert_eq!(
+            inv.referenced_images,
+            BTreeSet::from([
+                "panorama/images/heroes/frog_mm_psd.vtex_c".to_string(),
+                "panorama/images/icons/icon_x.vsvg_c".to_string(),
+            ]),
+            "the shop stylesheet is not a minimap or top bar file"
+        );
+        let sel = Selection {
+            categories: BTreeSet::new(),
+            images: ImageScope::MinimapTopbar,
+            ..Selection::default()
+        };
+        let picked: Vec<&str> = inv.selected(&sel).map(|c| c.path.as_str()).collect();
+        assert_eq!(
+            picked,
+            [
+                "panorama/images/heroes/frog_mm_psd.vtex_c",
+                "panorama/images/hud/top_bar/icon_ultimate.vsvg_c",
+                "panorama/images/icons/icon_x.vsvg_c",
+                "panorama/images/minimap/gold_psd.vtex_c",
+            ]
+        );
+        assert_eq!(
+            image_refs(
+                r#"<Image src="s2r://panorama/images/minimap/player_cone_psd.vtex" /> url('file://{images}/hud/x.png') "panorama/images/hud/y.tga" panorama/images/z.psd
+                panorama/images/other.vmat"#
+            ),
+            BTreeSet::from([
+                "panorama/images/minimap/player_cone_psd.vtex_c".to_string(),
+                "panorama/images/hud/x_png.vtex_c".to_string(),
+                "panorama/images/hud/y_tga.vtex_c".to_string(),
+                "panorama/images/z_psd.vtex_c".to_string(),
+            ])
         );
     }
 

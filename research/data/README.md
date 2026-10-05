@@ -14,4 +14,4 @@
 
 Flags come from a community dump; treat them as a starting point and verify in game (Phase 0 of the plan).
 
-Rows with no preset column set were added by hand for ConVars no preset uses but the app edits (the enemy UI colour ConVars, flags from `research/configs/OptimizationLock/convars.txt`).
+Rows with no preset column set were added by hand for ConVars no preset uses but the app edits (the enemy UI colour ConVars, flags from `research/configs/OptimizationLock/convars.txt`), and for ConVars only SideLock sets. SideLock (CC BY-NC-ND 4.0) has no column: its values are not redistributed here, and DeadTune downloads the file on the player's machine.

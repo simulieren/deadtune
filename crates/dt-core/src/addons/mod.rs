@@ -16,6 +16,7 @@ use std::path::PathBuf;
 pub mod blur;
 pub mod guard;
 pub mod install;
+pub mod native_blur;
 pub mod particles;
 pub mod sources;
 pub mod textures;

@@ -9,6 +9,7 @@ mod cmd_hud;
 mod cmd_info;
 mod cmd_presets;
 mod cmd_profile;
+mod cmd_snapshot;
 mod cmd_update;
 mod commands;
 mod env;

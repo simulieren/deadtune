@@ -1,7 +1,9 @@
-//! Binary KeyValues3 reader, versions 4 and 5, LZ4 or uncompressed: enough to decode the
-//! `LaCo` block of a compiled Panorama layout (`.vxml_c`). Read-only on purpose; DeadTune
-//! rebuilds layouts as text (`inject`), so no writer is needed. Format notes:
-//! research/hud/top-bar/NOTES.md section 2; reference reader: ValveResourceFormat `BinaryKV3`.
+//! Binary KeyValues3 reader, versions 4 and 5, LZ4 or uncompressed, plus the legacy
+//! `VKV\x03` format (version 1, inline values; third-party compilers still emit it): enough
+//! to decode the `LaCo` block of a compiled Panorama layout (`.vxml_c`). Read-only on
+//! purpose; DeadTune rebuilds layouts as text (`inject`), so no writer is needed. Format
+//! notes: research/hud/top-bar/NOTES.md section 2; reference reader: ValveResourceFormat
+//! `BinaryKV3`.
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -53,6 +55,8 @@ pub enum Kv3Error {
     Version(u8),
     #[error("compression method {0} is not supported (0 and LZ4 are)")]
     Compression(u32),
+    #[error("legacy KV3 encoding {0} is not supported (uncompressed and LZ4 are)")]
+    Encoding(String),
     #[error("binary blobs are not supported")]
     Blobs,
     #[error("truncated: {0}")]
@@ -66,8 +70,17 @@ pub enum Kv3Error {
 }
 
 const MAGIC: u32 = 0x4B56_3300;
+/// `VKV\x03`: the first binary format, a string table followed by inline nodes.
+const LEGACY_MAGIC: u32 = 0x0356_4B56;
 const TRAILER: u32 = 0xFFEE_DD00;
 const LZ4: u32 = 1;
+/// Encoding GUIDs of the legacy header (ValveResourceFormat `KV3_ENCODING_BINARY_*`).
+const LEGACY_UNCOMPRESSED: [u8; 16] = [
+    0x00, 0x05, 0x86, 0x1B, 0xD8, 0xF7, 0xC1, 0x40, 0xAD, 0x82, 0x75, 0xA4, 0x82, 0x67, 0xE7, 0x14,
+];
+const LEGACY_LZ4: [u8; 16] = [
+    0x8A, 0x34, 0x47, 0x68, 0xA1, 0x63, 0x5C, 0x4F, 0xA1, 0x97, 0x53, 0x80, 0x6F, 0xD9, 0xB1, 0x19,
+];
 
 /// Decodes one raw LZ4 block (no frame header) into exactly `out_len` bytes.
 pub fn lz4_decode(src: &[u8], out_len: usize) -> Result<Vec<u8>, Kv3Error> {
@@ -268,6 +281,9 @@ mod node {
 pub fn parse(bytes: &[u8]) -> Result<Document, Kv3Error> {
     let mut h = Lane::new(bytes);
     let magic = h.u32("magic")?;
+    if magic == LEGACY_MAGIC {
+        return parse_legacy(&mut h);
+    }
     if magic & 0xFFFF_FF00 != MAGIC {
         return Err(Kv3Error::Magic(magic));
     }
@@ -394,6 +410,115 @@ impl<'a> Lane<'a> {
             .ok_or(Kv3Error::Truncated("buffer"))?;
         self.pos += n;
         Ok(slice)
+    }
+
+    fn rest(&self) -> &'a [u8] {
+        &self.data[self.pos..]
+    }
+}
+
+/// After the magic: a 16-byte encoding id, a 16-byte format id, then the body (a u32
+/// string count, NUL-terminated strings, and the root node with every value inline).
+fn parse_legacy(h: &mut Lane) -> Result<Document, Kv3Error> {
+    let encoding = h.take::<16>("encoding")?;
+    h.take::<16>("format")?;
+    let body = match encoding {
+        LEGACY_UNCOMPRESSED => h.rest().to_vec(),
+        LEGACY_LZ4 => {
+            let size = h.count("uncompressed size")?;
+            lz4_decode(h.rest(), size)?
+        }
+        other => {
+            let hex: String = other.iter().map(|b| format!("{b:02x}")).collect();
+            return Err(Kv3Error::Encoding(hex));
+        }
+    };
+    let mut lane = Lane::new(&body);
+    let count = lane.count("string count")?;
+    let mut strings = Vec::with_capacity(count.min(1 << 16));
+    for _ in 0..count {
+        strings.push(lane.cstr()?);
+    }
+    let mut reader = Legacy { lane, strings };
+    let kind = reader.node_type()?;
+    let root = reader.value(kind)?;
+    Ok(Document { version: 1, root })
+}
+
+struct Legacy<'a> {
+    lane: Lane<'a>,
+    strings: Vec<String>,
+}
+
+impl Legacy<'_> {
+    fn node_type(&mut self) -> Result<u8, Kv3Error> {
+        let byte = self.lane.u8("node type")?;
+        if byte & 0x80 != 0 {
+            self.lane.u8("node flag")?;
+        }
+        Ok(byte & 0x7F)
+    }
+
+    fn string(&self, id: i32) -> String {
+        usize::try_from(id)
+            .ok()
+            .and_then(|i| self.strings.get(i))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn value(&mut self, kind: u8) -> Result<Value, Kv3Error> {
+        Ok(match kind {
+            node::NULL => Value::Null,
+            node::BOOLEAN_TRUE => Value::Bool(true),
+            node::BOOLEAN_FALSE => Value::Bool(false),
+            node::INT64_ZERO => Value::Int(0),
+            node::INT64_ONE => Value::Int(1),
+            node::DOUBLE_ZERO => Value::Float(0.0),
+            node::DOUBLE_ONE => Value::Float(1.0),
+            node::BOOLEAN => Value::Bool(self.lane.u8("bool")? != 0),
+            node::INT32 => Value::Int(i64::from(self.lane.i32("int32")?)),
+            node::UINT32 => Value::UInt(u64::from(self.lane.u32("uint32")?)),
+            node::FLOAT => Value::Float(f64::from(f32::from_le_bytes(self.lane.take("float")?))),
+            node::INT64 => Value::Int(i64::from_le_bytes(self.lane.take("int64")?)),
+            node::UINT64 => Value::UInt(u64::from_le_bytes(self.lane.take("uint64")?)),
+            node::DOUBLE => Value::Float(f64::from_le_bytes(self.lane.take("double")?)),
+            node::STRING => {
+                let id = self.lane.i32("string id")?;
+                Value::Str(self.string(id))
+            }
+            node::BINARY_BLOB => return Err(Kv3Error::Blobs),
+            node::ARRAY => {
+                let n = self.lane.count("array length")?;
+                let mut items = Vec::with_capacity(n.min(1 << 16));
+                for _ in 0..n {
+                    let kind = self.node_type()?;
+                    items.push(self.value(kind)?);
+                }
+                Value::Array(items)
+            }
+            node::ARRAY_TYPED => {
+                let n = self.lane.count("typed array length")?;
+                let element = self.node_type()?;
+                let mut items = Vec::with_capacity(n.min(1 << 16));
+                for _ in 0..n {
+                    items.push(self.value(element)?);
+                }
+                Value::Array(items)
+            }
+            node::OBJECT => {
+                let n = self.lane.count("object length")?;
+                let mut members = Vec::with_capacity(n.min(1 << 16));
+                for _ in 0..n {
+                    let id = self.lane.i32("member name")?;
+                    let name = self.string(id);
+                    let kind = self.node_type()?;
+                    members.push((name, self.value(kind)?));
+                }
+                Value::Object(members)
+            }
+            other => return Err(Kv3Error::NodeType(other)),
+        })
     }
 }
 
@@ -616,6 +741,104 @@ mod tests {
         assert!(matches!(
             parse(cut),
             Err(Kv3Error::Truncated(_)) | Err(Kv3Error::Lz4)
+        ));
+    }
+
+    /// `VKV\x03`, the given encoding, a zero format id, then `body`.
+    fn legacy(encoding: [u8; 16], body: &[u8]) -> Vec<u8> {
+        let mut out = LEGACY_MAGIC.to_le_bytes().to_vec();
+        out.extend_from_slice(&encoding);
+        out.extend_from_slice(&[0; 16]);
+        out.extend_from_slice(body);
+        out
+    }
+
+    /// A string table and one root object holding every inline value kind.
+    fn legacy_body() -> Vec<u8> {
+        let mut b = Vec::new();
+        let strings = ["eType", "ROOT", "vecChildren", "name", "x"];
+        b.extend_from_slice(&(strings.len() as u32).to_le_bytes());
+        for s in strings {
+            b.extend_from_slice(s.as_bytes());
+            b.push(0);
+        }
+        b.push(node::OBJECT);
+        b.extend_from_slice(&3i32.to_le_bytes());
+        b.extend_from_slice(&0i32.to_le_bytes());
+        b.extend_from_slice(&[node::STRING | 0x80, 0x01]);
+        b.extend_from_slice(&1i32.to_le_bytes());
+        b.extend_from_slice(&2i32.to_le_bytes());
+        b.push(node::ARRAY);
+        b.extend_from_slice(&4i32.to_le_bytes());
+        b.push(node::INT32);
+        b.extend_from_slice(&7i32.to_le_bytes());
+        b.push(node::BOOLEAN_TRUE);
+        b.push(node::ARRAY_TYPED);
+        b.extend_from_slice(&2i32.to_le_bytes());
+        b.push(node::DOUBLE);
+        b.extend_from_slice(&1.5f64.to_le_bytes());
+        b.extend_from_slice(&2.5f64.to_le_bytes());
+        b.push(node::OBJECT);
+        b.extend_from_slice(&1i32.to_le_bytes());
+        b.extend_from_slice(&3i32.to_le_bytes());
+        b.push(node::INT64);
+        b.extend_from_slice(&(-9i64).to_le_bytes());
+        b.extend_from_slice(&4i32.to_le_bytes());
+        b.push(node::NULL);
+        b
+    }
+
+    /// One LZ4 sequence of literals only.
+    fn lz4_literals(data: &[u8]) -> Vec<u8> {
+        let n = data.len();
+        let mut out = vec![(n.min(15) << 4) as u8];
+        if n >= 15 {
+            let mut rest = n - 15;
+            while rest >= 255 {
+                out.push(255);
+                rest -= 255;
+            }
+            out.push(rest as u8);
+        }
+        out.extend_from_slice(data);
+        out
+    }
+
+    #[test]
+    fn decodes_the_legacy_inline_format() {
+        let body = legacy_body();
+        let doc = parse(&legacy(LEGACY_UNCOMPRESSED, &body)).unwrap();
+        assert_eq!(doc.version, 1);
+        assert_eq!(doc.root.get("eType").and_then(Value::as_str), Some("ROOT"));
+        let children = doc
+            .root
+            .get("vecChildren")
+            .and_then(Value::as_array)
+            .unwrap();
+        assert_eq!(children[0], Value::Int(7));
+        assert_eq!(children[1], Value::Bool(true));
+        assert_eq!(
+            children[2],
+            Value::Array(vec![Value::Float(1.5), Value::Float(2.5)])
+        );
+        assert_eq!(children[3].get("name"), Some(&Value::Int(-9)));
+        assert_eq!(doc.root.get("x"), Some(&Value::Null));
+
+        let mut lz4 = (body.len() as u32).to_le_bytes().to_vec();
+        lz4.extend(lz4_literals(&body));
+        assert_eq!(parse(&legacy(LEGACY_LZ4, &lz4)).unwrap(), doc);
+
+        let block = [
+            0x46, 0x1A, 0x79, 0x95, 0xBC, 0x95, 0x6C, 0x4F, 0xA7, 0x0B, 0x05, 0xBC, 0xA1, 0xB7,
+            0xDF, 0xD2,
+        ];
+        assert!(matches!(
+            parse(&legacy(block, &body)),
+            Err(Kv3Error::Encoding(_))
+        ));
+        assert!(matches!(
+            parse(&legacy(LEGACY_UNCOMPRESSED, &body[..body.len() - 3])),
+            Err(Kv3Error::Truncated(_))
         ));
     }
 

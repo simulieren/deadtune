@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use dt_core::launch_options::LaunchOptions;
 use dt_core::power::PowerSource;
+use dt_core::snapshot::Selection;
 
 use crate::live::BridgeKind;
 use crate::update::UpdateSettings;
@@ -52,6 +53,23 @@ impl PowerProfiles {
     }
 }
 
+/// The Game files page: what a snapshot saves, and whether one is taken after a game update.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct SnapshotSettings {
+    pub auto: bool,
+    pub selection: Selection,
+}
+
+impl Default for SnapshotSettings {
+    fn default() -> SnapshotSettings {
+        SnapshotSettings {
+            auto: true,
+            selection: Selection::default(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -77,6 +95,7 @@ pub struct Settings {
     pub launch: LaunchOptions,
     pub power: PowerProfiles,
     pub update: UpdateSettings,
+    pub snapshots: SnapshotSettings,
 }
 
 impl Default for Settings {
@@ -98,6 +117,7 @@ impl Default for Settings {
             launch: LaunchOptions::default(),
             power: PowerProfiles::default(),
             update: UpdateSettings::default(),
+            snapshots: SnapshotSettings::default(),
         }
     }
 }
@@ -177,6 +197,34 @@ mod tests {
         let update = Settings::load(dir.path()).update;
         assert_eq!(update.channel, dt_core::update::Channel::Testing);
         assert!(update.enabled, "missing keys default too");
+    }
+
+    #[test]
+    fn snapshot_settings_default_to_automatic_and_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(FILE_NAME), "onboarded = true\n").unwrap();
+        let settings = Settings::load(dir.path());
+        assert!(settings.snapshots.auto);
+        assert_eq!(settings.snapshots.selection, Selection::default());
+        std::fs::write(
+            dir.path().join(FILE_NAME),
+            "[snapshots]\nauto = false\n\n[snapshots.selection]\ncategories = [\"hud\"]\ndecode = false\n",
+        )
+        .unwrap();
+        let settings = Settings::load(dir.path());
+        assert!(!settings.snapshots.auto);
+        assert_eq!(
+            settings.snapshots.selection.categories,
+            BTreeSet::from([dt_core::snapshot::Category::Hud])
+        );
+        assert!(!settings.snapshots.selection.decode);
+        assert_eq!(
+            settings.snapshots.selection.size_cap,
+            Selection::default().size_cap,
+            "missing keys keep their defaults"
+        );
+        settings.save(dir.path()).unwrap();
+        assert_eq!(Settings::load(dir.path()), settings);
     }
 
     #[test]

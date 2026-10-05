@@ -24,7 +24,7 @@ Key mechanism: `CitadelSettingsSlider` is the game's own settings control, and i
 Other facts:
 
 - `citadel_camera_hero_fov` is clamped to 75 to 90 by the engine; the stock FOV slider is `min="75" max="90" snap="1"`.
-- The mod's layouts are compiled with a newer KV3 version than `hud::kv3` reads: `hud::inject::tree` fails with `Kv3(Magic(55987030))`. Strings can still be read out of the LaCo block.
+- The mod's layouts are compiled in the legacy binary KV3 format (`VKV\x03`, inline values), older than the version 4 and 5 lanes `hud::kv3` read; `hud::inject::tree` failed with `Kv3(Magic(55987030))`. `hud::kv3` reads that format since 2026-10-05, and a game file snapshot decodes the mod's `popup_settings.vxml_c` to a 138 KB XML with the `AspectRatioFOV` row in it (`docs/plans/game-files/plan.md`).
 
 ## Simon's test (2026-10-05): the row does not show up
 
@@ -46,8 +46,9 @@ Retest steps: rename to `pak50_dir.vpk`, put it in `game\citadel\addons`, make s
 
 ### Phase 1: read the settings layout
 
-- [ ] Extend `hud::kv3` to the KV3 version the current game uses for `popup_settings.vxml_c` (the magic the decoder rejected), with fixtures from the game snapshot (see `docs/plans/game-files/plan.md`).
-- [ ] Decode the game's own `popup_settings.vxml_c` and confirm the Camera Settings anchor (`#citadel_settings_camera_fov` row) in the current build.
+- [x] `hud::kv3` reads the legacy format the mod's `popup_settings.vxml_c` uses (checked against the mod's file outside the repo, `DEADTUNE_KV3_SAMPLES`). The game's own layouts are version 5, which it already read.
+- [ ] Take a game file snapshot on Windows (Game files page, or `deadtune-cli snapshot take`), copy `raw/panorama/layout/popups/popup_settings.vxml_c` from it into `crates/dt-core/tests/fixtures/hud/` and check that `text/panorama/layout/popups/popup_settings.xml` decoded (`decoded = "text"` in the manifest, not `"strings"`).
+- [ ] Confirm the Camera Settings anchor (`#citadel_settings_camera_fov` row) in that XML for the current build.
 
 ### Phase 2: a DeadTune row, rebuilt from the game's file
 

@@ -277,6 +277,10 @@ impl App {
                         at: SystemTime::now(),
                     });
                 }
+                // `DEADTUNE_FAKE_SNAPSHOT=running` shows the Game files page mid-snapshot.
+                if std::env::var("DEADTUNE_FAKE_SNAPSHOT").is_ok_and(|v| v == "running") {
+                    state.inject_snapshot_running();
+                }
                 // Screenshot lever: `DEADTUNE_SET=fps_max=144,r_shadows=true` edits after loading.
                 if let Ok(list) = std::env::var("DEADTUNE_SET") {
                     for (name, value) in list.split(',').filter_map(|kv| kv.split_once('=')) {
@@ -350,6 +354,10 @@ impl App {
         state.poll_watch();
         state.poll_checks();
         state.poll_build();
+        state.poll_snapshot();
+        if state.snapshot_job.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(200));
+        }
         if state.poll_update() {
             crate::update_view::restart(ctx, state);
         }

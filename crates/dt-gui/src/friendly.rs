@@ -481,6 +481,7 @@ pub fn groups(section: Section) -> &'static [Group] {
         | Section::Health
         | Section::Addons
         | Section::System
+        | Section::GameFiles
         | Section::Safety => &[],
         Section::Display => &[
             Group {

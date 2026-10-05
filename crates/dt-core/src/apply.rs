@@ -15,6 +15,7 @@ use crate::gi::{self, GiError, Override, Overrides};
 use crate::hud::install::{self as hud_install, HudAction, HudError, HudPlan, InstalledState};
 use crate::hud::{HudLayout, searchpaths};
 use crate::locate::GamePaths;
+use crate::practice;
 use crate::preset::{self, PresetId};
 use crate::profile::{BaseRef, Profile};
 use crate::video::{self, VideoError};
@@ -78,6 +79,9 @@ pub struct ApplyPlan {
     pub ignored: Vec<String>,
     /// Denylisted convars refused, from the profile or the base preset.
     pub denied: Vec<String>,
+    /// `Section/Key` edits outside the ConVars block (practice mode); take effect next launch
+    /// and matchmaking may refuse to queue while they differ from stock.
+    pub sections: Vec<String>,
     pub gameinfo: Option<FileWrite>,
     pub video: Option<FileWrite>,
     pub video_changes: BTreeMap<String, String>,
@@ -203,6 +207,7 @@ pub fn addons_plan(
 /// Denylisted convars the base sets away from the vanilla preset go back to the vanilla value,
 /// or are commented out when vanilla does not set them: presets carry some of them.
 /// When the HUD or addons plan needs it, `Game citadel/addons` is added to SearchPaths.
+/// The profile's practice mode is written into SceneSystem last; off means stock values.
 pub fn target(
     live_gameinfo: &str,
     live_video: Option<&str>,
@@ -239,6 +244,7 @@ pub fn target(
     {
         gameinfo = searchpaths::ensure_addons(&gameinfo).map_err(HudError::from)?;
     }
+    let gameinfo = practice::apply(&gameinfo, profile.practice)?;
     let video = live_video
         .map(|live| {
             let swapped = match &base.video {
@@ -271,6 +277,10 @@ pub fn plan(
     let wanted = gi::effective_values(&target.gameinfo)?;
     let mut plan = ApplyPlan {
         denied: target.denied.clone(),
+        sections: practice::drift(&target.gameinfo, live_gameinfo)?
+            .iter()
+            .map(|d| format!("{}/{}", d.section, d.key))
+            .collect(),
         hud: target.hud.clone(),
         addons: target.addons.clone(),
         ..ApplyPlan::default()
@@ -325,7 +335,8 @@ fn file_write(path: &Path, before: &str, after: &str) -> Option<FileWrite> {
     })
 }
 
-/// Ranked-safe target: the original (or vanilla preset) ConVars block, video.txt untouched.
+/// Ranked-safe target: the original (or vanilla preset) ConVars block and stock values for the
+/// SceneSystem keys practice mode owns, video.txt untouched.
 /// Pass `hud_plan(paths, &HudLayout::default(), store)` as `hud` and
 /// `addons_plan(paths, &AddonsConfig::default(), store)` as `addons` to remove our addons too;
 /// SearchPaths is left as is, so a `Game citadel/addons` line stays (harmless, see `execute`).
@@ -340,7 +351,7 @@ pub fn ranked_safe_target(
         None => preset::info(PresetId::Vanilla).pinned_gameinfo.to_string(),
     };
     Ok(Target {
-        gameinfo: gi::replace_convars_block(live_gameinfo, &stock)?,
+        gameinfo: practice::restore_stock(&gi::replace_convars_block(live_gameinfo, &stock)?)?,
         video: None,
         denied: Vec::new(),
         hud,
@@ -419,6 +430,7 @@ pub fn execute(
     }
     report.needs_restart = !plan.restart.is_empty()
         || !plan.queued_cheat.is_empty()
+        || !plan.sections.is_empty()
         || report.wrote_video
         || report.hud_changed
         || report.addons_changed

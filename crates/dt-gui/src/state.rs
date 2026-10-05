@@ -30,6 +30,7 @@ use dt_core::hud::minimap_style::{
 };
 use dt_core::launch::{self, LaunchOptions};
 use dt_core::locate::GamePaths;
+use dt_core::practice::PracticeMode;
 use dt_core::preset::PresetId;
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 use dt_core::watch::{self, Change, Watcher};
@@ -618,6 +619,7 @@ pub fn default_profile() -> Profile {
         video: BTreeMap::new(),
         hud: HudLayout::default(),
         addons: AddonsConfig::default(),
+        practice: PracticeMode::default(),
     }
 }
 

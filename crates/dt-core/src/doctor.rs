@@ -12,7 +12,7 @@ use crate::hud::install::{self, ADDON_FILE, GAME_PAK, InstalledState};
 use crate::hud::searchpaths;
 use crate::hud::vpk::VpkDir;
 use crate::locate::{GamePaths, parse_buildid};
-use crate::{launch, video};
+use crate::{launch, practice, video};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CheckStatus {
@@ -279,6 +279,51 @@ fn gameinfo_checks(text: &str, checks: &mut Vec<Check>) {
         ),
         Err(e) => fail("Read convars", e.to_string(), VERIFY_FILES),
     });
+    checks.push(matchmaking_check(text));
+}
+
+/// Edits outside the ConVars block that the matchmaking check refuses: practice mode's own
+/// keys, and anything else another tool left in those sections.
+fn matchmaking_check(text: &str) -> Check {
+    const NAME: &str = "Matchmaking sections";
+    let drift = match practice::matchmaking_drift(text) {
+        Ok(drift) => drift,
+        Err(e) => return warn(NAME, e.to_string(), VERIFY_FILES),
+    };
+    if drift.is_empty() {
+        return pass(NAME, "stock");
+    }
+    let (managed, foreign): (Vec<_>, Vec<_>) = drift.iter().partition(|d| d.managed());
+    let mut sections: Vec<&str> = foreign.iter().map(|d| d.section).collect();
+    sections.dedup();
+    let foreign_note = match foreign.len() {
+        0 => String::new(),
+        n => format!("; {n} other edit(s) in {}", sections.join(", ")),
+    };
+    if !managed.is_empty() {
+        return warn(
+            NAME,
+            format!(
+                "Practice mode on: matchmaking may refuse to queue ({} SceneSystem key(s) off stock{foreign_note})",
+                managed.len()
+            ),
+            "Turn on Ranked-safe mode (Safety & setup) or switch Practice mode off (Performance) and Apply before queueing.",
+        );
+    }
+    let keys: Vec<String> = foreign
+        .iter()
+        .map(|d| format!("{}/{}", d.section, d.key))
+        .collect();
+    warn(
+        NAME,
+        format!(
+            "matchmaking may refuse to queue: not Valve's stock values: {}",
+            keys.join(", ")
+        ),
+        &format!(
+            "Another tool (SideLock, for example) changed these sections. Ranked-safe mode does not touch them. {VERIFY_FILES}"
+        ),
+    )
 }
 
 fn hud_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {

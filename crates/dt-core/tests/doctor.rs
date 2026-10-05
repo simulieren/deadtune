@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use dt_core::doctor::{Check, CheckStatus, hud_conflicts, run};
 use dt_core::locate::{GamePaths, from_game_root};
+use dt_core::practice::{self, PracticeMode};
 
 fn repo(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -201,4 +202,42 @@ fn another_hud_mod_is_a_warning() {
     let conflict = find(&checks, "HUD conflicts");
     assert_eq!(conflict.status, CheckStatus::Warn);
     assert!(conflict.detail.contains("pak03_dir.vpk"));
+}
+
+#[test]
+fn practice_mode_and_other_tools_section_edits_warn_about_matchmaking() {
+    let fake = Fake::new();
+    let row = |fake: &Fake| find(&fake.run(), "Matchmaking sections").clone();
+    assert_eq!(row(&fake).status, CheckStatus::Pass, "{:?}", row(&fake));
+
+    fs::write(&fake.paths.gameinfo, practice::STOCK).unwrap();
+    assert_eq!(row(&fake).detail, "stock");
+
+    let on = practice::apply(practice::STOCK, PracticeMode::ALL_ON).unwrap();
+    fs::write(&fake.paths.gameinfo, &on).unwrap();
+    let check = row(&fake);
+    assert_eq!(check.status, CheckStatus::Warn);
+    assert!(
+        check
+            .detail
+            .starts_with("Practice mode on: matchmaking may refuse to queue"),
+        "{check:?}"
+    );
+    assert!(check.fix.as_deref().unwrap().contains("Ranked-safe"));
+
+    let foreign = practice::STOCK.replacen(
+        "\t\tVulkanMutableSwapchain 1\n",
+        "\t\tSwapChainSampleableDepth 1\n\t\tVulkanMutableSwapchain 1\n",
+        1,
+    );
+    fs::write(&fake.paths.gameinfo, &foreign).unwrap();
+    let check = row(&fake);
+    assert_eq!(check.status, CheckStatus::Warn);
+    assert!(
+        check
+            .detail
+            .contains("RenderSystem/SwapChainSampleableDepth"),
+        "{check:?}"
+    );
+    assert!(check.fix.as_deref().unwrap().contains("Verify integrity"));
 }

@@ -7,6 +7,7 @@ use dt_core::addons::AddonsConfig;
 use dt_core::catalog::Catalog;
 use dt_core::gi::Override;
 use dt_core::hud::HudLayout;
+use dt_core::practice::PracticeMode;
 use dt_core::profile::{self, ConVarEdits, Profile};
 
 use crate::args::{Args, CliResult, fail};
@@ -30,6 +31,7 @@ fn new_profile(
         video: BTreeMap::new(),
         hud: HudLayout::default(),
         addons: AddonsConfig::default(),
+        practice: PracticeMode::default(),
     })
 }
 

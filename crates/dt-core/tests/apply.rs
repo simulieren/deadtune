@@ -14,6 +14,7 @@ use dt_core::hud::install::{ADDON_FILE, GAME_PAK, HudAction, addons_dir};
 use dt_core::hud::searchpaths::has_addons;
 use dt_core::hud::{ElementEdit, ElementId, HudLayout};
 use dt_core::locate::{GamePaths, from_game_root};
+use dt_core::practice::{self, PracticeMode};
 use dt_core::preset::{self, PresetId};
 use dt_core::profile::{BaseRef, ConVarEdits, Profile};
 
@@ -48,6 +49,7 @@ fn kaiz_profile() -> Profile {
         video: BTreeMap::new(),
         hud: HudLayout::default(),
         addons: AddonsConfig::default(),
+        practice: PracticeMode::default(),
     }
 }
 
@@ -842,4 +844,78 @@ fn no_preset_writes_a_denylisted_value() {
             }
         }
     }
+}
+
+#[test]
+fn practice_mode_writes_scene_system_keys_and_ranked_safe_restores_them() {
+    let mut profile = kaiz_profile();
+    profile.practice = PracticeMode {
+        shadows: true,
+        fog: false,
+        batching: true,
+    };
+    let base = resolve_base(&profile).unwrap();
+    let tuned = target(VANILLA, None, &base, &profile, catalog(), None, None).unwrap();
+    assert_eq!(practice::detect(&tuned.gameinfo).unwrap(), profile.practice);
+    let install = fake_install(VANILLA, None);
+    let plan_on = plan(
+        &install.paths,
+        VANILLA,
+        None,
+        &tuned,
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap();
+    assert_eq!(plan_on.sections.len(), 10, "{:?}", plan_on.sections);
+    assert!(
+        plan_on
+            .sections
+            .iter()
+            .all(|s| s.starts_with("SceneSystem/"))
+    );
+    assert!(
+        plan_on
+            .sections
+            .contains(&"SceneSystem/LayerBatchThresholdFullsort".to_string())
+    );
+    let report = execute(&install.paths, &plan_on, &install.store, None).unwrap();
+    assert!(report.needs_restart);
+    let live = read(&install.paths.gameinfo);
+    assert_eq!(practice::detect(&live).unwrap(), profile.practice);
+
+    profile.practice = PracticeMode::default();
+    let off = target(&live, None, &base, &profile, catalog(), None, None).unwrap();
+    assert_eq!(
+        practice::detect(&off.gameinfo).unwrap(),
+        PracticeMode::default()
+    );
+    assert_eq!(
+        outside_convars(&off.gameinfo),
+        outside_convars(VANILLA),
+        "off puts every managed key back to stock"
+    );
+
+    let safe = ranked_safe_target(&live, &install.store, None, None).unwrap();
+    assert_eq!(safe.gameinfo, VANILLA, "ranked-safe is stock byte for byte");
+    let plan_safe = plan(
+        &install.paths,
+        &live,
+        None,
+        &safe,
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap();
+    assert_eq!(plan_safe.sections.len(), 10);
+    let unchanged = plan(
+        &install.paths,
+        VANILLA,
+        None,
+        &ranked_safe_target(VANILLA, &install.store, None, None).unwrap(),
+        catalog(),
+        ApplyContext::default(),
+    )
+    .unwrap();
+    assert!(unchanged.sections.is_empty() && unchanged.gameinfo.is_none());
 }

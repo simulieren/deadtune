@@ -211,6 +211,10 @@ pub fn print_plan(plan: &ApplyPlan, diffs: bool) {
     print_list("live now", &live);
     print_list("queued until sandbox (cheat)", &plan.queued_cheat);
     print_list("next launch", &plan.restart);
+    print_list(
+        "practice mode (next launch; matchmaking may refuse to queue)",
+        &plan.sections,
+    );
     print_list("video settings", &video);
     print_list(
         "ignored by the game (gameinfo_cannot_override)",

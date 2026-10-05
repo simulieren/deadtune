@@ -6,6 +6,7 @@ use super::css::CssError;
 use super::elements::{
     self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
 };
+use super::health_style::{HealthError, HealthStyle};
 use super::minimap_colors::{self, Color, IconId, MINIMAP_STYLE};
 use super::minimap_style::{MinimapStyle, StyleError};
 
@@ -57,6 +58,8 @@ pub struct HudLayout {
     pub minimap_colors: BTreeMap<IconId, Color>,
     /// Experimental, untested in game: marker sizes, map opacity, frameless minimap.
     pub minimap: MinimapStyle,
+    /// Experimental, untested in game: health bar styling.
+    pub health: HealthStyle,
     /// Advanced: raw CSS appended after the generated rules, keyed by style file path
     /// (`panorama/styles/hud.vcss_c`). Must parse with balanced braces.
     pub extra_css: BTreeMap<String, String>,
@@ -84,6 +87,8 @@ pub enum LayoutError {
     Opacity(ElementId, u8),
     #[error("minimap: {0}")]
     Minimap(#[from] StyleError),
+    #[error("health bar: {0}")]
+    Health(#[from] HealthError),
     #[error("extra css for {0}: {1}")]
     ExtraCss(String, CssError),
 }
@@ -93,12 +98,13 @@ impl HudLayout {
         self.elements.values().all(|e| *e == ElementEdit::default())
             && self.minimap_colors.is_empty()
             && self.minimap.is_vanilla()
+            && self.health.is_vanilla()
             && self.extra_css.values().all(|c| c.trim().is_empty())
     }
 }
 
 /// Validates and emits one rule per non-identity element (sorted by `ElementId`),
-/// one rule per minimap colour (sorted by `IconId`), the minimap style rules, then the
+/// one rule per minimap colour (sorted by `IconId`), the minimap and health bar rules, then the
 /// minified extra CSS.
 /// Deterministic.
 pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
@@ -129,6 +135,9 @@ pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
             .push_str(&rule);
     }
     for (path, css) in layout.minimap.compile()? {
+        files.entry(path.to_string()).or_default().push_str(&css);
+    }
+    for (path, css) in layout.health.compile()? {
         files.entry(path.to_string()).or_default().push_str(&css);
     }
     for (path, css) in &layout.extra_css {

@@ -252,7 +252,7 @@ fn map_style(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
 }
 
 /// A labelled percent slider, highlighted away from 100 %; `Some` when moved.
-fn percent_slider<T>(
+pub(crate) fn percent_slider<T>(
     ui: &mut Ui,
     label: &str,
     value: T,
@@ -462,7 +462,7 @@ fn default_chip(ui: &mut Ui, vanilla: Option<Color>) {
     }
 }
 
-fn marked(text: &str, changed: bool) -> RichText {
+pub(crate) fn marked(text: &str, changed: bool) -> RichText {
     RichText::new(text)
         .size(12.5)
         .color(if changed { ACCENT } else { TEXT })

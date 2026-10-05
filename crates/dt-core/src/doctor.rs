@@ -402,6 +402,14 @@ fn hud_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
 }
 
 /// Other addons that ship their own `hud.vcss_c`; only one of them can win.
+/// Stylesheets DeadTune's HUD addon can replace; another pak shipping one clashes with it.
+const PATCHED_STYLES: [&str; 4] = [
+    HUD_STYLE,
+    crate::hud::minimap_colors::MINIMAP_STYLE,
+    crate::hud::health_style::HEALTH_STYLE,
+    crate::hud::health_style::HEALTH_CONTAINER_STYLE,
+];
+
 pub fn hud_conflicts(paths: &GamePaths) -> Vec<PathBuf> {
     let Ok(dir) = std::fs::read_dir(install::addons_dir(paths)) else {
         return Vec::new();
@@ -413,7 +421,9 @@ pub fn hud_conflicts(paths: &GamePaths) -> Vec<PathBuf> {
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| n.ends_with("_dir.vpk") && n != ADDON_FILE)
         })
-        .filter(|p| VpkDir::open(p).is_ok_and(|v| v.contains(HUD_STYLE)))
+        .filter(|p| {
+            VpkDir::open(p).is_ok_and(|v| PATCHED_STYLES.iter().any(|style| v.contains(style)))
+        })
         .collect();
     found.sort();
     found

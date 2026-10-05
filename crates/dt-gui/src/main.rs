@@ -8,6 +8,7 @@ mod chart;
 mod checks_view;
 mod compact;
 mod friendly;
+mod health_view;
 mod hud_view;
 mod icons;
 mod live;

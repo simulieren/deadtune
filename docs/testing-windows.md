@@ -130,6 +130,14 @@ How it works now: DeadTune writes `cfg\deadtune_boot.cfg` (binds F8, sets the pr
 - [ ] **H0-5, H0-6**: crosshair convars live from console; which state shows `#hud_signature`.
 - [ ] **H0-9**: screenshot the vanilla HUD at 1920x1080 and compare with the HUD tab's preview boxes.
 
+### 7b. Health bar page (experimental)
+
+- [ ] Pick **Big number**, Apply, start a match or the hideout: the health number is clearly bigger and not cut off, max health ("/ 700") is easy to read, the green backer is gone.
+- [ ] Take damage to between half and a third of your health: the number turns orange; below that it is red as in vanilla, and the bar and HUD no longer shake.
+- [ ] **Hide health regen** hides the small regen number; **Reset** brings the game's health bar back after Apply.
+- [ ] Try a hero with an extra bar (Rat King armour, a shield item) and note anything that overlaps.
+- [ ] With bytenode's Minimal Healthbar or budhud mod installed alongside, System check lists it under "Other HUD mods".
+
 ### 8. Benchmark
 - [ ] **P0-7**: capture 3 identical 60 s runs with PresentMon, import each in Advanced > Bench. Variance under 3%? Note which CSV columns your PresentMon version writes (`MsBetweenPresents` or `FrameTime`).
 

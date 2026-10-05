@@ -22,6 +22,7 @@ use dt_core::bridge::conlog::LogTail;
 use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::gi::{self, Override};
 use dt_core::hud::elements::ElementId;
+use dt_core::hud::health_style::HealthStyle;
 use dt_core::hud::install::HudPlan;
 use dt_core::hud::layout::{ElementEdit, HudLayout};
 use dt_core::hud::minimap_colors::{self, Color, IconId};
@@ -184,13 +185,14 @@ pub enum Section {
     Performance,
     Hud,
     Minimap,
+    Health,
     Addons,
     System,
     Safety,
 }
 
 impl Section {
-    pub const ALL: [Section; 11] = [
+    pub const ALL: [Section; 12] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -199,6 +201,7 @@ impl Section {
         Section::Performance,
         Section::Hud,
         Section::Minimap,
+        Section::Health,
         Section::Addons,
         Section::System,
         Section::Safety,
@@ -214,6 +217,7 @@ impl Section {
             Section::Performance => "Performance",
             Section::Hud => "HUD",
             Section::Minimap => "Minimap",
+            Section::Health => "Health bar",
             Section::Addons => "Addons",
             Section::System => "System check",
             Section::Safety => "Safety & setup",
@@ -230,6 +234,7 @@ impl Section {
             Section::Performance => "Frame rate caps, menus and CPU.",
             Section::Hud => "Move and resize parts of the in-game HUD.",
             Section::Minimap => "Colours, marker sizes and the look of the minimap.",
+            Section::Health => "A bigger health number, colours by health, less shaking.",
             Section::Addons => {
                 "Community performance mods, rebuilt by DeadTune so they survive game updates."
             }
@@ -1621,9 +1626,11 @@ impl AppState {
     pub fn apply_hud_preset(&mut self, preset: HudPreset) {
         let minimap_colors = std::mem::take(&mut self.profile.hud.minimap_colors);
         let minimap = std::mem::take(&mut self.profile.hud.minimap);
+        let health = std::mem::take(&mut self.profile.hud.health);
         self.profile.hud = HudLayout {
             minimap_colors,
             minimap,
+            health,
             ..preset.layout()
         };
         self.refresh_preview();
@@ -1635,6 +1642,7 @@ impl AppState {
             HudLayout {
                 minimap_colors: self.profile.hud.minimap_colors.clone(),
                 minimap: self.profile.hud.minimap.clone(),
+                health: self.profile.hud.health.clone(),
                 ..p.layout()
             } == self.profile.hud
         })
@@ -1661,6 +1669,20 @@ impl AppState {
     pub fn set_minimal_minimap(&mut self, on: bool) {
         self.profile.hud.minimap.minimal = on;
         self.refresh_preview();
+    }
+
+    /// Health bar edits are made on a copy and stored whole.
+    pub fn set_health_style(&mut self, mut style: HealthStyle) {
+        style.number_scale_pct = style.number_scale_pct.clamp(
+            *dt_core::hud::health_style::NUMBER_SCALE_RANGE.start(),
+            *dt_core::hud::health_style::NUMBER_SCALE_RANGE.end(),
+        );
+        self.profile.hud.health = style;
+        self.refresh_preview();
+    }
+
+    pub fn health_changed_count(&self) -> usize {
+        self.profile.hud.health.changed_count()
     }
 
     pub fn reset_minimap_style(&mut self) {
@@ -2935,6 +2957,26 @@ mod tests {
         state.reset_minimap_style();
         state.apply_hud_preset(HudPreset::Vanilla);
         assert_eq!(state.minimap_changed_count(), 0);
+        assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn health_style_survives_layout_presets_and_compiles() {
+        use dt_core::hud::health_style::{HEALTH_CONTAINER_STYLE, HealthPreset};
+        let (_dir, mut state) = state();
+        state.set_health_style(HealthStyle {
+            number_scale_pct: 999,
+            ..HealthPreset::BigNumber.style()
+        });
+        assert_eq!(state.profile.hud.health.number_scale_pct, 200, "clamped");
+        assert!(state.is_dirty());
+        state.apply_hud_preset(HudPreset::Competitive);
+        assert_eq!(state.hud_preset(), Some(HudPreset::Competitive));
+        assert_eq!(state.health_changed_count(), 5, "a layout preset keeps it");
+        let patch = dt_core::hud::layout::compile(&state.profile.hud).unwrap();
+        assert!(patch.files[HEALTH_CONTAINER_STYLE].contains("font-size:64px"));
+        state.set_health_style(HealthStyle::default());
+        state.apply_hud_preset(HudPreset::Vanilla);
         assert!(!state.is_dirty());
     }
 

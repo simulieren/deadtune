@@ -7,7 +7,7 @@ use dt_core::backup;
 use dt_core::catalog::Catalog;
 use dt_core::doctor;
 use dt_core::hud::elements::HUD_STYLE;
-use dt_core::hud::icons::{self, IconOverride, Target as IconTarget};
+use dt_core::hud::icons::{self, IconOverride, Source, Target as IconTarget};
 use dt_core::hud::install::{self, ADDON_FILE, GAME_PAK, InstalledState};
 use dt_core::hud::vpk::VpkDir;
 use dt_core::hud::{HudLayout, layout, searchpaths};
@@ -128,11 +128,11 @@ pub fn icon(env: &Env, args: &Args) -> CliResult {
                 println!("No icon overrides in {}.", file.display());
             }
             for (path, entry) in &layout.icons {
-                println!(
-                    "{path}  {}  {}",
-                    icon_kind(entry),
-                    entry.stored_at(&env.records()).display()
-                );
+                let stored = entry
+                    .stored_at(&env.records())
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default();
+                println!("{path}  {}  {stored}", icon_kind(entry));
             }
             return Ok(());
         }
@@ -171,10 +171,17 @@ pub fn icon(env: &Env, args: &Args) -> CliResult {
 }
 
 fn icon_kind(entry: &IconOverride) -> String {
-    match entry {
-        IconOverride::Png { fit, .. } => format!("png, fit {}", fit.key()),
-        IconOverride::Svg { .. } => "svg".into(),
-        IconOverride::PngInSvg { .. } => "png in svg (experimental)".into(),
+    let source = match &entry.source {
+        Source::Game => "the game's image".to_string(),
+        Source::Png { fit, .. } => format!("png, fit {}", fit.key()),
+        Source::Svg { .. } => "svg".into(),
+        Source::PngInSvg { .. } => "png in svg (experimental)".into(),
+    };
+    let edits: Vec<String> = entry.adjust.iter().map(ToString::to_string).collect();
+    if edits.is_empty() {
+        source
+    } else {
+        format!("{source} with {}", edits.join(" "))
     }
 }
 

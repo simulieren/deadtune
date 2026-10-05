@@ -835,7 +835,7 @@ fn removing_the_hud_removes_icons_and_keeps_the_stored_image() {
     assert_eq!(plan.action, HudAction::Remove);
     install::execute(&plan, &fake.paths, &fake.state).unwrap();
     assert!(!fake.addon().exists());
-    assert!(set.stored_at(&fake.state).is_file());
+    assert!(set.stored_at(&fake.state).unwrap().is_file());
 
     icons::reset(&mut hud.icons, ICON);
     assert!(hud.is_vanilla());

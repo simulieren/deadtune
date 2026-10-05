@@ -45,6 +45,14 @@ pub fn with_svg_text(original: &[u8], svg: &str) -> Result<Vec<u8>, SvgError> {
     Ok(resource::with_style_text(&res, svg)?.to_bytes())
 }
 
+/// `svg` with every colour in it (fills, strokes, gradient stops, style attributes and
+/// `<style>` rules) put through `list` via `adjust::adjust_rgb`, `Swap` entries matched
+/// exactly, and `Opacity` folded into the root's `opacity`; everything else byte for byte.
+pub fn adjust(svg: &str, list: &[crate::texture::adjust::Adjust]) -> String {
+    let _ = (svg, list);
+    todo!("workstream B")
+}
+
 /// An SVG document wrapping `png` as an embedded image filling `view`, so a raster image can
 /// stand in for a vector one. Whether Panorama's SVG renderer draws embedded rasters is not
 /// known yet.

@@ -15,7 +15,9 @@ use super::vtex::{self, Flags, Vtex, VtexError};
 use crate::hud::resource::{Resource, ResourceError};
 
 /// How the player's image is sized into the game's slot.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Fit {
     /// The game image's size, the player's image scaled to fit inside it with its aspect

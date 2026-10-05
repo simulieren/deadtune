@@ -1,9 +1,11 @@
-//! UI image overrides: the player's own PNG or SVG in place of any Panorama image (map
-//! icons, top bar, portraits, item icons). The choice lives in the profile's HUD layout as
-//! game path -> [`IconOverride`]; the image itself is copied into `<data>/icons/<sha256>.<ext>`
-//! so the player's source file can go. Every HUD build re-encodes each override from the
-//! game's current file, so a game update that changes a header is picked up on the next
-//! apply, and one icon that no longer works is reported without holding back the rest.
+//! UI image overrides: any Panorama image (map icons, top bar, portraits, item icons)
+//! rebuilt from a source plus a short list of colour adjustments. The source is the game's
+//! own image or the player's PNG or SVG; the adjustments (`texture::adjust`) are replayed on
+//! it at every HUD build, from the player's current game file, so a game update that changes
+//! a header or an icon's pixels is picked up on the next apply. The choice lives in the
+//! profile's HUD layout as game path -> [`IconOverride`]; a player's image is copied into
+//! `<data>/icons/<sha256>.<ext>` so their source file can go. One icon that no longer works
+//! is reported without holding back the rest.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -11,9 +13,11 @@ use std::path::{Path, PathBuf};
 
 use super::vpk::VpkDir;
 use crate::backup::{atomic_write, sha256_hex};
+use crate::texture::adjust::{self, Adjust, AdjustKind};
 use crate::texture::encode::{self, EncodeError, Fit};
 use crate::texture::png::{self, PngError};
 use crate::texture::svg::{self, SvgError};
+use crate::texture::{self, RgbaImage};
 
 pub const ICONS_DIR: &str = "icons";
 pub const IMAGES_ROOT: &str = "panorama/images/";
@@ -28,10 +32,12 @@ pub enum Target {
     Vector,
 }
 
-/// One overridden image, keyed by its game path in [`super::HudLayout::icons`].
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Where an override's pixels come from before its adjustments.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "input", rename_all = "snake_case")]
-pub enum IconOverride {
+pub enum Source {
+    /// The game's own image, decoded from the player's current file.
+    Game,
     /// A PNG encoded into a `.vtex_c`.
     Png {
         image_sha256: String,
@@ -45,38 +51,75 @@ pub enum IconOverride {
     PngInSvg { image_sha256: String },
 }
 
+/// One overridden image, keyed by its game path in [`super::HudLayout::icons`]: a source
+/// and the adjustments applied to it, in order. Profiles from before adjustments existed
+/// carry only the source fields and load unchanged.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct IconOverride {
+    #[serde(flatten)]
+    pub source: Source,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adjust: Vec<Adjust>,
+}
+
 impl IconOverride {
-    pub fn image_sha256(&self) -> &str {
-        match self {
-            IconOverride::Png { image_sha256, .. }
-            | IconOverride::Svg { image_sha256 }
-            | IconOverride::PngInSvg { image_sha256 } => image_sha256,
+    pub fn new(source: Source) -> IconOverride {
+        IconOverride {
+            source,
+            adjust: Vec::new(),
+        }
+    }
+
+    /// The game's image with nothing done to it: no override at all, so the map drops it.
+    pub fn is_vanilla(&self) -> bool {
+        self.source == Source::Game && self.adjust.is_empty()
+    }
+
+    /// The stored copy's hash, when the source is the player's file.
+    pub fn image_sha256(&self) -> Option<&str> {
+        match &self.source {
+            Source::Game => None,
+            Source::Png { image_sha256, .. }
+            | Source::Svg { image_sha256 }
+            | Source::PngInSvg { image_sha256 } => Some(image_sha256),
         }
     }
 
     pub fn is_experimental(&self) -> bool {
-        matches!(self, IconOverride::PngInSvg { .. })
+        matches!(self.source, Source::PngInSvg { .. })
     }
 
-    fn target(&self) -> Target {
-        match self {
-            IconOverride::Png { .. } => Target::Raster,
-            IconOverride::Svg { .. } | IconOverride::PngInSvg { .. } => Target::Vector,
+    pub fn fit(&self) -> Option<Fit> {
+        match self.source {
+            Source::Png { fit, .. } => Some(fit),
+            _ => None,
+        }
+    }
+
+    /// Kinds the source may replace; `Game` suits either.
+    fn allows(&self, target: Target) -> bool {
+        match self.source {
+            Source::Game => true,
+            Source::Png { .. } => target == Target::Raster,
+            Source::Svg { .. } | Source::PngInSvg { .. } => target == Target::Vector,
         }
     }
 
     fn extension(&self) -> &'static str {
-        match self {
-            IconOverride::Svg { .. } => "svg",
-            IconOverride::Png { .. } | IconOverride::PngInSvg { .. } => "png",
+        match self.source {
+            Source::Svg { .. } => "svg",
+            Source::Game | Source::Png { .. } | Source::PngInSvg { .. } => "png",
         }
     }
 
-    /// Where the stored copy of the player's image lives.
-    pub fn stored_at(&self, data_dir: &Path) -> PathBuf {
-        data_dir
-            .join(ICONS_DIR)
-            .join(format!("{}.{}", self.image_sha256(), self.extension()))
+    /// Where the stored copy of the player's image lives, when there is one.
+    pub fn stored_at(&self, data_dir: &Path) -> Option<PathBuf> {
+        let sha = self.image_sha256()?;
+        Some(
+            data_dir
+                .join(ICONS_DIR)
+                .join(format!("{sha}.{}", self.extension())),
+        )
     }
 }
 
@@ -135,7 +178,8 @@ pub fn target(game_path: &str) -> Result<Target, IconError> {
 }
 
 /// Validates `image` (PNG or SVG bytes) for `game_path`, stores a copy under `data_dir`, and
-/// records it in `icons`. Setting the same image again changes nothing.
+/// makes it the source of `game_path`'s override, keeping any adjustments already on it.
+/// Setting the same image again changes nothing.
 pub fn set(
     icons: &mut BTreeMap<String, IconOverride>,
     data_dir: &Path,
@@ -145,11 +189,11 @@ pub fn set(
 ) -> Result<IconOverride, IconError> {
     let target = target(game_path)?;
     let image_sha256 = sha256_hex(image);
-    let entry = if image.starts_with(PNG_MAGIC) {
+    let source = if image.starts_with(PNG_MAGIC) {
         png::read(image)?;
         match target {
-            Target::Raster => IconOverride::Png { image_sha256, fit },
-            Target::Vector => IconOverride::PngInSvg { image_sha256 },
+            Target::Raster => Source::Png { image_sha256, fit },
+            Target::Vector => Source::PngInSvg { image_sha256 },
         }
     } else if let Some(text) = std::str::from_utf8(image)
         .ok()
@@ -158,18 +202,69 @@ pub fn set(
         svg::validate(text)?;
         match target {
             Target::Raster => return Err(IconError::SvgForRaster(game_path.to_string())),
-            Target::Vector => IconOverride::Svg { image_sha256 },
+            Target::Vector => Source::Svg { image_sha256 },
         }
     } else {
         return Err(IconError::UnknownImage);
     };
-    let stored = entry.stored_at(data_dir);
+    let entry = icons
+        .entry(game_path.to_string())
+        .or_insert_with(|| IconOverride::new(Source::Game));
+    entry.source = source;
+    let stored = entry
+        .stored_at(data_dir)
+        .expect("a player's image is stored");
     if !stored.is_file() {
         std::fs::create_dir_all(data_dir.join(ICONS_DIR))?;
         atomic_write(&stored, image)?;
     }
-    icons.insert(game_path.to_string(), entry.clone());
-    Ok(entry)
+    Ok(entry.clone())
+}
+
+/// Sets the fit of a PNG source; `false` when `game_path` has no PNG source or it already
+/// has that fit.
+pub fn set_fit(icons: &mut BTreeMap<String, IconOverride>, game_path: &str, fit: Fit) -> bool {
+    match icons.get_mut(game_path).map(|o| &mut o.source) {
+        Some(Source::Png { fit: current, .. }) if *current != fit => {
+            *current = fit;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Puts `adjust` on `game_path`'s override (`texture::adjust::set`), starting one from the
+/// game's own image when there is none. `Ok(false)` when nothing changed.
+pub fn adjust(
+    icons: &mut BTreeMap<String, IconOverride>,
+    game_path: &str,
+    adjust: Adjust,
+) -> Result<bool, IconError> {
+    target(game_path)?;
+    let entry = icons
+        .entry(game_path.to_string())
+        .or_insert_with(|| IconOverride::new(Source::Game));
+    let changed = adjust::set(&mut entry.adjust, adjust);
+    if entry.is_vanilla() {
+        icons.remove(game_path);
+    }
+    Ok(changed)
+}
+
+/// Takes one kind of adjustment off `game_path`; an override left with nothing goes.
+pub fn remove_adjust(
+    icons: &mut BTreeMap<String, IconOverride>,
+    game_path: &str,
+    kind: AdjustKind,
+) -> bool {
+    let Some(entry) = icons.get_mut(game_path) else {
+        return false;
+    };
+    let changed = adjust::remove(&mut entry.adjust, kind);
+    if entry.is_vanilla() {
+        icons.remove(game_path);
+    }
+    changed
 }
 
 /// Drops the override for `game_path`; `false` when there was none.
@@ -211,7 +306,7 @@ fn build_one(
     data_dir: &Path,
 ) -> Result<Vec<u8>, String> {
     let target = target(path).map_err(|e| e.to_string())?;
-    if target != entry.target() {
+    if !entry.allows(target) {
         return Err(format!(
             "a {} override cannot replace this kind of image",
             entry.extension()
@@ -221,34 +316,60 @@ fn build_one(
         return Err("the game no longer has this image (renamed or removed by an update)".into());
     }
     let original = game.read(path).map_err(|e| format!("game file: {e}"))?;
-    let stored = entry.stored_at(data_dir);
-    let image = std::fs::read(&stored).map_err(|e| {
-        format!(
-            "your image {} could not be read ({e}); set it again",
-            stored.display()
-        )
-    })?;
-    if sha256_hex(&image) != entry.image_sha256() {
-        return Err(format!(
-            "your image {} changed on disk; set it again",
-            stored.display()
-        ));
-    }
-    let encoded = match entry {
-        IconOverride::Png { fit, .. } => {
-            let rgba = png::read(&image).map_err(|e| e.to_string())?;
-            encode::replace(&original, &rgba, *fit).map_err(|e: EncodeError| e.to_string())?
+    let image = match entry.stored_at(data_dir) {
+        None => Vec::new(),
+        Some(stored) => {
+            let image = std::fs::read(&stored).map_err(|e| {
+                format!(
+                    "your image {} could not be read ({e}); set it again",
+                    stored.display()
+                )
+            })?;
+            if Some(sha256_hex(&image).as_str()) != entry.image_sha256() {
+                return Err(format!(
+                    "your image {} changed on disk; set it again",
+                    stored.display()
+                ));
+            }
+            image
         }
-        IconOverride::Svg { .. } => {
+    };
+    let adjusted = |mut rgba: RgbaImage| {
+        adjust::apply_all(&mut rgba, &entry.adjust);
+        rgba
+    };
+    let encoded = match (&entry.source, target) {
+        (Source::Game, Target::Raster) => {
+            let rgba = texture::decode(&original).map_err(|e| e.to_string())?;
+            encode::replace(&original, &adjusted(rgba), Fit::Original)
+                .map_err(|e: EncodeError| e.to_string())?
+        }
+        (Source::Game, Target::Vector) => {
+            let text = svg::svg_text(&original).map_err(|e| e.to_string())?;
+            svg::with_svg_text(&original, &svg::adjust(&text, &entry.adjust))
+                .map_err(|e| e.to_string())?
+        }
+        (Source::Png { fit, .. }, _) => {
+            let rgba = png::read(&image).map_err(|e| e.to_string())?;
+            encode::replace(&original, &adjusted(rgba), *fit)
+                .map_err(|e: EncodeError| e.to_string())?
+        }
+        (Source::Svg { .. }, _) => {
             let text =
                 std::str::from_utf8(&image).map_err(|_| "your SVG is not UTF-8".to_string())?;
-            svg::with_svg_text(&original, text).map_err(|e| e.to_string())?
+            svg::with_svg_text(&original, &svg::adjust(text, &entry.adjust))
+                .map_err(|e| e.to_string())?
         }
-        IconOverride::PngInSvg { .. } => {
-            png::read(&image).map_err(|e| e.to_string())?;
+        (Source::PngInSvg { .. }, _) => {
+            let rgba = png::read(&image).map_err(|e| e.to_string())?;
+            let png = if entry.adjust.is_empty() {
+                image
+            } else {
+                png::write(&adjusted(rgba)).map_err(|e| e.to_string())?
+            };
             let game_svg = svg::svg_text(&original).map_err(|e| e.to_string())?;
             let view = svg::validate(&game_svg).map_err(|e| e.to_string())?;
-            svg::with_svg_text(&original, &svg::png_in_svg(&image, view))
+            svg::with_svg_text(&original, &svg::png_in_svg(&png, view))
                 .map_err(|e| e.to_string())?
         }
     };
@@ -260,6 +381,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::addons::native_scope::tests::plain_vtex;
     use crate::hud::vpk;
+    use crate::texture::adjust::Rgb;
     use crate::texture::png::tests::pattern;
     use crate::texture::svg::tests::{GAME_SVG, compiled};
     use crate::texture::vtex::{Flags, Vtex};
@@ -267,22 +389,29 @@ pub(crate) mod tests {
     pub const RASTER: &str = "panorama/images/hud/minimap/hero_icon_psd.vtex_c";
     pub const VECTOR: &str = "panorama/images/hud/top_bar/soul_orb.vsvg_c";
     pub const MY_SVG: &str = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"10\"/></svg>";
+    const RED: Rgb = Rgb([255, 0, 0]);
 
-    pub fn game_raster() -> Vec<u8> {
-        plain_vtex(
-            64,
-            32,
-            20,
-            1,
-            Flags::NO_LOD.0,
-            &[(1, vec![5; 32])],
-            &[0; 64 * 32],
-        )
+    fn tint(strength: u8) -> Adjust {
+        Adjust::Tint {
+            color: RED,
+            strength,
+        }
+    }
+
+    /// A 4x2 BGRA8888 game texture, white on the left half and transparent on the right.
+    fn game_bgra() -> Vec<u8> {
+        let mut px = Vec::new();
+        for _ in 0..2 {
+            px.extend_from_slice(&[
+                255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0,
+            ]);
+        }
+        plain_vtex(4, 2, 28, 1, Flags::NO_LOD.0, &[], &px)
     }
 
     pub fn game() -> VpkDir {
         VpkDir::in_memory(vpk::write(&BTreeMap::from([
-            (RASTER.to_string(), game_raster()),
+            (RASTER.to_string(), game_bgra()),
             (VECTOR.to_string(), compiled(GAME_SVG)),
         ])))
         .unwrap()
@@ -290,6 +419,13 @@ pub(crate) mod tests {
 
     pub fn my_png() -> Vec<u8> {
         png::write(&pattern(16, 8)).unwrap()
+    }
+
+    fn png_source(sha: &str, fit: Fit) -> IconOverride {
+        IconOverride::new(Source::Png {
+            image_sha256: sha.into(),
+            fit,
+        })
     }
 
     #[test]
@@ -316,13 +452,7 @@ pub(crate) mod tests {
         let png = my_png();
         let got = set(&mut icons, dir.path(), RASTER, &png, Fit::Own).unwrap();
         let sha = sha256_hex(&png);
-        assert_eq!(
-            got,
-            IconOverride::Png {
-                image_sha256: sha.clone(),
-                fit: Fit::Own
-            }
-        );
+        assert_eq!(got, png_source(&sha, Fit::Own));
         let stored = dir.path().join(ICONS_DIR).join(format!("{sha}.png"));
         assert_eq!(std::fs::read(&stored).unwrap(), png);
         let before = icons.clone();
@@ -344,9 +474,9 @@ pub(crate) mod tests {
                 Fit::Original
             )
             .unwrap(),
-            IconOverride::Svg {
+            IconOverride::new(Source::Svg {
                 image_sha256: sha256_hex(MY_SVG.as_bytes())
-            }
+            })
         );
         let wrapped = set(&mut icons, dir.path(), VECTOR, &png, Fit::Original).unwrap();
         assert!(wrapped.is_experimental());
@@ -386,6 +516,55 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn adjustments_start_from_the_game_image_and_vanish_when_undone() {
+        let mut icons = BTreeMap::new();
+        assert!(adjust(&mut icons, RASTER, tint(80)).unwrap());
+        assert_eq!(
+            icons[RASTER],
+            IconOverride {
+                source: Source::Game,
+                adjust: vec![tint(80)]
+            }
+        );
+        assert!(!icons[RASTER].is_vanilla());
+        assert!(icons[RASTER].stored_at(Path::new("/d")).is_none());
+        assert!(!adjust(&mut icons, RASTER, tint(80)).unwrap(), "same again");
+        assert!(adjust(&mut icons, RASTER, Adjust::Invert).unwrap());
+        assert!(remove_adjust(&mut icons, RASTER, AdjustKind::Color));
+        assert_eq!(icons[RASTER].adjust, [Adjust::Invert]);
+        assert!(adjust(&mut icons, RASTER, Adjust::Hue { degrees: 0 }).is_ok_and(|c| !c));
+        assert!(remove_adjust(&mut icons, RASTER, AdjustKind::Invert));
+        assert!(icons.is_empty(), "nothing left to override");
+        assert!(!remove_adjust(&mut icons, RASTER, AdjustKind::Invert));
+        assert!(adjust(&mut icons, RASTER, tint(0)).is_ok_and(|c| !c));
+        assert!(icons.is_empty(), "an identity creates nothing");
+        assert!(matches!(
+            adjust(&mut icons, "materials/x.vtex_c", tint(50)),
+            Err(IconError::Path(_))
+        ));
+    }
+
+    #[test]
+    fn a_dropped_image_keeps_the_adjustments_and_fit_follows_the_png() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut icons = BTreeMap::new();
+        adjust(&mut icons, RASTER, tint(50)).unwrap();
+        let got = set(&mut icons, dir.path(), RASTER, &my_png(), Fit::Original).unwrap();
+        assert_eq!(got.adjust, [tint(50)]);
+        assert_eq!(got.fit(), Some(Fit::Original));
+        assert!(set_fit(&mut icons, RASTER, Fit::Own));
+        assert!(!set_fit(&mut icons, RASTER, Fit::Own));
+        assert_eq!(icons[RASTER].fit(), Some(Fit::Own));
+        assert!(remove_adjust(&mut icons, RASTER, AdjustKind::Color));
+        assert_eq!(icons[RASTER].adjust, [], "the PNG source stays");
+        adjust(&mut icons, VECTOR, Adjust::Invert).unwrap();
+        assert!(
+            !set_fit(&mut icons, VECTOR, Fit::Own),
+            "no fit without a PNG"
+        );
+    }
+
+    #[test]
     fn build_encodes_each_kind_from_the_games_file() {
         let dir = tempfile::tempdir().unwrap();
         let mut icons = BTreeMap::new();
@@ -401,10 +580,7 @@ pub(crate) mod tests {
         let (files, problems) = build(&game(), &icons, dir.path());
         assert_eq!(problems, []);
         let v = Vtex::parse(&files[RASTER]).unwrap();
-        assert_eq!(
-            (v.width, v.height, v.format.0, v.mips.len()),
-            (64, 32, 28, 1)
-        );
+        assert_eq!((v.width, v.height, v.format.0, v.mips.len()), (4, 2, 28, 1));
         assert_eq!(svg::svg_text(&files[VECTOR]).unwrap(), MY_SVG);
 
         set(&mut icons, dir.path(), VECTOR, &my_png(), Fit::Original).unwrap();
@@ -413,6 +589,47 @@ pub(crate) mod tests {
         let text = svg::svg_text(&files[VECTOR]).unwrap();
         assert!(text.contains("viewBox=\"0 0 24 24\""), "{text}");
         assert!(text.contains("data:image/png;base64,"));
+    }
+
+    fn bgra_pixels(file: &[u8]) -> Vec<[u8; 4]> {
+        let v = Vtex::parse(file).unwrap();
+        file[v.pixel_start()..].as_chunks::<4>().0.to_vec()
+    }
+
+    #[test]
+    fn build_replays_adjustments_on_the_games_own_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut icons = BTreeMap::new();
+        adjust(&mut icons, RASTER, tint(100)).unwrap();
+        adjust(&mut icons, RASTER, Adjust::Opacity { percent: 50 }).unwrap();
+        adjust(&mut icons, VECTOR, Adjust::Invert).unwrap();
+        let (files, problems) = build(&game(), &icons, dir.path());
+        assert_eq!(problems, []);
+        let v = Vtex::parse(&files[RASTER]).unwrap();
+        assert_eq!((v.width, v.height, v.format.0), (4, 2, 28));
+        let px = bgra_pixels(&files[RASTER]);
+        assert_eq!(px[0], [0, 0, 255, 128], "white tinted red at half alpha");
+        assert_eq!(px[2], [0, 0, 0, 0], "transparent stays transparent");
+        let text = svg::svg_text(&files[VECTOR]).unwrap();
+        assert_ne!(text, GAME_SVG, "the icon's colours were inverted");
+        assert!(svg::validate(&text).is_ok());
+    }
+
+    #[test]
+    fn build_adjusts_the_players_png_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut icons = BTreeMap::new();
+        let png =
+            png::write(&RgbaImage::new(4, 2, [255, 255, 255, 255].repeat(8)).unwrap()).unwrap();
+        set(&mut icons, dir.path(), RASTER, &png, Fit::Original).unwrap();
+        adjust(&mut icons, RASTER, Adjust::Invert).unwrap();
+        let (files, problems) = build(&game(), &icons, dir.path());
+        assert_eq!(problems, []);
+        assert!(
+            bgra_pixels(&files[RASTER])
+                .iter()
+                .all(|p| *p == [0, 0, 0, 255])
+        );
     }
 
     #[test]
@@ -425,9 +642,9 @@ pub(crate) mod tests {
         let deleted = VECTOR;
         icons.insert(
             deleted.to_string(),
-            IconOverride::PngInSvg {
+            IconOverride::new(Source::PngInSvg {
                 image_sha256: "0".repeat(64),
-            },
+            }),
         );
         icons.insert(
             "materials/hand_edited.vtex_c".to_string(),
@@ -455,13 +672,8 @@ pub(crate) mod tests {
         use crate::hud::HudLayout;
         let mut hud = HudLayout::default();
         assert!(!toml::to_string(&hud).unwrap().contains("icons"));
-        hud.icons.insert(
-            RASTER.to_string(),
-            IconOverride::Png {
-                image_sha256: "ab".into(),
-                fit: Fit::Original,
-            },
-        );
+        hud.icons
+            .insert(RASTER.to_string(), png_source("ab", Fit::Original));
         assert!(!hud.is_vanilla());
         let text = toml::to_string(&hud).unwrap();
         assert!(text.contains(&format!("[icons.\"{RASTER}\"]")), "{text}");
@@ -472,19 +684,23 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn serde_shape() {
+    fn serde_shape_and_old_profiles() {
         let icons = BTreeMap::from([
+            (RASTER.to_string(), png_source("ab", Fit::Own)),
             (
-                RASTER.to_string(),
-                IconOverride::Png {
-                    image_sha256: "ab".into(),
-                    fit: Fit::Own,
+                VECTOR.to_string(),
+                IconOverride {
+                    source: Source::PngInSvg {
+                        image_sha256: "cd".into(),
+                    },
+                    adjust: vec![tint(80), Adjust::Invert],
                 },
             ),
             (
-                VECTOR.to_string(),
-                IconOverride::PngInSvg {
-                    image_sha256: "cd".into(),
+                "panorama/images/hud/game_psd.vtex_c".to_string(),
+                IconOverride {
+                    source: Source::Game,
+                    adjust: vec![Adjust::Hue { degrees: -30 }],
                 },
             ),
         ]);
@@ -496,18 +712,20 @@ pub(crate) mod tests {
             "{text}"
         );
         assert!(text.contains("input = \"png_in_svg\""), "{text}");
+        assert!(text.contains("input = \"game\""), "{text}");
+        assert!(text.contains("kind = \"tint\""), "{text}");
         assert_eq!(
             toml::from_str::<BTreeMap<String, IconOverride>>(&text).unwrap(),
             icons
         );
-        let defaulted: IconOverride =
-            toml::from_str("input = \"png\"\nimage_sha256 = \"ab\"").unwrap();
+        let old: IconOverride = toml::from_str("input = \"png\"\nimage_sha256 = \"ab\"").unwrap();
+        assert_eq!(old, png_source("ab", Fit::Original));
+        let old: IconOverride = toml::from_str("input = \"svg\"\nimage_sha256 = \"ab\"").unwrap();
         assert_eq!(
-            defaulted,
-            IconOverride::Png {
-                image_sha256: "ab".into(),
-                fit: Fit::Original
-            }
+            old,
+            IconOverride::new(Source::Svg {
+                image_sha256: "ab".into()
+            })
         );
     }
 }

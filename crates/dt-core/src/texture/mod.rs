@@ -9,6 +9,7 @@
 //! `encode` writes a player's image back into the game's container.
 
 pub mod addon;
+pub mod adjust;
 pub mod decode;
 pub mod encode;
 pub mod png;

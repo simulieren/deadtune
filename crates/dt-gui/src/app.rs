@@ -351,6 +351,12 @@ impl App {
         if launch::is_game_running() {
             return;
         }
+        if state.ranked_safe_blocks_auto_profile() {
+            state.status = Some(Status::Info(format!(
+                "Ranked-safe mode is on, so the {name} profile for {source:?} power was not switched in."
+            )));
+            return;
+        }
         let Some(profile) = profiles::load(&state.profiles_dir(), &name) else {
             state.status = Some(Status::Error(format!("auto profile {name} not found")));
             return;

@@ -2182,6 +2182,12 @@ impl AppState {
         Ok(path)
     }
 
+    /// The power-source profile switch would turn Ranked-safe off and bring practice mode
+    /// back, so it waits while Ranked-safe is on.
+    pub fn ranked_safe_blocks_auto_profile(&self) -> bool {
+        self.settings.source == TargetSource::RankedSafe
+    }
+
     pub fn switch_profile(&mut self, profile: Profile, on_disk: bool) {
         self.saved = on_disk.then(|| profile.clone());
         if on_disk {
@@ -3402,6 +3408,14 @@ mod tests {
             Some("6000"),
             "Discard after Apply keeps what was applied"
         );
+    }
+
+    #[test]
+    fn ranked_safe_holds_back_the_power_profile_switch() {
+        let (_dir, mut state) = state();
+        assert!(!state.ranked_safe_blocks_auto_profile());
+        state.toggle_ranked_safe().unwrap();
+        assert!(state.ranked_safe_blocks_auto_profile());
     }
 
     #[test]

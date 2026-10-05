@@ -494,6 +494,31 @@ fn row(ui: &mut Ui, state: &AppState, name: &str, body: Body, fixed: bool, edits
     }
 }
 
+/// The button that sends pending live changes now, the same in every view: its label and
+/// tooltip for the bridge in use, and whether there is anything to send.
+pub(crate) fn send_now(state: &AppState) -> (String, String, bool) {
+    let key = &state.settings.bind_key;
+    let (label, hint) = match state.settings.bridge {
+        BridgeKind::ExecFile => (
+            format!("Send now ({key})"),
+            format!(
+                "Writes the instant changes to a file the game loads when you press {key} in Deadlock. Set up once under Safety & setup."
+            ),
+        ),
+        BridgeKind::Netcon => (
+            "Send now".to_string(),
+            "Sends the instant changes to the game's console right away.".to_string(),
+        ),
+        BridgeKind::Clipboard => (
+            "Copy commands".to_string(),
+            "Copies the console commands; paste them into the Deadlock console (F7).".to_string(),
+        ),
+    };
+    let can_send =
+        state.ctx.game_running && (instant_count(state) > 0 || state.live_push.is_pending());
+    (label, hint, can_send)
+}
+
 fn footer(ui: &mut Ui, state: &mut AppState) {
     let pending = state.pending();
     let ready = pending != Pending::Nothing;
@@ -532,24 +557,7 @@ fn footer(ui: &mut Ui, state: &mut AppState) {
             if ui.add_enabled(ready, apply).clicked() {
                 simple::apply(ui.ctx(), state);
             }
-            let (label, hint) = match state.settings.bridge {
-                BridgeKind::ExecFile => (
-                    format!("Send now ({key})"),
-                    format!(
-                        "Writes the instant changes to a file the game loads when you press {key} in Deadlock. Set up once under Safety & setup."
-                    ),
-                ),
-                BridgeKind::Netcon => (
-                    "Send now".to_string(),
-                    "Sends the instant changes to the game's console right away.".to_string(),
-                ),
-                BridgeKind::Clipboard => (
-                    "Copy commands".to_string(),
-                    "Copies the console commands; paste them into the Deadlock console (F7).".to_string(),
-                ),
-            };
-            let can_send =
-                state.ctx.game_running && (instant > 0 || state.live_push.is_pending());
+            let (label, hint, can_send) = send_now(state);
             let send = egui::Button::new(label).min_size(vec2(0.0, 30.0));
             let response = ui.add_enabled(can_send, send);
             let response = if state.ctx.game_running {

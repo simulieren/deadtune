@@ -929,10 +929,14 @@ fn pending(ui: &mut Ui, state: &mut AppState) {
     {
         action = Some(PendingAction::ApplyRelaunch);
     }
-    if widgets::wide_button(ui, true, "Push live")
-        .on_hover_text("Send live-class changes through the active bridge without writing files")
-        .clicked()
-    {
+    let (label, hint, can_send) = crate::compact::send_now(state);
+    let send = widgets::wide_button(ui, can_send, &label);
+    let send = if state.ctx.game_running {
+        send.on_hover_text(hint)
+    } else {
+        send.on_disabled_hover_text("Deadlock is closed; Apply saves for next launch.")
+    };
+    if send.clicked() {
         action = Some(PendingAction::Push);
     }
     if widgets::wide_button(ui, state.is_dirty(), crate::simple::DISCARD)

@@ -1089,7 +1089,7 @@ fn inspector(ui: &mut Ui, state: &AppState, min_height: f32, actions: &mut Vec<A
             percent_slider(ui, &mut next.opacity_pct, 0..=100);
             ui.add_space(2.0);
             caption(ui, "Position");
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(position_text(&next)).size(12.5));
                 if (next.offset_x, next.offset_y) != (0, 0) && small_button(ui, "Reset position") {
                     next.offset_x = 0;

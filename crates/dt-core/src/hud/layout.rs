@@ -7,6 +7,7 @@ use super::elements::{
     self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
 };
 use super::minimap_colors::{self, Color, IconId, MINIMAP_STYLE};
+use super::minimap_style::{MinimapStyle, StyleError};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,6 +55,8 @@ pub struct HudLayout {
     pub elements: BTreeMap<ElementId, ElementEdit>,
     /// Experimental, untested in game: minimap icon colours (`hud::minimap_colors`).
     pub minimap_colors: BTreeMap<IconId, Color>,
+    /// Experimental, untested in game: marker sizes, map opacity, frameless minimap.
+    pub minimap: MinimapStyle,
     /// Advanced: raw CSS appended after the generated rules, keyed by style file path
     /// (`panorama/styles/hud.vcss_c`). Must parse with balanced braces.
     pub extra_css: BTreeMap<String, String>,
@@ -79,6 +82,8 @@ pub enum LayoutError {
     Scale(ElementId, u16),
     #[error("{0:?}: opacity {1}% above 100")]
     Opacity(ElementId, u8),
+    #[error("minimap: {0}")]
+    Minimap(#[from] StyleError),
     #[error("extra css for {0}: {1}")]
     ExtraCss(String, CssError),
 }
@@ -87,12 +92,14 @@ impl HudLayout {
     pub fn is_vanilla(&self) -> bool {
         self.elements.values().all(|e| *e == ElementEdit::default())
             && self.minimap_colors.is_empty()
+            && self.minimap.is_vanilla()
             && self.extra_css.values().all(|c| c.trim().is_empty())
     }
 }
 
 /// Validates and emits one rule per non-identity element (sorted by `ElementId`),
-/// one rule per minimap colour (sorted by `IconId`), then the minified extra CSS.
+/// one rule per minimap colour (sorted by `IconId`), the minimap style rules, then the
+/// minified extra CSS.
 /// Deterministic.
 pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
     let mut files: BTreeMap<String, String> = BTreeMap::new();
@@ -120,6 +127,9 @@ pub fn compile(layout: &HudLayout) -> Result<StylePatch, LayoutError> {
             .entry(MINIMAP_STYLE.to_string())
             .or_default()
             .push_str(&rule);
+    }
+    for (path, css) in layout.minimap.compile()? {
+        files.entry(path.to_string()).or_default().push_str(&css);
     }
     for (path, css) in &layout.extra_css {
         let css = super::css::parse_rules(css)

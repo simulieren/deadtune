@@ -25,6 +25,9 @@ use dt_core::hud::elements::ElementId;
 use dt_core::hud::install::HudPlan;
 use dt_core::hud::layout::{ElementEdit, HudLayout};
 use dt_core::hud::minimap_colors::{self, Color, IconId};
+use dt_core::hud::minimap_style::{
+    MAP_OPACITY_RANGE, MARKER_SCALE_RANGE, MarkerGroup, MinimapStyle,
+};
 use dt_core::launch::{self, LaunchOptions};
 use dt_core::locate::GamePaths;
 use dt_core::preset::PresetId;
@@ -226,7 +229,7 @@ impl Section {
             Section::World => "How far and how detailed the world is drawn.",
             Section::Performance => "Frame rate caps, menus and CPU.",
             Section::Hud => "Move and resize parts of the in-game HUD.",
-            Section::Minimap => "Colours for heroes, objectives and pickups on the minimap.",
+            Section::Minimap => "Colours, marker sizes and the look of the minimap.",
             Section::Addons => {
                 "Community performance mods, rebuilt by DeadTune so they survive game updates."
             }
@@ -1580,10 +1583,11 @@ impl AppState {
         self.profile.hud.elements.len()
     }
 
-    /// Recoloured minimap icons plus the game's own enemy colour settings that are set.
+    /// Recoloured icons, minimap style edits and the game's own enemy colour settings that are set.
     pub fn minimap_changed_count(&self) -> usize {
         let set = &self.profile.convars.set;
         self.profile.hud.minimap_colors.len()
+            + self.profile.hud.minimap.changed_count()
             + ENEMY_UI_COLOR
                 .iter()
                 .chain([&CUSTOM_UI_COLORS])
@@ -1591,24 +1595,55 @@ impl AppState {
                 .count()
     }
 
-    /// Layout presets leave the minimap colours alone; those have their own page.
+    /// Layout presets leave the Minimap page's settings alone.
     pub fn apply_hud_preset(&mut self, preset: HudPreset) {
         let minimap_colors = std::mem::take(&mut self.profile.hud.minimap_colors);
+        let minimap = std::mem::take(&mut self.profile.hud.minimap);
         self.profile.hud = HudLayout {
             minimap_colors,
+            minimap,
             ..preset.layout()
         };
         self.refresh_preview();
     }
 
-    /// The toolbar preset the current layout equals, if any, ignoring minimap colours.
+    /// The toolbar preset the current layout equals, if any, ignoring the Minimap page.
     pub fn hud_preset(&self) -> Option<HudPreset> {
         HudPreset::ALL.into_iter().find(|p| {
             HudLayout {
                 minimap_colors: self.profile.hud.minimap_colors.clone(),
+                minimap: self.profile.hud.minimap.clone(),
                 ..p.layout()
             } == self.profile.hud
         })
+    }
+
+    /// Clamped to the allowed range; 100 % is not stored.
+    pub fn set_marker_scale(&mut self, group: MarkerGroup, pct: u16) {
+        let pct = pct.clamp(*MARKER_SCALE_RANGE.start(), *MARKER_SCALE_RANGE.end());
+        let sizes = &mut self.profile.hud.minimap.marker_scale_pct;
+        if pct == 100 {
+            sizes.remove(&group);
+        } else {
+            sizes.insert(group, pct);
+        }
+        self.refresh_preview();
+    }
+
+    pub fn set_map_opacity(&mut self, pct: u8) {
+        self.profile.hud.minimap.map_opacity_pct =
+            pct.clamp(*MAP_OPACITY_RANGE.start(), *MAP_OPACITY_RANGE.end());
+        self.refresh_preview();
+    }
+
+    pub fn set_minimal_minimap(&mut self, on: bool) {
+        self.profile.hud.minimap.minimal = on;
+        self.refresh_preview();
+    }
+
+    pub fn reset_minimap_style(&mut self) {
+        self.profile.hud.minimap = MinimapStyle::default();
+        self.refresh_preview();
     }
 
     /// Stores `color` for `id`; the vanilla colour itself is not stored, like identity layout edits.
@@ -2834,6 +2869,51 @@ mod tests {
             3,
             "layout edits belong to the HUD page"
         );
+    }
+
+    #[test]
+    fn minimap_style_edits_survive_layout_presets_and_reset() {
+        let (_dir, mut state) = state();
+        state.set_marker_scale(MarkerGroup::EnemyHeroes, 150);
+        state.set_marker_scale(MarkerGroup::Shops, 999);
+        state.set_map_opacity(0);
+        state.set_minimal_minimap(true);
+        let style = &state.profile.hud.minimap;
+        assert_eq!(style.scale(MarkerGroup::Shops), 200, "clamped");
+        assert_eq!(style.map_opacity_pct, 20, "clamped");
+        assert_eq!(state.minimap_changed_count(), 4);
+        assert!(state.is_dirty());
+
+        state.apply_hud_preset(HudPreset::Clean);
+        assert_eq!(state.hud_preset(), Some(HudPreset::Clean));
+        assert_eq!(
+            state.minimap_changed_count(),
+            4,
+            "a layout preset keeps them"
+        );
+        assert_eq!(
+            state.hud_changed_count(),
+            HudPreset::Clean.layout().elements.len()
+        );
+        let patch = dt_core::hud::layout::compile(&state.profile.hud).unwrap();
+        assert!(
+            patch.files[minimap_colors::MINIMAP_STYLE]
+                .contains("player.enemy{pre-transform-scale2d:1.5;}")
+        );
+
+        state.set_marker_scale(MarkerGroup::EnemyHeroes, 100);
+        assert!(
+            !state
+                .profile
+                .hud
+                .minimap
+                .marker_scale_pct
+                .contains_key(&MarkerGroup::EnemyHeroes)
+        );
+        state.reset_minimap_style();
+        state.apply_hud_preset(HudPreset::Vanilla);
+        assert_eq!(state.minimap_changed_count(), 0);
+        assert!(!state.is_dirty());
     }
 
     #[test]

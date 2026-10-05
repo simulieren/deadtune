@@ -1,7 +1,13 @@
-//! Minimap colours page (simple-view section, advanced HUD tab): the game's own enemy colour ConVars, the experimental
-//! per-icon CSS colours (`hud::minimap_colors`), and a painted minimap mock of both.
+//! Minimap page (simple-view section, advanced HUD tab): the game's own enemy colour
+//! ConVars, the experimental marker sizes and map style (`hud::minimap_style`), the
+//! experimental per-icon CSS colours (`hud::minimap_colors`), and a painted minimap mock.
+
+use std::ops::RangeInclusive;
 
 use dt_core::hud::minimap_colors::{self, Color, IconId};
+use dt_core::hud::minimap_style::{
+    MAP_OPACITY_RANGE, MARKER_SCALE_RANGE, MARKERS, MarkerGroup, MarkerSpec,
+};
 use eframe::egui::color_picker::{Alpha, color_edit_button_srgba};
 use eframe::egui::{
     self, Align, Color32, CornerRadius, Layout, Painter, Pos2, Rect, RichText, Sense, Shape,
@@ -75,6 +81,10 @@ enum Action {
     CustomColors(bool),
     Enemy([u8; 3]),
     ResetEnemy,
+    MarkerScale(MarkerGroup, u16),
+    MapOpacity(u8),
+    Minimal(bool),
+    ResetStyle,
 }
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
@@ -82,6 +92,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     let mut actions = Vec::new();
     if !SHOW_PREVIEW {
         official(ui, state, &mut actions);
+        map_style(ui, state, &mut actions);
         icons(ui, state, &mut actions);
     } else if ui.available_width() >= 760.0 {
         ui.horizontal_top(|ui| {
@@ -90,6 +101,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
             ui.vertical(|ui| {
                 ui.set_width(left);
                 official(ui, state, &mut actions);
+                map_style(ui, state, &mut actions);
                 icons(ui, state, &mut actions);
             });
             ui.add_space(gap - ui.spacing().item_spacing.x);
@@ -101,6 +113,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     } else {
         preview_card(ui, state);
         official(ui, state, &mut actions);
+        map_style(ui, state, &mut actions);
         icons(ui, state, &mut actions);
     }
     for action in actions {
@@ -113,6 +126,10 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
             Action::ResetEnemy => {
                 state.reset_convars(ENEMY_UI_COLOR.iter().copied().chain([CUSTOM_UI_COLORS]))
             }
+            Action::MarkerScale(group, pct) => state.set_marker_scale(group, pct),
+            Action::MapOpacity(pct) => state.set_map_opacity(pct),
+            Action::Minimal(on) => state.set_minimal_minimap(on),
+            Action::ResetStyle => state.reset_minimap_style(),
         }
     }
 }
@@ -160,6 +177,123 @@ fn official(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
             }
         });
     });
+}
+
+fn map_style(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
+    let style = &state.profile.hud.minimap;
+    widgets::card(ui, |ui| {
+        ui.horizontal(|ui| {
+            widgets::caption(ui, "Map and markers");
+            widgets::badge(ui, "Experimental, untested in game", WARN);
+        });
+        widgets::hint(
+            ui,
+            "Goes into the HUD addon on Apply. Sizes are relative to the game's own.",
+        );
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if widgets::switch(ui, style.minimal).clicked() {
+                actions.push(Action::Minimal(!style.minimal));
+            }
+            ui.label(marked("Hide the frame around the minimap", style.minimal));
+            let n = style.changed_count();
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new(format!("Changed: {n}"))
+                    .small()
+                    .color(if n > 0 { ACCENT } else { WEAK }),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui
+                    .add_enabled(n > 0, egui::Button::new("Reset all"))
+                    .on_hover_text("Back to the game's own map and marker sizes")
+                    .clicked()
+                {
+                    actions.push(Action::ResetStyle);
+                }
+            });
+        });
+        let columns = if ui.available_width() >= 560.0 { 2 } else { 1 };
+        let gap = 24.0;
+        let width = (ui.available_width() - gap * (columns - 1) as f32) / columns as f32;
+        let rows: Vec<Option<&MarkerSpec>> = std::iter::once(None)
+            .chain(MARKERS.iter().map(Some))
+            .collect();
+        ui.add_space(4.0);
+        for chunk in rows.chunks(columns) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                for (i, row) in chunk.iter().enumerate() {
+                    if i > 0 {
+                        ui.add_space(gap);
+                    }
+                    match row {
+                        None => {
+                            let pct = style.map_opacity_pct;
+                            if let Some(v) =
+                                percent_slider(ui, "Map opacity", pct, MAP_OPACITY_RANGE, 5, width)
+                            {
+                                actions.push(Action::MapOpacity(v));
+                            }
+                        }
+                        Some(spec) => {
+                            let pct = style.scale(spec.group);
+                            if let Some(v) =
+                                percent_slider(ui, spec.label, pct, MARKER_SCALE_RANGE, 10, width)
+                            {
+                                actions.push(Action::MarkerScale(spec.group, v));
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+}
+
+/// A labelled percent slider, highlighted away from 100 %; `Some` when moved.
+fn percent_slider<T>(
+    ui: &mut Ui,
+    label: &str,
+    value: T,
+    range: RangeInclusive<T>,
+    step: u8,
+    width: f32,
+) -> Option<T>
+where
+    T: egui::emath::Numeric + Into<f64>,
+{
+    let mut v = value;
+    let changed = value.into() != 100.0;
+    ui.allocate_ui_with_layout(
+        vec2(width, 24.0),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing.x = 8.0;
+            ui.allocate_ui_with_layout(
+                vec2(120.0, 20.0),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.set_min_width(120.0);
+                    ui.add(egui::Label::new(marked(label, changed)).truncate());
+                },
+            );
+            let readout = 40.0;
+            ui.spacing_mut().slider_width = (ui.available_width() - readout - 8.0).max(60.0);
+            ui.add(
+                egui::Slider::new(&mut v, range)
+                    .show_value(false)
+                    .step_by(f64::from(step)),
+            );
+            ui.label(
+                RichText::new(format!("{}%", v.into().round()))
+                    .size(12.5)
+                    .color(if changed { ACCENT } else { TEXT }),
+            );
+        },
+    );
+    (v.into() != value.into()).then_some(v)
 }
 
 fn icons(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {

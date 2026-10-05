@@ -30,7 +30,7 @@ use dt_core::hud::minimap_style::{
 };
 use dt_core::launch::{self, LaunchOptions};
 use dt_core::locate::GamePaths;
-use dt_core::practice::PracticeMode;
+use dt_core::practice::{self, PracticeMode};
 use dt_core::preset::PresetId;
 use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 use dt_core::watch::{self, Change, Watcher};
@@ -47,12 +47,16 @@ use dt_core::doctor::Check;
 pub struct LiveFiles {
     pub gameinfo: String,
     pub video: Option<String>,
+    /// What gameinfo.gi holds right now, for the "practice mode on" chips.
+    pub practice: PracticeMode,
 }
 
 impl LiveFiles {
     pub fn read(paths: &GamePaths) -> io::Result<LiveFiles> {
+        let gameinfo = std::fs::read_to_string(&paths.gameinfo)?;
         Ok(LiveFiles {
-            gameinfo: std::fs::read_to_string(&paths.gameinfo)?,
+            practice: practice::detect(&gameinfo).unwrap_or_default(),
+            gameinfo,
             video: std::fs::read_to_string(&paths.video).ok(),
         })
     }
@@ -317,6 +321,7 @@ impl PlanSummary {
             live_now,
             queued: plan.queued_cheat.len(),
             next_launch: plan.restart.len()
+                + plan.sections.len()
                 + plan.video_changes.len()
                 + plan.addon_changes()
                 + (plan.live.len() - live_now),
@@ -1129,6 +1134,11 @@ impl AppState {
         self.refresh_preview();
     }
 
+    pub fn set_practice(&mut self, mode: PracticeMode) {
+        self.profile.practice = mode;
+        self.refresh_preview();
+    }
+
     pub fn set_base(&mut self, base: BaseRef) {
         self.profile.base = base;
         self.base = Base::resolve(&self.profile);
@@ -1772,6 +1782,7 @@ impl AppState {
                 .restart
                 .iter()
                 .chain(&plan.queued_cheat)
+                .chain(&plan.sections)
                 .chain(plan.video_changes.keys())
                 .cloned()
                 .collect();
@@ -2309,6 +2320,44 @@ mod tests {
         assert_eq!(state.settings.source, TargetSource::Profile);
         assert!(plan(&state).is_empty(), "profile written back");
         assert_ne!(state.live.gameinfo, stock);
+    }
+
+    #[test]
+    fn practice_mode_lands_in_the_files_and_ranked_safe_takes_it_out() {
+        let (_dir, mut state) = state();
+        assert!(state.live.practice.is_off());
+        let fog = PracticeMode {
+            fog: true,
+            ..PracticeMode::default()
+        };
+        state.set_practice(fog);
+        assert_eq!(state.profile.practice, fog);
+        assert_eq!(state.pending(), Pending::Other);
+        assert_eq!(plan(&state).sections.len(), 3);
+        assert_eq!(state.timing(), Timing::NextLaunch);
+        assert!(state.live.practice.is_off(), "not written before Apply");
+
+        let applied = state.apply().unwrap();
+        assert!(applied.report.wrote_gameinfo && applied.report.needs_restart);
+        assert_eq!(state.live.practice, fog);
+        assert_eq!(
+            practice::detect(&std::fs::read_to_string(&state.paths.gameinfo).unwrap()).unwrap(),
+            fog
+        );
+        assert!(plan(&state).is_empty());
+        let names = &state.pending_restart.as_ref().unwrap().names;
+        assert!(names.contains(&"SceneSystem/VolumetricFog".to_string()));
+
+        state.toggle_ranked_safe().unwrap();
+        assert!(state.live.practice.is_off(), "ranked-safe restored stock");
+        assert_eq!(state.profile.practice, fog, "the profile remembers it");
+        state.toggle_ranked_safe().unwrap();
+        assert_eq!(state.live.practice, fog);
+
+        state.set_practice(PracticeMode::default());
+        state.apply().unwrap();
+        assert!(state.live.practice.is_off());
+        assert!(!state.profile.to_toml().unwrap().contains("practice"));
     }
 
     #[test]

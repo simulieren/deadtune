@@ -121,7 +121,7 @@ pub fn headline(pending: &Pending, instant: usize) -> String {
         Pending::Preset { label, tweaks: 0 } => format!("Switch to {label}"),
         Pending::Preset { label, tweaks } => format!("{label} + {}", changes(*tweaks)),
         Pending::Tweaks(n) => changes(*n),
-        Pending::Other => "HUD or addon changes".into(),
+        Pending::Other => "HUD, addon or practice changes".into(),
     };
     if instant > 0 {
         text.push_str(&format!(" · {instant} instant"));
@@ -684,7 +684,10 @@ mod tests {
             "Switch to Balanced"
         );
         assert_eq!(headline(&Pending::Tweaks(1), 1), "1 change · 1 instant");
-        assert_eq!(headline(&Pending::Other, 0), "HUD or addon changes");
+        assert_eq!(
+            headline(&Pending::Other, 0),
+            "HUD, addon or practice changes"
+        );
     }
 
     #[test]

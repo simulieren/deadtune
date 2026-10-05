@@ -244,6 +244,16 @@ impl App {
                         }
                     }
                 }
+                // `DEADTUNE_PRACTICE=shadows,fog` turns those practice mode groups on.
+                if let Ok(list) = std::env::var("DEADTUNE_PRACTICE") {
+                    let mut mode = state.profile.practice;
+                    for group in dt_core::practice::Group::ALL {
+                        if list.split(',').any(|g| g.trim() == group.id()) {
+                            mode.set(group, true);
+                        }
+                    }
+                    state.set_practice(mode);
+                }
                 self.screen = Screen::Main(Box::new(state));
             }
             Err(error) => {

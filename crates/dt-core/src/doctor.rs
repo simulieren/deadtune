@@ -307,7 +307,7 @@ fn matchmaking_check(text: &str) -> Check {
                 "Practice mode on: matchmaking may refuse to queue ({} SceneSystem key(s) off stock{foreign_note})",
                 managed.len()
             ),
-            "Turn on Ranked-safe mode (Safety & setup) or switch Practice mode off (Performance) and Apply before queueing.",
+            "Practice mode is on, so matchmaking may refuse to queue. Turn on Ranked-safe mode (Safety & setup) or switch Practice mode off (Performance) and Apply before queueing.",
         );
     }
     let keys: Vec<String> = foreign
@@ -321,7 +321,7 @@ fn matchmaking_check(text: &str) -> Check {
             keys.join(", ")
         ),
         &format!(
-            "Another tool (SideLock, for example) changed these sections. Ranked-safe mode does not touch them. {VERIFY_FILES}"
+            "Another tool (SideLock, for example) changed these sections, so matchmaking may refuse to queue. Ranked-safe mode does not touch them. {VERIFY_FILES}"
         ),
     )
 }

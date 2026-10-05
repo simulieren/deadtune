@@ -5,6 +5,7 @@ use dt_core::bridge::ack::PushStatus;
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::catalog::{CatalogEntry, Impact, Kind};
 use dt_core::doctor::CheckStatus;
+use dt_core::practice::{Group, PracticeMode};
 use dt_core::preset::{self, PresetId};
 use dt_core::profile::BaseRef;
 use eframe::egui::{
@@ -252,6 +253,7 @@ enum Edit {
     Go(Section),
     Focus(&'static str),
     Pin(&'static str),
+    Practice(PracticeMode),
     Advanced,
     Mini,
 }
@@ -393,6 +395,7 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
             }
             Edit::Focus(name) => state.ui.focus = Some(name),
             Edit::Pin(name) => state.toggle_pin(name),
+            Edit::Practice(mode) => state.set_practice(mode),
             Edit::Advanced => state.settings.view = View::Advanced,
             Edit::Mini => crate::compact::enter(ui.ctx(), state),
         }
@@ -605,6 +608,10 @@ fn brand(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
 fn rail_footer(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     if state.settings.source == TargetSource::RankedSafe {
         dot_label(ui, WARN, "Ranked-safe mode on");
+        ui.add_space(4.0);
+    }
+    if state.live.practice.any() {
+        dot_label(ui, WARN, "Practice mode on");
         ui.add_space(4.0);
     }
     ui.horizontal(|ui| {
@@ -1147,6 +1154,14 @@ fn status_card(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
                 edits.push(Edit::Go(Section::Safety));
             }
         });
+        if state.live.practice.any() {
+            status_item(ui, WARN, |ui| {
+                ui.label("Practice mode is on: Deadlock may refuse to find matches");
+                if ui.small_button("Performance").clicked() {
+                    edits.push(Edit::Go(Section::Performance));
+                }
+            });
+        }
         if state.settings.bridge != BridgeKind::Clipboard {
             let key = &state.settings.bind_key;
             let (color, text, action) = match state.ack.status() {
@@ -1250,6 +1265,9 @@ fn settings_page(
             group_card(ui, state, group, inline_help, edits);
             ui.add_space(12.0);
         }
+        if section == Section::Performance {
+            practice_card(ui, state, edits);
+        }
         return;
     }
     // Greedy split by row count keeps the two columns close in height.
@@ -1269,6 +1287,74 @@ fn settings_page(
                 }
             });
         }
+    });
+    if section == Section::Performance {
+        practice_card(ui, state, edits);
+    }
+}
+
+/// SceneSystem shortcuts from the SideLock config. The game's matchmaking check refuses them,
+/// so the card carries the warning itself.
+fn practice_card(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+    let mode = state.profile.practice;
+    theme::card().show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        card_title(ui, "Practice mode (bots, sandbox, unranked)");
+        ui.label(
+            RichText::new(
+                "Bigger FPS gains from the game's own rendering setup, beyond the settings above. \
+                 Method from the SideLock config. Takes effect next time you start Deadlock.",
+            )
+            .color(WEAK),
+        );
+        ui.add_space(10.0);
+        let rows = [
+            (
+                Group::Shadows,
+                "Turn off shadows",
+                "No shadow maps at all. The biggest saving on a weak graphics card.",
+            ),
+            (
+                Group::Fog,
+                "Turn off fog",
+                "No volumetric, cubemap or gradient fog.",
+            ),
+            (
+                Group::Batching,
+                "Faster batching",
+                "Fewer sorted draw calls and a smaller transform buffer. A small CPU saving.",
+            ),
+        ];
+        for (group, label, help) in rows {
+            let on = mode.get(group);
+            ui.horizontal(|ui| {
+                if switch(ui, on).clicked() {
+                    let mut next = mode;
+                    next.set(group, !on);
+                    edits.push(Edit::Practice(next));
+                }
+                ui.add_space(6.0);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    let text = RichText::new(label).size(14.0).strong();
+                    ui.label(if on { text.color(ACCENT) } else { text.color(TEXT) });
+                    ui.label(RichText::new(help).small().color(WEAK));
+                });
+            });
+            ui.add_space(8.0);
+        }
+        egui::Frame::new()
+            .fill(WARN.gamma_multiply(0.14))
+            .corner_radius(CornerRadius::same(theme::RADIUS))
+            .inner_margin(Margin::symmetric(14, 10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.colored_label(
+                    WARN,
+                    "Deadlock may refuse to find matches while this is on. Turn on Ranked-safe mode \
+                     or switch this off before queueing.",
+                );
+            });
     });
 }
 
@@ -1601,7 +1687,7 @@ fn apply_bar(ui: &mut Ui, state: &mut AppState) {
                     format!("Ready to apply: {label} preset + {}", tweaks(*n))
                 }
                 Pending::Tweaks(n) => format!("Ready to apply: {}", tweaks(*n)),
-                Pending::Other => "Ready to apply: HUD or addon changes".to_string(),
+                Pending::Other => "Ready to apply: HUD, addon or practice mode changes".to_string(),
             };
             match &file_changes {
                 Err(raw) => {

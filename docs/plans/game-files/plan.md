@@ -1,6 +1,6 @@
 # Game file snapshots
 
-Status: built (core, CLI, GUI page, auto snapshot). Last update 2026-10-05.
+Status: built (core, CLI, GUI page, auto snapshot); proven on the fake install only, the real game is checked in `docs/testing-windows.md` section 19. Last update 2026-10-05.
 
 ## Goal
 
@@ -116,7 +116,7 @@ Choices made before writing code, with the alternatives considered.
 
 ## Risks
 
-- The real pak01 tree is large (tens of thousands of entries). Opening it reads only the header and tree; counting is a pass over a map. Measured on the fake install only; the Windows check records the real numbers.
+- The real pak01 tree is large (tens of thousands of entries). Opening it reads only the header and tree; counting is a pass over a map. Measured on the fake install only (16 files, 3.0 MB stored, 0.4 s); the Windows check records the real numbers.
 - A game update that changes the compiled resource header version or the KV3 version breaks decoding. The strings fallback keeps the raw bytes and the readable strings, and the diff still works on CRCs; only the text diff is lost. The manifest says `decoded = "strings"` so it is visible.
 - Steam writes the new buildid at the end of an update, so the automatic snapshot should see complete files. If a pak chunk is still being written, a CRC error on that file is reported and the file is skipped; the next take fills it in.
 - Snapshots are a few tens of megabytes each with Everything Panorama on. The page lists them with sizes and a Delete button; nothing is pruned automatically.

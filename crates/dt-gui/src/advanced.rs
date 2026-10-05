@@ -1,8 +1,6 @@
 //! The advanced view: header, tab strip, banner, footer, and the ConVars tab
 //! (category rail, convar table, pending panel). The other tab pages live in `views`.
 
-use std::time::Instant;
-
 use dt_core::bridge::execfile::ExecFileBridge;
 use dt_core::catalog::{ApplyClass, CatalogEntry, Kind};
 use dt_core::preset;
@@ -297,14 +295,6 @@ fn tab_row(ui: &mut Ui, state: &mut AppState) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if let Relaunch::Failed(e) = &state.relaunch {
                 widgets::chip(ui, "Relaunch failed", BAD, None).on_hover_text(e);
-            }
-            if let Some(elapsed) = state.relaunch.elapsed(Instant::now()) {
-                widgets::chip(
-                    ui,
-                    &format!("Relaunching {}s", elapsed.as_secs()),
-                    WARN,
-                    None,
-                );
             }
             if let Some(pending) = &state.pending_restart {
                 widgets::chip(

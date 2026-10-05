@@ -749,37 +749,17 @@ pub fn launch(ui: &mut egui::Ui, state: &mut AppState) {
     widgets::section(ui, "Launch options", |ui| {
         crate::launch_view::panel(ui, state);
     });
-    widgets::section(ui, "Launch", |ui| {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            if ui
-                .button("Launch game")
-                .on_hover_text(launch::steam_url(&state.launch_args()))
-                .clicked()
-                && let Err(e) = state.launch_game()
-            {
-                state.status = Some(Status::Error(e));
-            }
-            if ui
-                .add_enabled(
-                    !state.relaunch.is_active(),
-                    egui::Button::new("Apply + relaunch"),
-                )
-                .clicked()
-            {
-                run_apply_relaunch(ui.ctx(), state);
-            }
-        });
-        if let Some(pending) = &state.pending_restart {
-            widgets::hint(
-                ui,
-                &format!(
-                    "Waiting for a restart to load: {}",
-                    pending.names.join(", ")
-                ),
-            );
-        }
-    });
+    if let Some(pending) = &state.pending_restart {
+        widgets::hint(
+            ui,
+            &format!(
+                "Waiting for a restart to load: {}. Launch Deadlock and Apply + relaunch are in \
+                 the header and the Pending changes panel.",
+                pending.names.join(", ")
+            ),
+        );
+        ui.add_space(8.0);
+    }
 
     widgets::section(ui, "Live bridge", |ui| {
         ui.horizontal(|ui| {

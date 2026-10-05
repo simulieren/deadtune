@@ -488,3 +488,28 @@ type = "int"
 range = [0, 255]
 step = 1
 impact = "low"
+
+# Camera & view
+
+[citadel_camera_hero_fov]
+range = [75, 90]
+step = 1
+impact = "low"
+notes = "Field of view of the hero camera, in degrees. The engine clamps it to 75..90 (the game's Settings slider uses the same range), so 90, the default, is already the widest. For a wider view use r_aspectratio. Archived per user, so presets usually comment it out to keep the player's own choice."
+
+[r_aspectratio]
+category = "Camera & view"
+range = [0, 3.5]
+step = 0.01
+impact = "low"
+notes = "Forces the render aspect ratio; 0 is automatic (your screen's). Above your screen's ratio it fits more of the world on screen, slightly squeezed, which is how presets get a view wider than citadel_camera_hero_fov allows. Community FOV estimates: 1.33=70, 1.56=75, 1.75=80, 2.0=85, 2.15=90, 2.49=100, 3.0=110, 3.5=120. OptiLock and Boot ship 2.15, Kaiz 2.3, Sqooky 2.9."
+
+[citadel_camera_height]
+impact = "low"
+notes = "Raises or lowers the point the camera looks at (default 63). Cheat-protected: takes effect only in hideout or sandbox with cheats on. Sqooky's preset sets 0."
+
+[citadel_camera_pitch_default]
+range = [-89, 89]
+step = 1
+impact = "low"
+notes = "Camera pitch when you spawn (default 20). Moving the mouse changes it at once, so it barely matters. Read at startup. The range is the engine's pitch limits."

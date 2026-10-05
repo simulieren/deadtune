@@ -209,7 +209,7 @@ fn map_style(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
-                    .add_enabled(n > 0, egui::Button::new("Reset all"))
+                    .add_enabled(n > 0, egui::Button::new("Reset map and markers"))
                     .on_hover_text("Back to the game's own map and marker sizes")
                     .clicked()
                 {
@@ -333,7 +333,7 @@ fn icons(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
-                    .add_enabled(n > 0, egui::Button::new("Reset all"))
+                    .add_enabled(n > 0, egui::Button::new("Reset icon colours"))
                     .on_hover_text("Back to the game's own icon colours")
                     .clicked()
                 {

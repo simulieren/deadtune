@@ -57,7 +57,10 @@ fn header(ui: &mut Ui, current: &ApplesTunnels, next: &mut ApplesTunnels) {
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui
-                .add_enabled(!current.is_vanilla(), egui::Button::new("Reset all"))
+                .add_enabled(
+                    !current.is_vanilla(),
+                    egui::Button::new("Reset apples and tunnels"),
+                )
                 .on_hover_text("Back to the game's own minimap")
                 .clicked()
             {

@@ -77,7 +77,7 @@ fn controls(ui: &mut Ui, style: &mut HealthStyle) {
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
-                    .add_enabled(n > 0, egui::Button::new("Reset"))
+                    .add_enabled(n > 0, egui::Button::new("Reset health bar"))
                     .on_hover_text("Back to the game's own health bar")
                     .clicked()
                 {

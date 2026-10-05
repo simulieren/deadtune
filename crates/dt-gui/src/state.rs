@@ -511,6 +511,7 @@ pub enum HudPage {
     Layout,
     Colors,
     TopBar,
+    Health,
 }
 
 /// The game's own enemy colour setting (2026-09-29 accessibility update).

@@ -1142,14 +1142,9 @@ fn stacked_row(ui: &mut Ui, state: &AppState, name: &'static str, edits: &mut Ve
 
 /// The small "Reset" chip beside a changed setting's label.
 fn reset_pill(ui: &mut Ui, was: &str) -> bool {
-    ui.add(
-        egui::Button::new(RichText::new("Reset").small().color(ACCENT))
-            .fill(ACCENT.gamma_multiply(0.14))
-            .corner_radius(CornerRadius::same(255))
-            .min_size(vec2(0.0, 18.0)),
-    )
-    .on_hover_text(format!("Back to your preset: {was}"))
-    .clicked()
+    crate::widgets::reset_pill(ui)
+        .on_hover_text(format!("Back to your preset: {was}"))
+        .clicked()
 }
 
 /// "What do you want?": four goal cards, the tweak readout, and a dropdown for every preset.

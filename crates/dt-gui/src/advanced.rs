@@ -345,8 +345,13 @@ fn footer(ui: &mut Ui, state: &AppState) {
             Some(Status::Warn(m)) => {
                 ui.label(RichText::new(m).size(11.5).color(WARN));
             }
-            Some(Status::Error(m)) => {
-                ui.label(RichText::new(m).size(11.5).color(BAD));
+            Some(Status::Error(raw)) => {
+                ui.label(
+                    RichText::new(crate::friendly::human_error(raw))
+                        .size(11.5)
+                        .color(BAD),
+                )
+                .on_hover_text(raw);
             }
             None => {}
         }

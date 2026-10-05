@@ -260,6 +260,23 @@ pub fn apply(ctx: &egui::Context, state: &mut AppState) -> bool {
     }
 }
 
+/// Ranked-safe on or off from any view, with the same words.
+pub(crate) fn toggle_ranked_safe(state: &mut AppState) -> Status {
+    let was_on = state.settings.source == TargetSource::RankedSafe;
+    match state.toggle_ranked_safe() {
+        Ok(_) if was_on => Status::Info(
+            "Your settings, addons and HUD are back. Takes effect next time you start Deadlock."
+                .into(),
+        ),
+        Ok(_) => Status::Info(
+            "Ranked-safe mode is on: the game's own settings, no DeadTune addons or HUD. \
+             Takes effect next time you start Deadlock."
+                .into(),
+        ),
+        Err(e) => Status::Error(e),
+    }
+}
+
 /// What the simple view asks of the state, collected while drawing and run afterwards.
 enum Edit {
     Set(&'static str, String),
@@ -988,7 +1005,7 @@ fn header(ui: &mut Ui, state: &AppState, page: Page, edits: &mut Vec<Edit>) {
                 ui.set_width(ui.available_width());
                 ui.colored_label(
                     WARN,
-                    "Ranked-safe mode is on: the game uses its own settings. Changes here are kept for later.",
+                    "Ranked-safe mode is on: the game runs on its own settings, without DeadTune's addons and HUD. Changes here are saved, but Apply has nothing to write until you turn it off on Safety & setup.",
                 );
             });
     }
@@ -2232,21 +2249,14 @@ fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 .inner;
             ui.label(
                 RichText::new(
-                    "Puts the game's own performance settings back so matchmaking never complains. \
-                     Your video settings stay. Turn it off to go back to your settings.",
+                    "Puts the game's own performance settings back and takes DeadTune's addons \
+                     and HUD out, so matchmaking never complains. Your video settings stay. Turn \
+                     it off to go back to your settings.",
                 )
                 .color(WEAK),
             );
             if clicked {
-                state.status = Some(match state.toggle_ranked_safe() {
-                    Ok(_) if on => Status::Info(
-                        "Your settings are back. Takes effect next time you start Deadlock.".into(),
-                    ),
-                    Ok(_) => Status::Info(
-                        "Ranked-safe mode is on. Takes effect next time you start Deadlock.".into(),
-                    ),
-                    Err(e) => Status::Error(e),
-                });
+                state.status = Some(toggle_ranked_safe(state));
             }
         });
     };

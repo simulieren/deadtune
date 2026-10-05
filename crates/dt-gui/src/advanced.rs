@@ -204,16 +204,12 @@ fn status_chips(ui: &mut Ui, state: &mut AppState) {
     };
     if widgets::chip(ui, label, WARN, Some(ranked))
         .on_hover_text(
-            "One click writes the stock ConVars block (video.txt kept); one click goes back to \
-             your profile.",
+            "One click writes the stock ConVars block and takes DeadTune's addons and HUD out \
+             (video.txt kept); one click goes back to your profile.",
         )
         .clicked()
     {
-        state.status = Some(match state.toggle_ranked_safe() {
-            Ok(_) if ranked => Status::Info("profile restored".into()),
-            Ok(_) => Status::Info("stock ConVars restored (ranked-safe)".into()),
-            Err(e) => Status::Error(e),
-        });
+        state.status = Some(crate::simple::toggle_ranked_safe(state));
     }
 }
 

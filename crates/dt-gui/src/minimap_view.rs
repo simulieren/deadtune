@@ -141,8 +141,8 @@ fn official(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
     widgets::section(ui, "Game colour settings (official)", |ui| {
         widgets::hint(
             ui,
-            "The game's own Enemy UI Color setting. Applies instantly with the key bind, \
-             and is ranked-safe because it's a normal game setting.",
+            "The game's own Enemy UI Color setting. Applies instantly with the key bind. \
+             Ranked-safe mode resets it to the game's default while it is on.",
         );
         ui.add_space(4.0);
         let on = state.custom_ui_colors();

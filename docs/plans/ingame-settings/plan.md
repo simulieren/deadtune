@@ -47,8 +47,8 @@ Retest steps: rename to `pak50_dir.vpk`, put it in `game\citadel\addons`, make s
 ### Phase 1: read the settings layout
 
 - [x] `hud::kv3` reads the legacy format the mod's `popup_settings.vxml_c` uses (checked against the mod's file outside the repo, `DEADTUNE_KV3_SAMPLES`). The game's own layouts are version 5, which it already read.
-- [ ] Take a game file snapshot on Windows (Game files page, or `deadtune-cli snapshot take`), copy `raw/panorama/layout/popups/popup_settings.vxml_c` from it into `crates/dt-core/tests/fixtures/hud/` and check that `text/panorama/layout/popups/popup_settings.xml` decoded (`decoded = "text"` in the manifest, not `"strings"`).
-- [ ] Confirm the Camera Settings anchor (`#citadel_settings_camera_fov` row) in that XML for the current build.
+- [x] Game file snapshot taken on Windows (build 25712201, 2026-10-05): all 434 layouts and 439 stylesheets decoded to text, including `popup_settings.xml`. The repo is public and these are Valve's files, so keep the snapshot local and point tests at it through an environment variable (like `DEADTUNE_KV3_SAMPLES`) rather than committing it as a fixture.
+- [x] Anchor confirmed in build 25712201: `popup_settings.xml` line 1165-1166, a `PopupSettingsSettingsRow` holding `<CitadelSettingsSlider id="CameraFOV" class="VideoPreview" convar="citadel_camera_hero_fov" min="75" max="90" snap="1">`. Insert our row right after that row.
 
 ### Phase 2: a DeadTune row, rebuilt from the game's file
 

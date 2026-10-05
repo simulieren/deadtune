@@ -246,8 +246,7 @@ pub fn apply(ctx: &egui::Context, state: &mut AppState) -> bool {
             state.status = match applied.warning {
                 Some(w) => Some(Status::Warn(w)),
                 None if copied => Some(Status::Info(
-                    "The instant changes are copied. Paste them into the game console (F7)."
-                        .into(),
+                    "The instant changes are copied. Paste them into the game console (F7).".into(),
                 )),
                 None => None,
             };
@@ -257,6 +256,15 @@ pub fn apply(ctx: &egui::Context, state: &mut AppState) -> bool {
             state.status = Some(Status::Error(e));
             false
         }
+    }
+}
+
+/// What it takes for a live change to land, as a short phrase, for the bridge in use.
+pub(crate) fn live_step(state: &AppState) -> String {
+    match state.settings.bridge {
+        BridgeKind::ExecFile => format!("press {} in game", state.settings.bind_key),
+        BridgeKind::Netcon => "DeadTune sends it to the game".into(),
+        BridgeKind::Clipboard => "paste it into the game's console".into(),
     }
 }
 
@@ -2027,7 +2035,6 @@ fn bar_message(ui: &mut Ui, state: &AppState, pending: &Pending, clicks: &mut Ba
         });
         return;
     }
-    let key = &state.settings.bind_key;
     let tweaks = |n: usize| match n {
         1 => "1 tweak".to_string(),
         n => format!("{n} tweaks"),
@@ -2080,11 +2087,11 @@ fn bar_message(ui: &mut Ui, state: &AppState, pending: &Pending, clicks: &mut Ba
                  DeadTune's launch options."
                     .to_string()
             }
-            Timing::Instant => format!("Changes right away: press {key} in game after Apply."),
+            Timing::Instant => format!("Changes right away: {} after Apply.", live_step(state)),
             Timing::Mixed { now, later } => format!(
-                "{} right away (press {key} in game after Apply). {} the next time you start \
-                 Deadlock.",
+                "{} right away ({} after Apply). {} the next time you start Deadlock.",
                 settings_verb(now, "changes", "change"),
+                live_step(state),
                 settings_verb(later, "loads", "load"),
             ),
         }
@@ -2196,7 +2203,7 @@ fn help(ui: &mut Ui, state: &AppState, page: Page) {
     fact(ui, "In this preset", &preset);
     fact(ui, "Your setting", &yours);
     let when = if state.is_live_now(row.name) {
-        format!("Right away: press {} in game", state.settings.bind_key)
+        format!("Right away: {}", live_step(state))
     } else {
         "Next time you start Deadlock".to_string()
     };

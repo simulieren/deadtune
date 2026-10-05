@@ -172,7 +172,7 @@ pub static ADDONS: [AddonInfo; 7] = [
         name: "Vindicta scope downscale",
         author: "Tamara Mochaccinae",
         credit_url: "https://gamebanana.com/mods/659459",
-        description: "Shrinks Vindicta's 4096x4096 scope overlay, which the game never mipmaps, to a size that fits your screen.",
+        description: "Shrinks Vindicta's 2048x2048 scope overlay, which the game never mipmaps, to a size that fits your screen.",
         benefit: "No frame drops when scoping on low-VRAM cards",
         kind: Kind::Native(Native::Scope),
         source: Source::Generated,

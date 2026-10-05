@@ -671,7 +671,7 @@ fn scope_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     let scope = state.profile.addons.scope;
     ui.horizontal(|ui| {
         caption(ui, "Scope size");
-        for side in [720u16, 1080, 1440, 2048] {
+        for side in [720u16, 1080, 1440] {
             let label = format!("{side} px");
             if ui.selectable_label(scope.side == side, label).clicked() && scope.side != side {
                 edits.push(Edit::Scope(ScopeOptions { side }));
@@ -680,8 +680,9 @@ fn scope_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     });
     ui.label(
         RichText::new(
-            "1080 px is what the published mod ships and fills a 1080p screen; pick the next size up for a \
-             1440p or 4K screen. The game's own overlay is 4096 px. Rebuilt automatically after every game update.",
+            "1080 px is what the published mod ships and fills a 1080p screen; pick 1440 px for a 1440p screen. \
+             The game's own overlay is 2048 px, so on a 4K screen this addon has nothing to shrink. \
+             Rebuilt automatically after every game update.",
         )
         .small()
         .color(WEAK),

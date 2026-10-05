@@ -2,7 +2,7 @@
 //! fake install (`scripts/fake-install.sh`) can build every addon: the stylesheet as
 //! Sqooky's pak97 copied it, the game's empty particle, the Sinner's Sacrifice mask and
 //! model in their stock layout (made from the upstream pak like the unit tests do), a
-//! 512 px stand-in for the scope overlay, and the top bar's and minimap's stylesheets and
+//! 2048 px stand-in for the scope overlay (the game's size), and the top bar's and minimap's stylesheets and
 //! layouts, and the HUD and health stylesheets (the HUD stylesheet standing in for every
 //! stylesheet).
 //!
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         (native_sinner::MODEL.to_string(), stock_model(&pak26)?),
         (
             native_scope::TEXTURE.to_string(),
-            scope_original(&pak89, 512)?,
+            scope_original(&pak89, 2048)?,
         ),
         (
             TOP_BAR_STYLE.to_string(),

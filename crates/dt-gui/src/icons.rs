@@ -21,11 +21,12 @@ pub enum Icon {
     ChevronDown,
     MiniWindow,
     Sliders,
+    Refresh,
 }
 
 #[cfg(test)]
 impl Icon {
-    pub const ALL: [Icon; 16] = [
+    pub const ALL: [Icon; 17] = [
         Icon::Overview,
         Icon::Display,
         Icon::Shadows,
@@ -42,6 +43,7 @@ impl Icon {
         Icon::ChevronDown,
         Icon::MiniWindow,
         Icon::Sliders,
+        Icon::Refresh,
     ];
 }
 
@@ -55,6 +57,8 @@ enum Part {
     Dot(f32, f32, f32),
     Rect(f32, f32, f32, f32, f32),
     FillRect(f32, f32, f32, f32, f32),
+    /// Centre, radius, start and end angle in degrees, clockwise from three o'clock.
+    Arc(f32, f32, f32, f32, f32),
 }
 
 fn parts(icon: Icon) -> &'static [Part] {
@@ -176,6 +180,10 @@ fn parts(icon: Icon) -> &'static [Part] {
             Dot(15.5, 12.0, 2.4),
             Dot(7.5, 17.5, 2.4),
         ],
+        Icon::Refresh => &[
+            Arc(12.0, 12.0, 7.5, -50.0, 250.0),
+            Line(&[(15.0, 3.5), (17.2, 6.3), (14.0, 7.4)]),
+        ],
     }
 }
 
@@ -203,6 +211,17 @@ pub fn shapes(icon: Icon, rect: Rect, color: Color32) -> Vec<Shape> {
             }
             Part::FillRect(x, y, w, h, r) => {
                 Shape::rect_filled(rect_of(x, y, w, h), radius(r), color)
+            }
+            Part::Arc(x, y, r, from, to) => {
+                let steps = 24;
+                let pts = (0..=steps)
+                    .map(|i| {
+                        let deg = from + (to - from) * i as f32 / steps as f32;
+                        let a = deg.to_radians();
+                        at((x + r * a.cos(), y + r * a.sin()))
+                    })
+                    .collect();
+                Shape::line(pts, stroke)
             }
         })
         .collect()

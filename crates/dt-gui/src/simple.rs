@@ -672,6 +672,24 @@ fn version_line(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
         .on_hover_text(format!("DeadTune {}", crate::update::this_version()));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 5.0;
+            let idle = !state.update.state.busy()
+                && !matches!(state.update.state, crate::update::UpdateState::Ready { .. });
+            let recheck = ui
+                .add_enabled_ui(crate::update::AVAILABLE && idle, |ui| {
+                    crate::widgets::icon_button(ui, true, WEAK, |p, r, c| {
+                        icons::paint(p, r, Icon::Refresh, c)
+                    })
+                })
+                .inner
+                .on_hover_text("Check for updates")
+                .on_disabled_hover_text(if crate::update::AVAILABLE {
+                    "Already busy with an update"
+                } else {
+                    crate::update::UNAVAILABLE
+                });
+            if recheck.clicked() {
+                state.check_update(true);
+            }
             let color = match status.tone {
                 Tone::Quiet => WEAK,
                 Tone::Good => GOOD,

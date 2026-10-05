@@ -2241,6 +2241,65 @@ mod tests {
     }
 
     #[test]
+    fn field_of_view_sets_live_and_resets_to_the_preset() {
+        let fov = "citadel_camera_hero_fov";
+        let (_dir, mut state) = state();
+        let row = crate::friendly::row(fov).unwrap();
+        assert_eq!(state.preset_value(fov).as_deref(), Some("90"));
+        let typed = crate::friendly::parse(row.control, "80").unwrap();
+        state.set_convar(fov, fmt_num(typed, true)).unwrap();
+        assert!(state.is_changed(fov));
+        assert_eq!(state.current_value(fov).as_deref(), Some("80"));
+        assert!(
+            plan(&state)
+                .live
+                .iter()
+                .any(|c| c.name == fov && c.value == "80"),
+            "{:?}",
+            plan(&state)
+        );
+        state.reset_convars([fov]);
+        assert!(!state.is_changed(fov));
+        assert_eq!(state.current_value(fov).as_deref(), Some("90"));
+        assert!(plan(&state).is_empty());
+    }
+
+    #[test]
+    fn wide_view_is_automatic_unless_set_and_applies_on_restart() {
+        let wide = "r_aspectratio";
+        let (_dir, mut state) = state();
+        let row = crate::friendly::row(wide).unwrap();
+        let shown =
+            |s: &AppState| crate::friendly::display(row.control, &s.current_value(wide).unwrap());
+        assert_eq!(shown(&state), "Automatic");
+        let typed = crate::friendly::parse(row.control, "100").unwrap();
+        state.set_convar(wide, fmt_num(typed, false)).unwrap();
+        assert_eq!(state.current_value(wide).as_deref(), Some("2.49"));
+        assert!(plan(&state).restart.contains(&wide.to_string()));
+        state.reset_convars([wide]);
+        assert_eq!(shown(&state), "Automatic");
+    }
+
+    #[test]
+    fn preset_camera_values_are_shown_as_is_not_tweaked() {
+        let (_dir, mut state) = state();
+        state.set_base(BaseRef::Preset(PresetId::OptilockRecommended));
+        assert_eq!(
+            state.current_value("citadel_camera_hero_fov").as_deref(),
+            Some("100"),
+            "the game clamps it to 90; DeadTune keeps the preset's value"
+        );
+        assert_eq!(
+            state.current_value("r_aspectratio").as_deref(),
+            Some("2.15")
+        );
+        assert_eq!(
+            state.changed_count(crate::friendly::CAMERA.iter().copied()),
+            0
+        );
+    }
+
+    #[test]
     fn revert_one_and_revert_all() {
         let (_dir, mut state) = state();
         state.set_convar(RESTART, "true".into()).unwrap();

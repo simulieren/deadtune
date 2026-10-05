@@ -591,10 +591,10 @@ category = "Camera & view"
 type = "int"
 default = "63"
 apply = "live_cheat"
-impact = "unknown"
+impact = "low"
 denylist = false
 gameinfo_ignored = false
-notes = "The look at point of the camera is vertically offset by this distance."
+notes = "Raises or lowers the point the camera looks at (default 63). Cheat-protected: takes effect only in hideout or sandbox with cheats on. Sqooky's preset sets 0."
 
 [citadel_camera_height.presets]
 sqooky = "0"
@@ -631,12 +631,14 @@ sqooky_test = "0"
 [citadel_camera_hero_fov]
 category = "Camera & view"
 type = "int"
+range = [75.0, 90.0]
+step = 1.0
 default = "90"
 apply = "live"
-impact = "unknown"
+impact = "low"
 denylist = false
 gameinfo_ignored = false
-notes = "The field of view angle of the camera when following a hero."
+notes = "Field of view of the hero camera, in degrees. The engine clamps it to 75..90 (the game's Settings slider uses the same range), so 90, the default, is already the widest. For a wider view use r_aspectratio. Archived per user, so presets usually comment it out to keep the player's own choice."
 
 [citadel_camera_hero_fov.presets]
 sqooky = "//106"
@@ -676,12 +678,14 @@ optilock_potato = "0"
 [citadel_camera_pitch_default]
 category = "Camera & view"
 type = "int"
+range = [-89.0, 89.0]
+step = 1.0
 default = "20"
 apply = "restart"
-impact = "unknown"
+impact = "low"
 denylist = false
 gameinfo_ignored = false
-notes = "The default camera pitch."
+notes = "Camera pitch when you spawn (default 20). Moving the mouse changes it at once, so it barely matters. Read at startup. The range is the engine's pitch limits."
 
 [citadel_camera_pitch_default.presets]
 sqooky = "0"
@@ -6459,14 +6463,16 @@ optilock_recommended = "false"
 optilock_potato = "false"
 
 [r_aspectratio]
-category = "Resolution & upscaling"
+category = "Camera & view"
 type = "float"
+range = [0.0, 3.5]
+step = 0.01
 default = "0"
 apply = "restart"
-impact = "unknown"
+impact = "low"
 denylist = false
 gameinfo_ignored = false
-notes = "1.75=80fov | 2.15=90fov | 2.49=100fov (every .15 interval = 5 fov)."
+notes = "Forces the render aspect ratio; 0 is automatic (your screen's). Above your screen's ratio it fits more of the world on screen, slightly squeezed, which is how presets get a view wider than citadel_camera_hero_fov allows. Community FOV estimates: 1.33=70, 1.56=75, 1.75=80, 2.0=85, 2.15=90, 2.49=100, 3.0=110, 3.5=120. OptiLock and Boot ship 2.15, Kaiz 2.3, Sqooky 2.9."
 
 [r_aspectratio.presets]
 sqooky = "2.9"

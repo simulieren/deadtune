@@ -163,9 +163,18 @@ fn text_offset(data: &[u8], type_version: u16) -> Result<usize, ResourceError> {
     Ok(pos)
 }
 
+fn data_bytes(data: &[u8], type_version: u16) -> Result<&[u8], ResourceError> {
+    Ok(&data[text_offset(data, type_version)?..])
+}
+
 fn data_text(data: &[u8], type_version: u16) -> Result<&str, ResourceError> {
-    let text = &data[text_offset(data, type_version)?..];
-    std::str::from_utf8(text).map_err(|_| ResourceError::NotUtf8)
+    std::str::from_utf8(data_bytes(data, type_version)?).map_err(|_| ResourceError::NotUtf8)
+}
+
+/// The DATA text's raw bytes, for containers whose text may not be UTF-8 (some vector icons
+/// are Latin-1).
+pub fn style_bytes(res: &Resource) -> Result<&[u8], ResourceError> {
+    data_bytes(&data_block(res)?.data, res.type_version)
 }
 
 /// The CSS text of a compiled stylesheet (DATA after the CRC and image table).
@@ -183,7 +192,7 @@ pub fn image_table(res: &Resource) -> Result<&[u8], ResourceError> {
 /// stylesheets built from the same source share it whatever their text says.
 pub fn source_crc(res: &Resource) -> Result<u32, ResourceError> {
     let data = &data_block(res)?.data;
-    Ok(u32_at(data, 0)? ^ crc32(data_text(data, res.type_version)?.as_bytes()))
+    Ok(u32_at(data, 0)? ^ crc32(data_bytes(data, res.type_version)?))
 }
 
 /// Replaces the stylesheet text, keeping the image table, and recomputes the DATA prefix as

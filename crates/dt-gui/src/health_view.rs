@@ -4,15 +4,16 @@
 
 use dt_core::hud::art;
 use dt_core::hud::health_style::{HealthPreset, HealthStyle, NUMBER_SCALE_RANGE};
+use eframe::egui::epaint::{Mesh, TextShape, Vertex};
 use eframe::egui::{
-    self, Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, RichText, Sense, Stroke, Ui,
-    pos2, vec2,
+    self, Align, Align2, Color32, CornerRadius, FontId, Layout, Painter, Pos2, Rect, RichText,
+    Sense, Shape, Stroke, Ui, emath::Rot2, pos2, vec2,
 };
 
-use crate::hud_art::Images;
+use crate::hud_art::{self, Images};
 use crate::minimap_view::{marked, percent_slider};
 use crate::state::AppState;
-use crate::theme::{self, ACCENT, BORDER, RAIL, TEXT, WARN, WEAK};
+use crate::theme::{self, ACCENT, RAIL, WARN, WEAK};
 use crate::widgets;
 
 /// Vanilla's number colours: off-white, and `#FF5656` at low health.
@@ -154,6 +155,189 @@ fn toggle(ui: &mut Ui, value: &mut bool, label: &str, help: &str) {
     ui.add_space(4.0);
 }
 
+/// Upright drawing coordinates (game px, origin at the bar's top-left) placed on screen:
+/// scaled, then turned by `angle` (radians, clockwise on screen) about `origin`.
+#[derive(Clone, Copy)]
+struct Place {
+    origin: Pos2,
+    scale: f32,
+    angle: f32,
+}
+
+impl Place {
+    fn at(self, local: Pos2) -> Pos2 {
+        self.origin + Rot2::from_angle(self.angle) * (local.to_vec2() * self.scale)
+    }
+
+    fn turned(self, degrees: f32) -> Self {
+        Self {
+            angle: self.angle + degrees.to_radians(),
+            ..self
+        }
+    }
+
+    fn polygon(self, shape: &[Pos2], fill: Color32) -> Shape {
+        Shape::convex_polygon(
+            shape.iter().map(|&at| self.at(at)).collect(),
+            fill,
+            Stroke::NONE,
+        )
+    }
+}
+
+/// `#health_bar`, 66x212.
+const BAR: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(66.0, 212.0));
+/// `#health_bar_frame`, 68x220, from the bar's top-left less 1 px.
+const FRAME_RECT: Rect = Rect::from_min_max(pos2(-1.0, -1.0), pos2(67.0, 219.0));
+
+const fn on_mask(x: f32, y: f32) -> Pos2 {
+    pos2(x * 66.0 / 99.0, y * 212.0 / 330.0)
+}
+
+const fn on_frame(x: f32, y: f32) -> Pos2 {
+    pos2(x * 68.0 / 105.0 - 1.0, y * 220.0 / 340.0 - 1.0)
+}
+
+/// `healthbar_backer_mask` (a 99x330 drawing): the ruler, wide at the top, straight on
+/// the left, slanting in on the right.
+const RULER: [Pos2; 4] = [
+    on_mask(1.29, 0.95),
+    on_mask(98.8, 0.27),
+    on_mask(25.7, 329.5),
+    on_mask(0.82, 324.1),
+];
+/// `healthbar_frame_with_regen` (a 105x340 drawing): its outline, and its hole cut into
+/// two convex parts at the regen shelf's bottom, for drawing the frame without the picture.
+const FRAME_OUTLINE: [Pos2; 4] = [
+    on_frame(0.0, 0.81),
+    on_frame(104.96, 0.0),
+    on_frame(31.18, 339.19),
+    on_frame(0.34, 332.49),
+];
+const FRAME_HOLE: [[Pos2; 4]; 2] = [
+    [
+        on_frame(17.79, 35.0),
+        on_frame(90.9, 35.0),
+        on_frame(28.82, 331.19),
+        on_frame(7.15, 327.11),
+    ],
+    [
+        on_frame(83.19, 7.61),
+        on_frame(97.01, 6.1),
+        on_frame(90.9, 35.0),
+        on_frame(69.5, 35.0),
+    ],
+];
+/// `.bars_container { transform: rotateZ(-20deg) }`.
+const BAR_TILT: f32 = -20.0;
+/// The number block leans about 10 degrees in the in-game screenshot.
+const NUMBER_TILT: f32 = -10.0;
+/// The block's extent around the bar's top-left (game px, on screen after the tilts) at
+/// 100% number size; a bigger number reaches further left over the bar.
+const BLOCK: Rect = Rect::from_min_max(pos2(-2.0, -25.0), pos2(146.0, 207.0));
+const MAX_HEALTH: u32 = 4557;
+const BODY: Color32 = Color32::from_rgba_unmultiplied_const(0x33, 0x33, 0x33, 0xEA);
+/// `healthbar_fill_texture_png`'s average colour, for the fill without the picture.
+const PAPER: Color32 = Color32::from_rgb(0xDF, 0xD1, 0xBC);
+const OFF_BLACK: Color32 = Color32::from_rgb(0x10, 0x13, 0x0D);
+const FRAME_LOW: Color32 = Color32::from_rgb(0xCC, 0x34, 0x0A);
+
+/// The x range of convex `shape` on the line `y`, if the line crosses it.
+fn span(shape: &[Pos2], y: f32) -> Option<(f32, f32)> {
+    let mut range: Option<(f32, f32)> = None;
+    for (i, &a) in shape.iter().enumerate() {
+        let b = shape[(i + 1) % shape.len()];
+        if (a.y - y) * (b.y - y) > 0.0 || a.y == b.y {
+            continue;
+        }
+        let x = a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y);
+        range = Some(range.map_or((x, x), |(l, r)| (l.min(x), r.max(x))));
+    }
+    range
+}
+
+/// `#healthLines` as the screenshot shows them: a tick every 250 health up from the
+/// bottom, full width every 1000 and 30% wide between. Heights are fractions of the bar.
+fn ticks(max: u32) -> Vec<(f32, bool)> {
+    (250..max)
+        .step_by(250)
+        .map(|hp| (hp as f32 / max as f32, hp % 1000 == 0))
+        .collect()
+}
+
+fn corners(rect: Rect) -> [Pos2; 4] {
+    [
+        rect.left_top(),
+        rect.right_top(),
+        rect.right_bottom(),
+        rect.left_bottom(),
+    ]
+}
+
+/// `Images::paint_shape` with a rotation: paints `art` laid over the upright `image`, only
+/// inside the upright convex `shape`, both put on screen by `place`.
+fn paint_placed(
+    p: &Painter,
+    images: &mut Images,
+    art: art::Art,
+    place: Place,
+    image: Rect,
+    shape: &[Pos2],
+    tint: Color32,
+) -> bool {
+    if shape.len() < 3 {
+        return false;
+    }
+    let Some(texture) = images.get(art, image.size().max_elem() * place.scale) else {
+        return false;
+    };
+    let mut mesh = Mesh::with_texture(texture.id());
+    for &at in shape {
+        mesh.vertices.push(Vertex {
+            pos: place.at(at),
+            uv: pos2(
+                (at.x - image.left()) / image.width(),
+                (at.y - image.top()) / image.height(),
+            ),
+            color: tint,
+        });
+    }
+    for i in 1..shape.len() as u32 - 1 {
+        mesh.add_triangle(0, i, i + 1);
+    }
+    p.add(mesh);
+    true
+}
+
+/// Text put on screen by `place`, its `align` point at the upright `anchor`, ringed with
+/// an offBlack `outline` (screen px, none at 0) the way the game's number is.
+#[allow(clippy::too_many_arguments)]
+fn placed_text(
+    p: &Painter,
+    place: Place,
+    anchor: Pos2,
+    align: Align2,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    outline: f32,
+) {
+    let galley = p.layout_no_wrap(text.to_owned(), font, color);
+    let corner = place.at(align.anchor_size(anchor, galley.size() / place.scale).min);
+    if outline > 0.0 {
+        for step in 0..8 {
+            let offset =
+                Rot2::from_angle(step as f32 * std::f32::consts::FRAC_PI_4) * vec2(outline, 0.0);
+            p.add(
+                TextShape::new(corner + offset, galley.clone(), OFF_BLACK)
+                    .with_override_text_color(OFF_BLACK)
+                    .with_angle(place.angle),
+            );
+        }
+    }
+    p.add(TextShape::new(corner, galley, color).with_angle(place.angle));
+}
+
 /// The health block at three health levels with the style applied: the game's bar parts
 /// where they load, painted shapes where they don't.
 fn preview(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
@@ -174,89 +358,155 @@ fn preview(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
             ("Low", 0.2, LOW, true),
         ];
         let column = rect.width() / 3.0;
+        let area = Rect::from_min_max(rect.min + vec2(0.0, 6.0), rect.max - vec2(0.0, 24.0));
+        let number_scale = f32::from(style.number_scale_pct) / 100.0;
+        let mut block = BLOCK;
+        block.min.x = block.min.x.min(116.0 - 82.0 * number_scale);
+        let scale = (column * 0.94 / block.width()).min(area.height() / block.height());
         let mut real = false;
         for (i, (label, fill, color, low)) in states.into_iter().enumerate() {
             let x = rect.left() + column * (i as f32 + 0.5);
-            let bar =
-                Rect::from_center_size(pos2(x - 22.0, rect.center().y - 6.0), vec2(16.0, 110.0));
-            let filled = Rect::from_min_max(
-                pos2(bar.left(), bar.bottom() - bar.height() * fill),
-                bar.max,
-            );
-            let fill_tint = if low { LOW } else { Color32::WHITE };
-            let parts = images
-                .get(art::HEALTH_FILL, bar.height())
-                .zip(images.get(art::HEALTH_FRAME, bar.height()));
-            if let Some((texture, _)) = parts {
-                real = true;
-                painter.rect_filled(
-                    bar,
-                    CornerRadius::same(3),
-                    Color32::from_rgba_unmultiplied(0x33, 0x33, 0x33, 0xEA),
-                );
-                let uv = Rect::from_min_max(pos2(0.0, 1.0 - fill), pos2(1.0, 1.0));
-                painter.image(texture.id(), filled, uv, fill_tint);
-                let [w, h] = art::HEALTH_FRAME.size.map(f32::from);
-                let [bw, bh] = art::HEALTH_FILL.size.map(f32::from);
-                let frame = Rect::from_center_size(
-                    bar.center(),
-                    vec2(bar.width() * w / bw, bar.height() * h / bh),
-                );
-                images.paint(painter, art::HEALTH_FRAME, frame, FRAME);
+            let upright = Place {
+                origin: pos2(x, area.center().y) - block.center().to_vec2() * scale,
+                scale,
+                angle: 0.0,
+            };
+            let bar = upright.turned(BAR_TILT);
+            let (fill_tint, paper) = if low {
+                (LOW, LOW)
             } else {
-                painter.rect(
+                (Color32::WHITE, PAPER)
+            };
+            let frame_tint = if low { FRAME_LOW } else { FRAME };
+            let framed = images
+                .get(art::HEALTH_FRAME, FRAME_RECT.height() * scale)
+                .is_some();
+            let shown: &[[Pos2; 4]] = if framed {
+                std::slice::from_ref(&RULER)
+            } else {
+                painter.add(bar.polygon(&FRAME_OUTLINE, frame_tint));
+                &FRAME_HOLE
+            };
+            let top = BAR.bottom() - BAR.height() * fill;
+            for part in shown {
+                painter.add(bar.polygon(part, BODY));
+                let level = hud_art::cut_top(part, top);
+                if paint_placed(
+                    painter,
+                    images,
+                    art::HEALTH_FILL,
                     bar,
-                    CornerRadius::same(3),
-                    Color32::from_gray(45),
-                    Stroke::new(1.0, BORDER),
-                    egui::StrokeKind::Inside,
-                );
-                painter.rect_filled(
-                    filled.shrink(2.0),
-                    CornerRadius::same(2),
-                    if low { LOW } else { HEALTHY },
-                );
-            }
-            let scale = f32::from(style.number_scale_pct) / 100.0;
-            let size = if low { 15.0 } else { 13.0 } * scale;
-            let number = ((fill * 700.0) as u32).to_string();
-            let anchor = pos2(bar.right() + 8.0, bar.bottom() - 14.0);
-            if !style.hide_backer {
-                let backer = Rect::from_min_size(
-                    pos2(anchor.x - 2.0, anchor.y - size * 0.8),
-                    vec2(size * 2.2, size * 1.25),
-                );
-                if !images.paint(painter, art::HEALTH_BACKER, backer, BACKER) {
-                    painter.rect_filled(backer, CornerRadius::same(3), BACKER.gamma_multiply(0.7));
+                    BAR,
+                    &level,
+                    fill_tint,
+                ) {
+                    real = true;
+                } else if level.len() >= 3 {
+                    painter.add(bar.polygon(&level, paper));
                 }
             }
-            let shake = if low && !style.no_shake { 1.5 } else { 0.0 };
-            let galley = painter.text(
-                anchor + vec2(shake, 0.0),
-                Align2::LEFT_CENTER,
-                &number,
-                FontId::new(size, theme::semibold()),
-                color,
-            );
-            painter.text(
-                pos2(galley.left(), galley.bottom() + 6.0),
-                Align2::LEFT_CENTER,
-                "/ 700",
-                FontId::proportional(8.0 * scale.max(1.0)),
-                TEXT.gamma_multiply(if style.clear_max_health { 0.85 } else { 0.2 }),
-            );
-            if !style.hide_regen {
-                let regen = pos2(bar.center().x, bar.top() - 9.0);
-                let arrows = Rect::from_center_size(regen - vec2(9.0, 0.0), vec2(7.0, 8.0));
-                images.paint(painter, art::REGEN, arrows, TEXT.gamma_multiply(0.3));
-                painter.text(
-                    regen,
-                    Align2::CENTER_CENTER,
-                    "+4",
-                    FontId::proportional(8.5),
-                    TEXT.gamma_multiply(0.8),
+            let tick = Stroke::new(3.0 * scale, OFF_BLACK.gamma_multiply(0.7));
+            for (height, large) in ticks(MAX_HEALTH) {
+                let y = BAR.bottom() - BAR.height() * height;
+                let reach = BAR.left() + BAR.width() * if large { 1.0 } else { 0.3 };
+                for part in shown {
+                    if let Some((left, right)) = span(part, y)
+                        && right.min(reach) > left
+                    {
+                        let ends = [bar.at(pos2(left, y)), bar.at(pos2(right.min(reach), y))];
+                        painter.line_segment(ends, tick);
+                    }
+                }
+            }
+            if framed {
+                paint_placed(
+                    painter,
+                    images,
+                    art::HEALTH_FRAME,
+                    bar,
+                    FRAME_RECT,
+                    &corners(FRAME_RECT),
+                    frame_tint,
                 );
             }
+            if !style.hide_regen {
+                let arrows = Rect::from_center_size(pos2(13.0, 9.5), vec2(7.0, 8.0));
+                let arrows_tint = HEALTHY.gamma_multiply(0.3);
+                paint_placed(
+                    painter,
+                    images,
+                    art::REGEN,
+                    bar,
+                    arrows,
+                    &corners(arrows),
+                    arrows_tint,
+                );
+                placed_text(
+                    painter,
+                    bar,
+                    pos2(19.0, 9.0),
+                    Align2::LEFT_CENTER,
+                    "14.8",
+                    FontId::new(10.0 * scale, theme::semibold()),
+                    HEALTHY,
+                    0.0,
+                );
+            }
+            let shake = if low && !style.no_shake { 1.5 } else { 0.0 };
+            let number = Place {
+                origin: upright.origin + vec2(shake, 0.0),
+                ..upright
+            }
+            .turned(NUMBER_TILT);
+            if !style.hide_backer {
+                let backer = Rect::from_min_size(pos2(52.0, 36.0), vec2(78.0, 62.4));
+                let drawn = paint_placed(
+                    painter,
+                    images,
+                    art::HEALTH_BACKER,
+                    number,
+                    backer,
+                    &corners(backer),
+                    BACKER,
+                );
+                if !drawn {
+                    let at = |x: f32, y: f32| {
+                        pos2(
+                            backer.left() + backer.width() * x / 260.0,
+                            backer.top() + backer.height() * y / 208.0,
+                        )
+                    };
+                    let shape = [
+                        at(13.6, 98.0),
+                        at(239.1, 13.6),
+                        at(259.1, 166.0),
+                        at(3.6, 195.0),
+                    ];
+                    painter.add(number.polygon(&shape, BACKER));
+                }
+            }
+            let digits = if low { 36.0 } else { 32.0 };
+            let size = digits * scale * number_scale;
+            placed_text(
+                painter,
+                number,
+                pos2(116.0, 63.0),
+                Align2::RIGHT_CENTER,
+                &((fill * MAX_HEALTH as f32) as u32).to_string(),
+                FontId::new(size, theme::semibold()),
+                color,
+                (1.2 * scale).max(1.0),
+            );
+            placed_text(
+                painter,
+                number.turned(-3.0),
+                pos2(113.0, 82.0),
+                Align2::RIGHT_CENTER,
+                &format!("/ {MAX_HEALTH}"),
+                FontId::new(14.0 * scale, theme::semibold()),
+                HEALTHY.gamma_multiply(if style.clear_max_health { 0.85 } else { 0.2 }),
+                0.0,
+            );
             painter.text(
                 pos2(x, rect.bottom() - 12.0),
                 Align2::CENTER_CENTER,
@@ -294,4 +544,38 @@ fn credits(ui: &mut Ui) {
         .size(11.5)
         .color(WEAK),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn span_reads_the_ruler_width_at_a_height() {
+        let (left, right) = span(&RULER, 106.0).unwrap();
+        assert!((left - 0.7).abs() < 0.2, "{left}");
+        assert!((right - 41.5).abs() < 0.5, "{right}");
+        assert_eq!(span(&RULER, -5.0), None);
+        assert_eq!(span(&RULER, 230.0), None);
+    }
+
+    #[test]
+    fn ticks_every_250_and_full_width_every_1000() {
+        let ticks = ticks(4557);
+        assert_eq!(ticks.len(), 18);
+        let large: Vec<f32> = ticks.iter().filter(|t| t.1).map(|t| t.0).collect();
+        assert_eq!(large.len(), 4);
+        assert!((large[0] - 1000.0 / 4557.0).abs() < 1e-6);
+        assert!(ticks.iter().all(|t| t.0 > 0.0 && t.0 < 1.0));
+    }
+
+    #[test]
+    fn the_frame_hole_parts_sit_inside_the_frame() {
+        for part in FRAME_HOLE {
+            for at in part {
+                let (left, right) = span(&FRAME_OUTLINE, at.y).unwrap();
+                assert!(at.x >= left && at.x <= right, "{at:?}");
+            }
+        }
+    }
 }

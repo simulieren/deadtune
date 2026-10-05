@@ -518,6 +518,7 @@ pub enum HudPage {
     Layout,
     Colors,
     TopBar,
+    Health,
     Ingame,
 }
 
@@ -1088,6 +1089,12 @@ impl AppState {
         }
     }
 
+    /// Whether the preset or the profile gives `name` a value, so a `+name` launch option
+    /// competes with it.
+    pub fn sets_convar(&self, name: &str) -> bool {
+        self.profile.convars.set.contains_key(name) || self.base_value(name).is_some()
+    }
+
     fn base_value(&self, name: &str) -> Option<&str> {
         self.base
             .as_ref()
@@ -1117,6 +1124,13 @@ impl AppState {
             edits.set.remove(name);
         } else {
             edits.set.insert(name.to_string(), value.clone());
+        }
+        if let Some((key, text)) = self.video_twin(name, &value) {
+            if is_base {
+                self.profile.video.remove(&key);
+            } else {
+                self.profile.video.insert(key, text);
+            }
         }
         if self.ctx.game_running
             && self.settings.bridge.pushes_while_dragging()
@@ -1172,16 +1186,41 @@ impl AppState {
     }
 
     pub fn reset_convars<'a>(&mut self, names: impl IntoIterator<Item = &'a str>) {
-        let edits = &mut self.profile.convars;
         for name in names {
+            let edits = &mut self.profile.convars;
             edits.set.remove(name);
             edits.comment.retain(|c| c != name);
+            self.profile.video.remove(&format!("setting.{name}"));
         }
         self.refresh_preview();
     }
 
-    /// Drops every convar edit so the profile is the preset again; HUD and video edits stay.
+    /// The `video.txt` key holding the same setting as ConVar `name`, with `value` written
+    /// in that file's style. The game's menu writes `video.txt`, so a ConVar edit alone
+    /// would leave the two files disagreeing.
+    fn video_twin(&self, name: &str, value: &str) -> Option<(String, String)> {
+        let key = format!("setting.{name}");
+        let current = dt_core::video::read_settings(self.live.video.as_deref()?)
+            .ok()?
+            .into_iter()
+            .find(|(k, _)| *k == key)?
+            .1;
+        let boolean = matches!(current.as_str(), "true" | "false");
+        let text = if boolean && matches!(value.trim(), "0" | "1" | "true" | "false") {
+            bool_text(parse_bool(value), Some(&current))
+        } else {
+            value.to_string()
+        };
+        Some((key, text))
+    }
+
+    /// Drops every setting edit, and the `video.txt` twins of those settings, so the
+    /// profile is the preset again; HUD and other video edits stay.
     pub fn reset_to_preset(&mut self) {
+        let names: Vec<String> = self.profile.convars.set.keys().cloned().collect();
+        for name in names {
+            self.profile.video.remove(&format!("setting.{name}"));
+        }
         self.profile.convars = ConVarEdits::default();
         self.refresh_preview();
     }
@@ -2225,11 +2264,26 @@ impl AppState {
         profiles::dir(&self.data_dir)
     }
 
+    /// What every Apply button runs: write, then keep what was written as the saved
+    /// profile, so Discard afterwards goes back to it and not to an older save.
+    pub fn apply_and_save(&mut self) -> Result<Applied, String> {
+        let applied = self.apply()?;
+        self.save_profile()
+            .map_err(|e| format!("Applied, but saving your profile failed: {e}"))?;
+        Ok(applied)
+    }
+
     pub fn save_profile(&mut self) -> io::Result<PathBuf> {
         let path = profiles::save(&self.profiles_dir(), &self.profile)?;
         self.saved = Some(self.profile.clone());
         self.settings.last_profile = Some(self.profile.name.clone());
         Ok(path)
+    }
+
+    /// The power-source profile switch would turn Ranked-safe off and bring practice mode
+    /// back, so it waits while Ranked-safe is on.
+    pub fn ranked_safe_blocks_auto_profile(&self) -> bool {
+        self.settings.source == TargetSource::RankedSafe
     }
 
     pub fn switch_profile(&mut self, profile: Profile, on_disk: bool) {
@@ -3504,6 +3558,73 @@ mod tests {
         state.reset_convars(ENEMY_UI_COLOR.iter().copied().chain([CUSTOM_UI_COLORS]));
         assert_eq!(state.enemy_ui_color(), [215, 50, 50]);
         assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn apply_and_save_makes_the_applied_profile_the_saved_one() {
+        let (_dir, mut state) = state();
+        state.set_convar("r_farz", "6000".into()).unwrap();
+        state.apply_and_save().unwrap();
+        assert_eq!(state.saved.as_ref(), Some(&state.profile));
+        state.revert_all();
+        assert_eq!(
+            state.profile.convars.set.get("r_farz").map(String::as_str),
+            Some("6000"),
+            "Discard after Apply keeps what was applied"
+        );
+    }
+
+    #[test]
+    fn ranked_safe_holds_back_the_power_profile_switch() {
+        let (_dir, mut state) = state();
+        assert!(!state.ranked_safe_blocks_auto_profile());
+        state.toggle_ranked_safe().unwrap();
+        assert!(state.ranked_safe_blocks_auto_profile());
+    }
+
+    #[test]
+    fn a_convar_edit_keeps_its_video_txt_twin_in_step() {
+        let (_dir, mut state) = state();
+        let live = state.live.video.clone().unwrap();
+        let has = |k: &str| live.contains(&format!("\"setting.{k}\""));
+        assert!(
+            has("r_citadel_shadow_quality") && has("r_screen_space_shadows"),
+            "fixture"
+        );
+        state
+            .set_convar("r_citadel_shadow_quality", "2".into())
+            .unwrap();
+        state
+            .set_convar("r_screen_space_shadows", "1".into())
+            .unwrap();
+        let video = &state.profile.video;
+        assert_eq!(video["setting.r_citadel_shadow_quality"], "2");
+        assert_eq!(
+            video["setting.r_screen_space_shadows"], "true",
+            "the file's own style"
+        );
+        state.set_convar("r_farz", "6000".into()).unwrap();
+        assert!(
+            !state.profile.video.contains_key("setting.r_farz"),
+            "no twin, nothing written"
+        );
+        state.reset_convars(["r_citadel_shadow_quality"]);
+        assert!(
+            !state
+                .profile
+                .video
+                .contains_key("setting.r_citadel_shadow_quality")
+        );
+        state.reset_to_preset();
+        assert!(state.profile.video.is_empty());
+    }
+
+    #[test]
+    fn sets_convar_covers_profile_and_preset() {
+        let (_dir, mut state) = state();
+        assert!(!state.sets_convar("definitely_not_a_convar"));
+        state.set_convar("r_farz", "6000".into()).unwrap();
+        assert!(state.sets_convar("r_farz"));
     }
 
     #[test]

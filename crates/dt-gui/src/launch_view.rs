@@ -87,8 +87,19 @@ pub fn panel(ui: &mut Ui, state: &mut AppState) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
         for checked in launch_options::check(&state.launch_args().args) {
-            let (long, color) = describe(&checked.verdict);
-            let text = format!("{}   {}", checked.arg.text(), checked.verdict.summary());
+            let (mut long, mut color) = describe(&checked.verdict);
+            let mut summary = checked.verdict.summary();
+            let setting = checked.arg.flag.strip_prefix('+').filter(|n| *n != "exec");
+            if checked.verdict == Verdict::Console && setting.is_some_and(|n| state.sets_convar(n))
+            {
+                summary = "also set by your settings".into();
+                long = "Your preset or profile sets this too. This launch option wins over the \
+                        preset's value, and DeadTune's own changes win over it at start. Keep it \
+                        in one place."
+                    .into();
+                color = WARN;
+            }
+            let text = format!("{}   {summary}", checked.arg.text());
             widgets::chip(ui, &text, color, None).on_hover_text(long);
         }
     });

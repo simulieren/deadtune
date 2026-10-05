@@ -50,43 +50,7 @@ pub fn apply_edit(state: &mut AppState, name: &str, edit: Edit) {
 }
 
 pub fn run_apply(ctx: &egui::Context, state: &mut AppState) -> bool {
-    match state.apply() {
-        Ok(applied) => {
-            let r = &applied.report;
-            let mut msg = format!(
-                "applied: gameinfo {}, video {}, {} pushed live{}",
-                if r.wrote_gameinfo {
-                    "written"
-                } else {
-                    "unchanged"
-                },
-                if r.wrote_video {
-                    "written"
-                } else {
-                    "unchanged"
-                },
-                r.pushed_live,
-                if r.needs_restart {
-                    ", restart needed"
-                } else {
-                    ""
-                },
-            );
-            if let Some(text) = applied.copy {
-                ctx.copy_text(text);
-                msg.push_str("; live commands copied to the clipboard");
-            }
-            if let Some(w) = applied.warning {
-                msg.push_str(&format!("; {w}"));
-            }
-            state.status = Some(Status::Info(msg));
-            true
-        }
-        Err(e) => {
-            state.status = Some(Status::Error(format!("apply failed: {e}")));
-            false
-        }
-    }
+    crate::simple::apply(ctx, state)
 }
 
 pub fn run_apply_relaunch(ctx: &egui::Context, state: &mut AppState) {
@@ -785,37 +749,17 @@ pub fn launch(ui: &mut egui::Ui, state: &mut AppState) {
     widgets::section(ui, "Launch options", |ui| {
         crate::launch_view::panel(ui, state);
     });
-    widgets::section(ui, "Launch", |ui| {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            if ui
-                .button("Launch game")
-                .on_hover_text(launch::steam_url(&state.launch_args()))
-                .clicked()
-                && let Err(e) = state.launch_game()
-            {
-                state.status = Some(Status::Error(e));
-            }
-            if ui
-                .add_enabled(
-                    !state.relaunch.is_active(),
-                    egui::Button::new("Apply + relaunch"),
-                )
-                .clicked()
-            {
-                run_apply_relaunch(ui.ctx(), state);
-            }
-        });
-        if let Some(pending) = &state.pending_restart {
-            widgets::hint(
-                ui,
-                &format!(
-                    "Waiting for a restart to load: {}",
-                    pending.names.join(", ")
-                ),
-            );
-        }
-    });
+    if let Some(pending) = &state.pending_restart {
+        widgets::hint(
+            ui,
+            &format!(
+                "Waiting for a restart to load: {}. Launch Deadlock and Apply + relaunch are in \
+                 the header and the Pending changes panel.",
+                pending.names.join(", ")
+            ),
+        );
+        ui.add_space(8.0);
+    }
 
     widgets::section(ui, "Live bridge", |ui| {
         ui.horizontal(|ui| {
@@ -930,7 +874,9 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
             ui.end_row();
         });
     });
-    widgets::card(ui, |ui| crate::simple::check_setup(ui, state));
+    widgets::caption(ui, "System check");
+    crate::checks_view::page(ui, state);
+    ui.add_space(10.0);
     widgets::section(ui, "Updates", |ui| {
         crate::update_view::settings(ui, state, false)
     });
@@ -968,7 +914,7 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
         );
         widgets::hint(
             ui,
-            "Inter typeface by The Inter Project Authors (rsms.me/inter), SIL Open Font License 1.1.",
+            "Inter typeface by The Inter Project Authors (rsms.me/inter), SIL Open Font License 1.1. Hack typeface by Source Foundry, MIT licence.",
         );
     });
 }

@@ -362,7 +362,8 @@ fn other_mods(paths: &GamePaths, data_dir: &Path) -> Check {
     }
 }
 
-/// Deadlock's Steam launch options, warning when they set console values DeadTune also sets.
+/// Deadlock's Steam launch options, warning on `+` console options (other than DeadTune's
+/// boot cfg): they run at every start and can override DeadTune's settings.
 pub fn launch_options_check(options: &[String]) -> Check {
     const NAME: &str = "Steam launch options";
     if options.is_empty() {

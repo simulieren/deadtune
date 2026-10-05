@@ -439,23 +439,34 @@ fn hud_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
         });
     }
 
+    let names = |paks: &[PathBuf]| {
+        paks.iter()
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     let conflicts = hud_conflicts(paths);
     checks.push(if conflicts.is_empty() {
         pass("HUD conflicts", "no other HUD mods")
     } else {
-        let names: Vec<String> = conflicts
-            .iter()
-            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-            .collect();
         warn(
             "HUD conflicts",
-            format!("also changing the HUD: {}", names.join(", ")),
+            format!("also changing the HUD: {}", names(&conflicts)),
             "Another HUD mod is installed. Only one HUD mod can win; disable the other one if your layout does not show up.",
+        )
+    });
+    let conflicts = settings_menu_conflicts(paths);
+    checks.push(if conflicts.is_empty() {
+        pass("Settings menu mods", "no other mod replaces the settings menu")
+    } else {
+        warn(
+            "Settings menu mods",
+            format!("also replacing the settings menu: {}", names(&conflicts)),
+            "Another mod ships its own settings menu. DeadTune's in-game settings rows (Wide FOV, the DeadTune group) live in the same file, and only one copy loads; disable the other mod if the rows do not show up.",
         )
     });
 }
 
-/// Other addons that ship their own `hud.vcss_c`; only one of them can win.
 /// Stylesheets DeadTune's HUD addon can replace; another pak shipping one clashes with it.
 const PATCHED_STYLES: [&str; 4] = [
     HUD_STYLE,
@@ -464,7 +475,18 @@ const PATCHED_STYLES: [&str; 4] = [
     crate::hud::health_style::HEALTH_CONTAINER_STYLE,
 ];
 
+/// Other addons that ship their own `hud.vcss_c`; only one of them can win.
 pub fn hud_conflicts(paths: &GamePaths) -> Vec<PathBuf> {
+    addons_shipping(paths, &PATCHED_STYLES)
+}
+
+/// Other addons that replace the whole settings menu, where our in-game settings rows go.
+pub fn settings_menu_conflicts(paths: &GamePaths) -> Vec<PathBuf> {
+    addons_shipping(paths, &[crate::hud::ingame::SETTINGS_LAYOUT])
+}
+
+/// Foreign `pakNN_dir.vpk` files in the addons folder carrying any of `files`, sorted.
+fn addons_shipping(paths: &GamePaths, files: &[&str]) -> Vec<PathBuf> {
     let Ok(dir) = std::fs::read_dir(install::addons_dir(paths)) else {
         return Vec::new();
     };
@@ -475,9 +497,7 @@ pub fn hud_conflicts(paths: &GamePaths) -> Vec<PathBuf> {
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| n.ends_with("_dir.vpk") && n != ADDON_FILE)
         })
-        .filter(|p| {
-            VpkDir::open(p).is_ok_and(|v| PATCHED_STYLES.iter().any(|style| v.contains(style)))
-        })
+        .filter(|p| VpkDir::open(p).is_ok_and(|v| files.iter().any(|f| v.contains(f))))
         .collect();
     found.sort();
     found

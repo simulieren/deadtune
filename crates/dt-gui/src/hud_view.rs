@@ -78,6 +78,40 @@ pub fn hud_error(ui: &mut Ui, state: &AppState) {
     }
 }
 
+/// What the HUD layout does to `id`, for the page that styles it: hidden there means the
+/// page shows nothing in game; a layout scale or fade stacks with the page's own sizes.
+pub fn layout_note(edit: &ElementEdit) -> Option<(String, bool)> {
+    if edit.visibility == Visibility::Hidden {
+        return Some((
+            "Hidden on the HUD page, so nothing here shows in game until you show it again.".into(),
+            true,
+        ));
+    }
+    let mut parts = Vec::new();
+    if edit.scale_pct != 100 {
+        parts.push(format!("sizes it to {}%", edit.scale_pct));
+    }
+    if edit.opacity_pct != 100 {
+        parts.push(format!("fades it to {}%", edit.opacity_pct));
+    }
+    (!parts.is_empty()).then(|| {
+        (
+            format!(
+                "The HUD page also {}; that adds to the settings here.",
+                parts.join(" and ")
+            ),
+            false,
+        )
+    })
+}
+
+pub fn show_layout_note(ui: &mut Ui, state: &AppState, id: ElementId) {
+    if let Some((text, hidden)) = layout_note(&state.hud_edit(id)) {
+        ui.colored_label(if hidden { WARN } else { WEAK }, text);
+        ui.add_space(4.0);
+    }
+}
+
 pub fn layout_page(ui: &mut Ui, state: &mut AppState) {
     hud_error(ui, state);
     let mut actions = Vec::new();
@@ -918,6 +952,25 @@ fn nudge(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layout_note_explains_hidden_and_stacked_edits() {
+        assert_eq!(layout_note(&ElementEdit::default()), None);
+        let hidden = ElementEdit {
+            visibility: Visibility::Hidden,
+            scale_pct: 150,
+            ..ElementEdit::default()
+        };
+        assert!(layout_note(&hidden).unwrap().1);
+        let scaled = ElementEdit {
+            scale_pct: 125,
+            opacity_pct: 80,
+            ..ElementEdit::default()
+        };
+        let (text, warn) = layout_note(&scaled).unwrap();
+        assert!(!warn);
+        assert!(text.contains("125%") && text.contains("80%"), "{text}");
+    }
 
     const WIDTH: f32 = 720.0;
 

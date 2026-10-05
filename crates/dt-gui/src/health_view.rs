@@ -20,6 +20,7 @@ const PREVIEW_WIDTH: f32 = 300.0;
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
+    crate::hud_view::show_layout_note(ui, state, dt_core::hud::elements::ElementId::HealthAndAmmo);
     let mut style = state.profile.hud.health.clone();
     if ui.available_width() >= 760.0 {
         ui.horizontal_top(|ui| {

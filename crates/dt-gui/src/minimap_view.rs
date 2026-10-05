@@ -89,6 +89,7 @@ enum Action {
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
+    crate::hud_view::show_layout_note(ui, state, dt_core::hud::elements::ElementId::Minimap);
     let mut actions = Vec::new();
     if !SHOW_PREVIEW {
         official(ui, state, &mut actions);

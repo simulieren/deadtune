@@ -56,6 +56,7 @@ enum Action {
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
+    crate::hud_view::show_layout_note(ui, state, dt_core::hud::elements::ElementId::TopBar);
     let mut actions = Vec::new();
     toolbar(ui, state, &mut actions);
     ui.add_space(6.0);

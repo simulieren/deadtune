@@ -165,6 +165,14 @@ The dots rebuild `hud_minimap.vxml_c` as a text layout with two includes and add
 - [ ] Try a hero with an extra bar (Rat King armour, a shield item) and note anything that overlaps.
 - [ ] With bytenode's Minimal Healthbar or budhud mod installed alongside, System check lists it under "Other HUD mods".
 
+### 7c2. HUD previews drawn from the game's images
+
+The HUD, Minimap, Top bar and Health bar previews read the game's own pictures from `pak01` (`dt_core::hud::art` lists which), and draw shapes for any they can't read.
+
+- [ ] **P-1 Real pictures**: open HUD, Minimap, Top bar and Health bar. The minimap preview shows the game's map, frame and icons; the top bar shows twelve real hero portraits; the health bar shows the game's bar, frame and green backer; the HUD page's minimap, top bar and health tiles show them small. The hint under each preview says "Your game's ...". Screenshot each page and note any picture that looks wrong (wrong image, stretched, wrong colour) or any preview still drawing plain shapes.
+- [ ] **P-2 Replaced image**: on UI images, replace `minimap/base/minimap_midtown_mid_psd` (or a hero's `_vertical` portrait) with any PNG. The Minimap (or Top bar) preview shows your picture straight away; Reset brings the game's back.
+- [ ] **P-3 Image folder**: after "Save all images", start DeadTune with `$env:DEADTUNE_PREVIEW_IMAGES="<that folder>"`: the previews look the same as in P-1 (they now come from the folder). On the Mac, the same variable with the folder Simon hands over shows the real pictures over the fake install.
+
 ### 7d. In-game settings page (experimental, docs/plans/ingame-settings/plan.md)
 
 The rows go into the game's own `popup_settings.vxml_c`, rebuilt as a text layout with one include (`panorama/scripts/deadtune/ingame_settings.vjs_c`); nothing of the stock menu is replaced. The Wide FOV slider writes `r_aspectratio` directly; our script copies every change into `citadel_ability_preview_path_debug_draw_dt` (archived, so the game saves it to `cfg\user_convars_*.vcfg`) as 10 plus the ratio, and DeadTune reads that back when it starts.

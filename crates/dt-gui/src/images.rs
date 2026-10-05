@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use dt_core::hud::art;
 use dt_core::hud::icons::{self, IMAGES_ROOT, IconError, IconOverride, Target};
 use dt_core::hud::install::GAME_PAK;
 use dt_core::hud::vpk::VpkDir;
@@ -28,15 +29,39 @@ pub enum ImageSource {
         root: PathBuf,
         label: String,
     },
+    /// Decoded pictures (PNG, SVG) under game paths: a "Save all images" export or a
+    /// snapshot's `text/`. `names` is the export manifest's game path -> files, if any.
+    Decoded {
+        root: PathBuf,
+        names: BTreeMap<String, Vec<String>>,
+        label: String,
+    },
+    /// Several sources asked in turn; the first that has a picture wins.
+    Chain(Vec<ImageSource>),
 }
 
 impl ImageSource {
+    /// A decoded-image folder, with its manifest's names when it has one.
+    pub fn decoded(root: PathBuf) -> ImageSource {
+        let names = std::fs::read_to_string(root.join(art::EXPORT_MANIFEST))
+            .map(|json| art::manifest_names(&json))
+            .unwrap_or_default();
+        let label = root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        ImageSource::Decoded { root, names, label }
+    }
+
+    /// The compiled game file at `path`.
     pub fn read(&self, path: &str) -> Result<Vec<u8>, String> {
         match self {
             ImageSource::Game(pak) => pak.read(path).map_err(|e| e.to_string()),
             ImageSource::Folder { root, .. } => {
                 std::fs::read(root.join(path)).map_err(|e| e.to_string())
             }
+            ImageSource::Decoded { .. } => Err("this folder holds decoded pictures only".into()),
+            ImageSource::Chain(sources) => first_ok(sources, |s| s.read(path)),
         }
     }
 
@@ -45,6 +70,49 @@ impl ImageSource {
         match self {
             ImageSource::Game(_) => "From your game files".into(),
             ImageSource::Folder { label, .. } => format!("Previewing snapshot {label}"),
+            ImageSource::Decoded { label, .. } => format!("Previewing images from {label}"),
+            ImageSource::Chain(sources) => sources
+                .first()
+                .map_or_else(|| "No image source".into(), ImageSource::describe),
+        }
+    }
+
+    /// `game_path` decoded with its longer side at most `side` (vectors exactly that).
+    fn game_picture(&self, game_path: &str, side: u32) -> Result<Rendered, String> {
+        match self {
+            ImageSource::Chain(sources) => first_ok(sources, |s| s.game_picture(game_path, side)),
+            ImageSource::Decoded { root, names, .. } => {
+                let files = names
+                    .get(game_path)
+                    .cloned()
+                    .unwrap_or_else(|| art::export_names(game_path));
+                let file = files
+                    .iter()
+                    .map(|f| root.join(f))
+                    .find(|f| f.is_file())
+                    .ok_or("not in the image folder")?;
+                render_file(&file, side)
+            }
+            ImageSource::Game(_) | ImageSource::Folder { .. } => {
+                let bytes = self.read(game_path)?;
+                if game_path.ends_with(".vsvg_c") {
+                    let text = svg::svg_text(&bytes).map_err(|e| e.to_string())?;
+                    let facts = vector_facts(&text)?;
+                    let image = svg::rasterize(&text, side).map_err(|e| e.to_string())?;
+                    Ok(Rendered { image, facts })
+                } else {
+                    let info = ImageInfo::of(&bytes).ok_or("not a texture DeadTune can read")?;
+                    let image = texture::thumbnail(&bytes, side).map_err(|e| e.to_string())?;
+                    Ok(Rendered {
+                        image,
+                        facts: Facts {
+                            width: info.width.into(),
+                            height: info.height.into(),
+                            format: info.format,
+                        },
+                    })
+                }
+            }
         }
     }
 
@@ -62,7 +130,65 @@ impl ImageSource {
                 walk(root, &root.join(IMAGES_ROOT), &mut out);
                 out
             }
+            ImageSource::Decoded { root, .. } => {
+                let mut files = Vec::new();
+                walk(root, &root.join(IMAGES_ROOT), &mut files);
+                let vectors: std::collections::BTreeSet<String> = files
+                    .iter()
+                    .filter_map(|f| f.strip_suffix(".svg"))
+                    .map(str::to_string)
+                    .collect();
+                files
+                    .iter()
+                    .filter_map(|f| match f.strip_suffix(".png") {
+                        Some(stem) if !vectors.contains(stem) => Some(format!("{stem}.vtex_c")),
+                        Some(_) => None,
+                        None => f.strip_suffix(".svg").map(|stem| format!("{stem}.vsvg_c")),
+                    })
+                    .collect()
+            }
+            ImageSource::Chain(sources) => {
+                let all: std::collections::BTreeSet<String> =
+                    sources.iter().flat_map(ImageSource::paths).collect();
+                all.into_iter().collect()
+            }
         }
+    }
+}
+
+fn first_ok<T>(
+    sources: &[ImageSource],
+    mut f: impl FnMut(&ImageSource) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut last = Err("no image source".to_string());
+    for source in sources {
+        last = f(source);
+        if last.is_ok() {
+            break;
+        }
+    }
+    last
+}
+
+/// A PNG or SVG file decoded with its longer side at most `side` (an SVG exactly that).
+fn render_file(file: &Path, side: u32) -> Result<Rendered, String> {
+    let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
+    if file.extension().is_some_and(|e| e == "svg") {
+        let text = String::from_utf8(bytes).map_err(|_| "the SVG is not UTF-8")?;
+        let facts = vector_facts(&text)?;
+        let image = svg::rasterize(&text, side).map_err(|e| e.to_string())?;
+        Ok(Rendered { image, facts })
+    } else {
+        let full = png::read(&bytes).map_err(|e| e.to_string())?;
+        let facts = Facts {
+            width: full.width,
+            height: full.height,
+            format: "PNG".into(),
+        };
+        Ok(Rendered {
+            image: full.fit(side),
+            facts,
+        })
     }
 }
 
@@ -279,46 +405,8 @@ fn vector_facts(svg_text: &str) -> Result<Facts, String> {
 /// Decodes `picture` with its longer side at most its `side` (vector images exactly that).
 pub fn render(source: &ImageSource, picture: &Picture) -> Result<Rendered, String> {
     match picture {
-        Picture::Game { path, side } => {
-            let bytes = source.read(path)?;
-            if path.ends_with(".vsvg_c") {
-                let text = svg::svg_text(&bytes).map_err(|e| e.to_string())?;
-                let facts = vector_facts(&text)?;
-                let image = svg::rasterize(&text, *side).map_err(|e| e.to_string())?;
-                Ok(Rendered { image, facts })
-            } else {
-                let info = ImageInfo::of(&bytes).ok_or("not a texture DeadTune can read")?;
-                let image = texture::thumbnail(&bytes, *side).map_err(|e| e.to_string())?;
-                Ok(Rendered {
-                    image,
-                    facts: Facts {
-                        width: info.width.into(),
-                        height: info.height.into(),
-                        format: info.format,
-                    },
-                })
-            }
-        }
-        Picture::Mine { file, side } => {
-            let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
-            if file.extension().is_some_and(|e| e == "svg") {
-                let text = String::from_utf8(bytes).map_err(|_| "your SVG is not UTF-8")?;
-                let facts = vector_facts(&text)?;
-                let image = svg::rasterize(&text, *side).map_err(|e| e.to_string())?;
-                Ok(Rendered { image, facts })
-            } else {
-                let full = png::read(&bytes).map_err(|e| e.to_string())?;
-                let facts = Facts {
-                    width: full.width,
-                    height: full.height,
-                    format: "PNG".into(),
-                };
-                Ok(Rendered {
-                    image: full.fit(*side),
-                    facts,
-                })
-            }
-        }
+        Picture::Game { path, side } => source.game_picture(path, *side),
+        Picture::Mine { file, side } => render_file(file, *side),
     }
 }
 
@@ -778,6 +866,82 @@ pub mod tests {
         )
         .unwrap();
         assert_eq!((shown.image.width, shown.image.height), (48, 24));
+    }
+
+    #[test]
+    fn a_decoded_folder_and_a_chain_stand_in_for_the_game() {
+        let (dir, state) = loaded();
+        let export = dir.path().join("export");
+        let png_file = export.join("panorama/images/items/stand_in_psd.png");
+        std::fs::create_dir_all(png_file.parent().unwrap()).unwrap();
+        std::fs::write(
+            &png_file,
+            png::write(&solid(20, 10, [9, 9, 9, 255])).unwrap(),
+        )
+        .unwrap();
+        let svg_dir = export.join("panorama/images/hud/top_bar");
+        std::fs::create_dir_all(&svg_dir).unwrap();
+        std::fs::write(svg_dir.join("icon_ultimate.svg"), MY_SVG).unwrap();
+        std::fs::write(svg_dir.join("icon_ultimate.png"), my_png(3, 3)).unwrap();
+        let game = |side| Picture::Game {
+            path: ITEM.into(),
+            side,
+        };
+        let decoded = ImageSource::decoded(export.clone());
+        let shown = render(&decoded, &game(10)).unwrap();
+        assert_eq!(
+            (shown.image.width, shown.image.pixel(0, 0)),
+            (10, [9, 9, 9, 255])
+        );
+        let vector = render(
+            &decoded,
+            &Picture::Game {
+                path: TOP_BAR.into(),
+                side: 16,
+            },
+        )
+        .unwrap();
+        assert_eq!(vector.facts.format, "SVG", "the SVG wins over its PNG");
+        let mut paths = decoded.paths();
+        paths.sort();
+        assert_eq!(paths, [TOP_BAR, ITEM]);
+
+        let pak = VpkDir::open(&state.paths.citadel_dir.join(GAME_PAK)).unwrap();
+        let chain = ImageSource::Chain(vec![decoded, ImageSource::Game(pak)]);
+        assert_eq!(
+            render(&chain, &game(10)).unwrap().image.pixel(0, 0),
+            [9, 9, 9, 255]
+        );
+        let from_pak = Picture::Game {
+            path: TEXTURE.into(),
+            side: 8,
+        };
+        assert_eq!(
+            render(&chain, &from_pak).unwrap().image.pixel(0, 0),
+            [0, 0, 255, 255]
+        );
+        assert!(
+            render(
+                &chain,
+                &Picture::Game {
+                    path: "panorama/images/nope.vtex_c".into(),
+                    side: 8
+                }
+            )
+            .is_err()
+        );
+
+        std::fs::write(
+            export.join(art::EXPORT_MANIFEST),
+            format!(r#"{{"images":[{{"path":"{TEXTURE}","files":["panorama/images/items/stand_in_psd.png"]}}]}}"#),
+        )
+        .unwrap();
+        let renamed = ImageSource::decoded(export);
+        assert_eq!(
+            render(&renamed, &from_pak).unwrap().image.pixel(0, 0),
+            [9, 9, 9, 255],
+            "the manifest's names win over the naming rule"
+        );
     }
 
     #[test]

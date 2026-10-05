@@ -96,6 +96,9 @@ pub struct Settings {
     pub power: PowerProfiles,
     pub update: UpdateSettings,
     pub snapshots: SnapshotSettings,
+    /// A folder of decoded game images ("Save all images") the HUD previews draw from,
+    /// ahead of the game's own files. `DEADTUNE_PREVIEW_IMAGES` sets it for one run.
+    pub preview_images: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -118,6 +121,7 @@ impl Default for Settings {
             power: PowerProfiles::default(),
             update: UpdateSettings::default(),
             snapshots: SnapshotSettings::default(),
+            preview_images: None,
         }
     }
 }

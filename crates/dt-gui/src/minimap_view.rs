@@ -4,6 +4,7 @@
 
 use std::ops::RangeInclusive;
 
+use dt_core::hud::art;
 use dt_core::hud::minimap_colors::{self, Color, IconId};
 use dt_core::hud::minimap_style::{
     MAP_OPACITY_RANGE, MARKER_SCALE_RANGE, MARKERS, MarkerGroup, MarkerSpec,
@@ -14,14 +15,12 @@ use eframe::egui::{
     Stroke, Ui, Vec2, pos2, vec2,
 };
 
+use crate::hud_art::Images;
 use crate::state::{AppState, CUSTOM_UI_COLORS, ENEMY_UI_COLOR, MinimapPreset};
 use crate::theme::{ACCENT, BORDER, RAIL, TEXT, WARN, WEAK};
 use crate::widgets;
 
 const PREVIEW: f32 = 230.0;
-// TODO: improve the minimap preview before showing it again: draw the real map and
-// icon textures instead of the hand-placed mock, so it matches what the game shows.
-const SHOW_PREVIEW: bool = false;
 const GROUPS: [(&str, &[IconId]); 3] = [
     (
         "Heroes",
@@ -85,41 +84,34 @@ enum Action {
     MapOpacity(u8),
     Minimal(bool),
     ResetStyle,
+    Apples(dt_core::hud::apples_tunnels::ApplesTunnels),
 }
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
     crate::hud_view::show_layout_note(ui, state, dt_core::hud::elements::ElementId::Minimap);
     let mut actions = Vec::new();
-    if !SHOW_PREVIEW {
-        official(ui, state, &mut actions);
-        map_style(ui, state, &mut actions);
-        crate::apples_view::card(ui, state);
-        icons(ui, state, &mut actions);
-    } else if ui.available_width() >= 760.0 {
-        ui.horizontal_top(|ui| {
-            let gap = 12.0;
-            let left = ui.available_width() - PREVIEW - 28.0 - gap;
-            ui.vertical(|ui| {
-                ui.set_width(left);
-                official(ui, state, &mut actions);
-                map_style(ui, state, &mut actions);
-                crate::apples_view::card(ui, state);
-                icons(ui, state, &mut actions);
+    let ctx = ui.ctx().clone();
+    crate::hud_art::with(&ctx, state, |state, images| {
+        if ui.available_width() >= 760.0 {
+            ui.horizontal_top(|ui| {
+                let gap = 12.0;
+                let left = ui.available_width() - PREVIEW - 28.0 - gap;
+                ui.vertical(|ui| {
+                    ui.set_width(left);
+                    settings(ui, state, images, &mut actions);
+                });
+                ui.add_space(gap - ui.spacing().item_spacing.x);
+                ui.vertical(|ui| {
+                    ui.set_width(PREVIEW + 28.0);
+                    preview_card(ui, state, images);
+                });
             });
-            ui.add_space(gap - ui.spacing().item_spacing.x);
-            ui.vertical(|ui| {
-                ui.set_width(PREVIEW + 28.0);
-                preview_card(ui, state);
-            });
-        });
-    } else {
-        preview_card(ui, state);
-        official(ui, state, &mut actions);
-        map_style(ui, state, &mut actions);
-        crate::apples_view::card(ui, state);
-        icons(ui, state, &mut actions);
-    }
+        } else {
+            preview_card(ui, state, images);
+            settings(ui, state, images, &mut actions);
+        }
+    });
     for action in actions {
         match action {
             Action::Icon(id, Some(color)) => state.set_minimap_color(id, color),
@@ -134,8 +126,18 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
             Action::MapOpacity(pct) => state.set_map_opacity(pct),
             Action::Minimal(on) => state.set_minimal_minimap(on),
             Action::ResetStyle => state.reset_minimap_style(),
+            Action::Apples(next) => state.set_apples_tunnels(next),
         }
     }
+}
+
+fn settings(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
+    official(ui, state, actions);
+    map_style(ui, state, actions);
+    if let Some(next) = crate::apples_view::card(ui, state, images) {
+        actions.push(Action::Apples(next));
+    }
+    icons(ui, state, actions);
 }
 
 fn official(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
@@ -478,12 +480,20 @@ fn to_color32(c: Color) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
-fn preview_card(ui: &mut Ui, state: &AppState) {
+fn preview_card(ui: &mut Ui, state: &AppState, images: &mut Images) {
     widgets::section(ui, "Preview", |ui| {
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(PREVIEW), Sense::hover());
-        minimap(ui.painter(), rect, state);
+        let real = minimap(ui.painter(), rect, state, images);
         ui.add_space(2.0);
-        widgets::hint(ui, "A mock-up of the colours above. Top is the enemy base.");
+        widgets::hint(
+            ui,
+            if real {
+                "Your game's map and icons with the settings above. Top is the enemy base; \
+                 heroes and objectives are placed by hand."
+            } else {
+                "A mock-up of the colours above. Top is the enemy base."
+            },
+        );
     });
 }
 
@@ -500,24 +510,62 @@ fn ink(state: &AppState, id: IconId, texture: Color32) -> Color32 {
         .map_or(texture, to_color32)
 }
 
-fn minimap(p: &Painter, rect: Rect, state: &AppState) {
-    let c = rect.center();
-    let r = rect.width() / 2.0 - 2.0;
-    p.circle(
-        c,
-        r,
-        Color32::from_rgb(34, 38, 34),
-        Stroke::new(1.5, BORDER),
-    );
-    let at = |x: f32, y: f32| c + vec2(x, y) * r;
-    let lane_x = [-0.62, -0.2, 0.2, 0.62];
-    let road = Stroke::new(5.0, Color32::from_rgb(52, 58, 52));
-    for x in lane_x {
-        p.line_segment([at(x * 0.8, -0.78), at(x, 0.0)], road);
-        p.line_segment([at(x, 0.0), at(x * 0.8, 0.78)], road);
-    }
-    p.circle_filled(at(0.0, 0.0), r * 0.13, Color32::from_rgb(44, 49, 44));
+/// The map's circle on screen; pieces are placed as fractions of its radius.
+struct Map {
+    centre: Pos2,
+    radius: f32,
+    /// Screen points per game pixel: the game's map is 360 px across.
+    k: f32,
+}
 
+impl Map {
+    fn at(&self, x: f32, y: f32) -> Pos2 {
+        self.centre + vec2(x, y) * self.radius
+    }
+
+    fn rect(&self, art: art::Art, scale: f32, at: Pos2) -> Rect {
+        let [w, h] = art.size.map(f32::from);
+        Rect::from_center_size(at, vec2(w, h) * self.k * scale)
+    }
+}
+
+/// Paints the minimap: the game's map, frame and markers where their images load, the
+/// hand-drawn stand-ins where they don't. True when the map itself is the game's.
+fn minimap(p: &Painter, rect: Rect, state: &AppState, images: &mut Images) -> bool {
+    let style = &state.profile.hud.minimap;
+    let area = rect.shrink(rect.width() * 20.0 / 400.0);
+    let map = Map {
+        centre: area.center(),
+        radius: area.width() / 2.0,
+        k: area.width() / 360.0,
+    };
+    let fade = Color32::WHITE.gamma_multiply(f32::from(style.map_opacity_pct) / 100.0);
+    let real = images.paint(p, art::MINIMAP_MAP, area, fade);
+    if !real {
+        ground(p, &map);
+    }
+    if !style.minimal && !images.paint(p, art::MINIMAP_FRAME, rect, Color32::WHITE) {
+        p.circle_stroke(map.centre, map.radius, Stroke::new(1.5, BORDER));
+    }
+    let scale = |group| f32::from(style.scale(group)) / 100.0;
+    let mark = |images: &mut Images,
+                id: IconId,
+                at: Pos2,
+                tint: Color32,
+                fallback: &dyn Fn(&Painter, Pos2, Color32)| {
+        let group = if id == IconId::Shop {
+            MarkerGroup::Shops
+        } else {
+            MarkerGroup::Objectives
+        };
+        let drawn = art::marker(id)
+            .is_some_and(|a| images.paint(p, a, map.rect(a, scale(group), at), tint));
+        if !drawn {
+            fallback(p, at, tint);
+        }
+    };
+
+    let lane_x = [-0.62, -0.2, 0.2, 0.62];
     let enemy_obj = ink(state, IconId::EnemyObjective, WEAK);
     let ally_set = state
         .profile
@@ -527,56 +575,127 @@ fn minimap(p: &Painter, rect: Rect, state: &AppState) {
         .copied()
         .map(to_color32);
     for (i, x) in lane_x.into_iter().enumerate() {
-        tower(p, at(x * 0.86, -0.55), enemy_obj);
-        tower(p, at(x * 0.86, 0.55), ally_set.unwrap_or(LANES[i]));
+        mark(
+            images,
+            IconId::EnemyObjective,
+            map.at(x * 0.86, -0.55),
+            enemy_obj,
+            &tower,
+        );
+        let ally = ally_set.unwrap_or(LANES[i]);
+        mark(
+            images,
+            IconId::AllyObjective,
+            map.at(x * 0.86, 0.55),
+            ally,
+            &tower,
+        );
     }
-    tower(p, at(0.0, -0.84), enemy_obj);
-    tower(p, at(0.0, 0.84), ally_set.unwrap_or(TEXT));
-    let urn = |id| ink(state, id, WEAK);
-    ring(p, at(-0.42, -0.72), urn(IconId::EnemyUrnReturn));
-    ring(p, at(0.42, 0.72), urn(IconId::AllyUrnReturn));
-
+    for (y, tint) in [(-0.84, enemy_obj), (0.84, ally_set.unwrap_or(TEXT))] {
+        let at = map.at(0.0, y);
+        let scale = scale(MarkerGroup::Objectives);
+        if !images.paint(p, art::PATRON, map.rect(art::PATRON, scale, at), tint) {
+            tower(p, at, tint);
+        }
+    }
+    for (id, x, y) in [
+        (IconId::EnemyUrnReturn, -0.42, -0.72),
+        (IconId::AllyUrnReturn, 0.42, 0.72),
+    ] {
+        mark(images, id, map.at(x, y), ink(state, id, WEAK), &ring);
+    }
     let mid = ink(state, IconId::MidBoss, Color32::from_gray(110));
-    p.circle_stroke(at(0.0, 0.0), r * 0.07, Stroke::new(2.0, mid));
-    let camp_texture = Color32::from_rgb(196, 168, 120);
-    for (id, pos) in [
-        (IconId::SmallCamp, at(-0.42, -0.2)),
-        (IconId::SmallCamp, at(0.42, 0.2)),
-        (IconId::MediumCamp, at(0.42, -0.25)),
-        (IconId::MediumCamp, at(-0.42, 0.25)),
-        (IconId::LargeCamp, at(-0.85, 0.05)),
-        (IconId::Vault, at(0.86, -0.05)),
+    let mid_ring = |p: &Painter, at: Pos2, c: Color32| {
+        p.circle_stroke(at, 16.0, Stroke::new(2.0, c));
+    };
+    mark(images, IconId::MidBoss, map.at(0.0, 0.0), mid, &mid_ring);
+    let camp = |p: &Painter, at: Pos2, c: Color32| triangle(p, at, 4.5, c);
+    for (id, x, y) in [
+        (IconId::SmallCamp, -0.42, -0.2),
+        (IconId::SmallCamp, 0.42, 0.2),
+        (IconId::MediumCamp, 0.42, -0.25),
+        (IconId::MediumCamp, -0.42, 0.25),
+        (IconId::LargeCamp, -0.85, 0.05),
+        (IconId::Vault, 0.86, -0.05),
     ] {
-        triangle(p, pos, 4.5, ink(state, id, camp_texture));
+        let texture = if real {
+            Color32::WHITE
+        } else {
+            Color32::from_rgb(196, 168, 120)
+        };
+        mark(images, id, map.at(x, y), ink(state, id, texture), &camp);
     }
-    for (id, pos) in [
-        (IconId::WeaponPowerup, at(-0.05, 0.35)),
-        (IconId::SpiritPowerup, at(0.05, -0.35)),
-        (IconId::UnsecuredSouls, at(0.3, 0.05)),
+    let gem = |p: &Painter, at: Pos2, c: Color32| diamond(p, at, 4.0, c);
+    for (id, x, y) in [
+        (IconId::WeaponPowerup, -0.05, 0.35),
+        (IconId::SpiritPowerup, 0.05, -0.35),
+        (IconId::UnsecuredSouls, 0.3, 0.05),
     ] {
-        diamond(p, pos, 4.0, ink(state, id, TEXT));
+        mark(images, id, map.at(x, y), ink(state, id, TEXT), &gem);
     }
-    shop(p, at(-0.25, 0.42), ink(state, IconId::Shop, TEXT));
-    shop(p, at(0.25, -0.42), ink(state, IconId::Shop, TEXT));
+    let shop_ink = ink(state, IconId::Shop, TEXT);
+    mark(images, IconId::Shop, map.at(-0.25, 0.42), shop_ink, &shop);
+    mark(images, IconId::Shop, map.at(0.25, -0.42), shop_ink, &shop);
 
+    let teams = [
+        (
+            &art::ENEMIES[..],
+            &[(-0.55, -0.32), (0.2, -0.62), (0.68, -0.3), (-0.15, -0.15)][..],
+            IconId::EnemyHero,
+            MarkerGroup::EnemyHeroes,
+        ),
+        (
+            &art::ALLIES[..],
+            &[(-0.6, 0.3), (0.15, 0.3), (0.6, 0.48)][..],
+            IconId::AllyHero,
+            MarkerGroup::AllyHeroes,
+        ),
+    ];
+    for (team, spots, id, group) in teams {
+        let fill = ink(state, id, TEXT);
+        for (hero, &(x, y)) in team.iter().zip(spots) {
+            let at = map.at(x, y);
+            let face = map.rect(hero.marker, scale(group), at);
+            if images.get(hero.marker, face.width()).is_some() {
+                p.circle_filled(at, face.width() * 0.4, fill);
+                images.paint(
+                    p,
+                    hero.marker,
+                    face.shrink(face.width() * 0.075),
+                    Color32::WHITE,
+                );
+            } else {
+                self::hero(p, at, fill);
+            }
+        }
+    }
+    let me = map.at(-0.2, 0.62);
+    let mine = art::marker(IconId::LocalHero).expect("local hero art");
+    let tint = ink(state, IconId::LocalHero, Color32::WHITE);
+    let rect = map.rect(mine, scale(MarkerGroup::LocalHero), me);
+    if !images.paint(p, mine, rect, tint) {
+        hero(p, me, ink(state, IconId::LocalHero, TEXT));
+        p.circle_stroke(me, 9.5, Stroke::new(1.5, Color32::WHITE));
+    }
     let enemy = ink(state, IconId::EnemyHero, TEXT);
-    let ally = ink(state, IconId::AllyHero, TEXT);
-    let me = ink(state, IconId::LocalHero, TEXT);
-    for pos in [
-        at(-0.55, -0.32),
-        at(0.2, -0.62),
-        at(0.68, -0.3),
-        at(-0.15, -0.15),
-    ] {
-        hero(p, pos, enemy);
-    }
-    for pos in [at(-0.6, 0.3), at(0.15, 0.3), at(0.6, 0.48)] {
-        hero(p, pos, ally);
-    }
-    hero(p, at(-0.2, 0.62), me);
-    p.circle_stroke(at(-0.2, 0.62), 9.5, Stroke::new(1.5, Color32::WHITE));
     let arrow = ink(state, IconId::EnemyHeroArrow, enemy);
-    edge_arrow(p, c, r, -0.35, arrow);
+    edge_arrow(p, map.centre, map.radius, -0.35, arrow);
+    real
+}
+
+/// The hand-drawn map: a disc, four lanes and the mid.
+fn ground(p: &Painter, map: &Map) {
+    p.circle_filled(map.centre, map.radius, Color32::from_rgb(34, 38, 34));
+    let road = Stroke::new(5.0, Color32::from_rgb(52, 58, 52));
+    for x in [-0.62, -0.2, 0.2, 0.62] {
+        p.line_segment([map.at(x * 0.8, -0.78), map.at(x, 0.0)], road);
+        p.line_segment([map.at(x, 0.0), map.at(x * 0.8, 0.78)], road);
+    }
+    p.circle_filled(
+        map.at(0.0, 0.0),
+        map.radius * 0.13,
+        Color32::from_rgb(44, 49, 44),
+    );
 }
 
 fn hero(p: &Painter, pos: Pos2, fill: Color32) {

@@ -663,6 +663,8 @@ pub struct AppState {
     pub snapshot_inventory: Option<Result<dt_core::snapshot::Inventory, String>>,
     /// The UI images page (`crate::images`).
     pub images: crate::images::ImagesState,
+    /// Game images the HUD previews draw (`crate::hud_art`).
+    pub hud_art: crate::hud_art::HudArtState,
     /// The game build the appmanifest reports, read with the snapshot listing.
     pub game_build: Option<String>,
     /// Creation time of the backup the last Undo restored; cleared by Apply.
@@ -804,6 +806,7 @@ impl AppState {
             latest_diff: None,
             snapshot_inventory: None,
             images: Default::default(),
+            hud_art: Default::default(),
             game_build: None,
             undo_cursor: None,
             checks: None,

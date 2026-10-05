@@ -1,11 +1,13 @@
-//! HUD layout page: a 16:9 monitor you place HUD pieces on, an inspector for the selected
-//! piece, layout presets and an element list. Edits live in the profile and go out
-//! with the normal Apply.
+//! HUD layout page: a 16:9 monitor you place HUD pieces on (the minimap, top bar and health
+//! bar drawn from the game's images when they load), an inspector for the selected piece,
+//! layout presets and an element list. Edits live in the profile and go out with the
+//! normal Apply.
 
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use dt_core::addons::guard::PakState;
+use dt_core::hud::art;
 use dt_core::hud::elements::{self, ElementId, ElementSpec};
 use dt_core::hud::layout::{self, ElementEdit, OFFSET_LIMIT, PreviewRect, Visibility};
 use eframe::egui::epaint::Mesh;
@@ -15,6 +17,7 @@ use eframe::egui::{
     Rect, RichText, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
 
+use crate::hud_art::Images;
 use crate::state::{AppState, HudPage, HudPreset};
 use crate::theme::{self, ACCENT, BORDER, CARD, CARD_HOVER, RAIL, TEXT, WARN, WEAK};
 
@@ -166,31 +169,34 @@ pub fn layout_page(ui: &mut Ui, state: &mut AppState) {
     let mut actions = Vec::new();
     toolbar(ui, state, &mut actions);
     ui.add_space(6.0);
-    if ui.available_width() >= 720.0 {
-        ui.horizontal_top(|ui| {
-            let gap = 12.0;
-            let left = ui.available_width() - INSPECTOR_WIDTH - gap;
-            let width = monitor_width(ui, left);
-            ui.vertical(|ui| {
-                ui.set_width(left);
-                canvas(ui, state, width, &mut actions);
-                ui.add_space(4.0);
-                element_list(ui, state, &mut actions);
+    let ctx = ui.ctx().clone();
+    crate::hud_art::with(&ctx, state, |state, images| {
+        if ui.available_width() >= 720.0 {
+            ui.horizontal_top(|ui| {
+                let gap = 12.0;
+                let left = ui.available_width() - INSPECTOR_WIDTH - gap;
+                let width = monitor_width(ui, left);
+                ui.vertical(|ui| {
+                    ui.set_width(left);
+                    canvas(ui, state, images, width, &mut actions);
+                    ui.add_space(4.0);
+                    element_list(ui, state, &mut actions);
+                });
+                ui.add_space(gap - ui.spacing().item_spacing.x);
+                ui.vertical(|ui| {
+                    ui.set_width(INSPECTOR_WIDTH);
+                    inspector(ui, state, monitor_height(width), &mut actions);
+                });
             });
-            ui.add_space(gap - ui.spacing().item_spacing.x);
-            ui.vertical(|ui| {
-                ui.set_width(INSPECTOR_WIDTH);
-                inspector(ui, state, monitor_height(width), &mut actions);
-            });
-        });
-    } else {
-        let width = monitor_width(ui, ui.available_width());
-        canvas(ui, state, width, &mut actions);
-        ui.add_space(4.0);
-        element_list(ui, state, &mut actions);
-        ui.add_space(8.0);
-        inspector(ui, state, 0.0, &mut actions);
-    }
+        } else {
+            let width = monitor_width(ui, ui.available_width());
+            canvas(ui, state, images, width, &mut actions);
+            ui.add_space(4.0);
+            element_list(ui, state, &mut actions);
+            ui.add_space(8.0);
+            inspector(ui, state, 0.0, &mut actions);
+        }
+    });
     nudge(ui, state, &mut actions);
     for action in actions {
         match action {
@@ -256,7 +262,13 @@ fn monitor_width(ui: &Ui, max: f32) -> f32 {
 
 /// Draws the monitor and handles every pointer interaction on it. Returns the
 /// screen rect (the 16:9 area inside the bezel).
-fn canvas(ui: &mut Ui, state: &AppState, width: f32, actions: &mut Vec<Action>) -> Rect {
+fn canvas(
+    ui: &mut Ui,
+    state: &AppState,
+    images: &mut Images,
+    width: f32,
+    actions: &mut Vec<Action>,
+) -> Rect {
     let outer_size = vec2(width, monitor_height(width));
     let (outer, _) = ui.allocate_exact_size(outer_size, Sense::hover());
     let screen = outer.shrink(BEZEL);
@@ -306,7 +318,7 @@ fn canvas(ui: &mut Ui, state: &AppState, width: f32, actions: &mut Vec<Action>) 
         } else {
             Look::Plain
         };
-        tile(ui, &painter, screen, rect, spec, item, look);
+        tile(ui, &painter, images, screen, rect, spec, item, look);
         if response.clicked() || response.drag_started() {
             actions.push(Action::Select(Some(item.id)));
         }
@@ -500,9 +512,11 @@ enum Look {
     Selected,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn tile(
     ui: &mut Ui,
     p: &Painter,
+    images: &mut Images,
     screen: Rect,
     r: Rect,
     spec: &ElementSpec,
@@ -539,7 +553,10 @@ fn tile(
                 area.min.y = below;
             }
         }
-        glyph(p, area, spec.id, ink.gamma_multiply(0.55));
+        let tint = Color32::WHITE.gamma_multiply(0.35 + 0.65 * item.opacity);
+        if !picture(p, images, area, spec.id, tint) {
+            glyph(p, area, spec.id, ink.gamma_multiply(0.55));
+        }
         let stroke = if selected {
             Stroke::new(1.5, ACCENT)
         } else {
@@ -609,6 +626,53 @@ fn label_beside(ui: &Ui, p: &Painter, screen: Rect, r: Rect, text: &str, color: 
         r.left() - 6.0 - galley.size().x
     };
     p.galley(pos2(x, y), galley, color);
+}
+
+/// The element drawn from the game's images, for the pieces that have them; false (and
+/// nothing drawn) otherwise or while they load.
+fn picture(p: &Painter, images: &mut Images, r: Rect, id: ElementId, tint: Color32) -> bool {
+    if r.width() < 16.0 || r.height() < 8.0 {
+        return false;
+    }
+    match id {
+        ElementId::Minimap => {
+            let side = r.width().min(r.height());
+            let frame = Rect::from_center_size(r.center(), Vec2::splat(side));
+            let map = frame.shrink(side * 20.0 / 400.0);
+            images.paint(p, art::MINIMAP_MAP, map, tint)
+                && images.paint(p, art::MINIMAP_FRAME, frame, tint)
+        }
+        ElementId::TopBar => {
+            let n = art::ALLIES.len() + art::ENEMIES.len();
+            let gap = r.width() * 0.2 / n as f32;
+            let radius =
+                ((r.width() * 0.8 - gap * n as f32) / n as f32 / 2.0).min(r.height() * 0.45);
+            if images.get(art::ALLIES[0].portrait, radius * 2.0).is_none() {
+                return false;
+            }
+            let row = n as f32 * (radius * 2.0 + gap) + r.width() * 0.2;
+            let mut x = r.center().x - row / 2.0 + radius;
+            let y = r.top() + radius + 1.0;
+            for (i, hero) in art::ALLIES.iter().chain(&art::ENEMIES).enumerate() {
+                if i == art::ALLIES.len() {
+                    x += r.width() * 0.2;
+                }
+                images.paint_disc(p, hero.portrait, pos2(x, y), radius, tint);
+                x += radius * 2.0 + gap;
+            }
+            true
+        }
+        ElementId::HealthAndAmmo => {
+            let [w, h] = art::HEALTH_FRAME.size.map(f32::from);
+            let k = (r.height() / h).min(r.width() / w);
+            let frame = Rect::from_center_size(r.center(), vec2(w, h) * k);
+            let [bw, bh] = art::HEALTH_FILL.size.map(f32::from);
+            let bar = Rect::from_center_size(frame.center(), vec2(bw, bh) * k);
+            images.paint(p, art::HEALTH_FILL, bar, tint)
+                && images.paint(p, art::HEALTH_FRAME, frame, tint)
+        }
+        _ => false,
+    }
 }
 
 /// A sketch of what the element looks like in game, so the tile reads as a HUD piece.
@@ -1044,7 +1108,10 @@ mod tests {
         let mut screen = Rect::NOTHING;
         let mut output = ctx.run_ui(input, |ui| {
             let mut actions = Vec::new();
-            screen = canvas(ui, state, WIDTH, &mut actions);
+            let ctx = ui.ctx().clone();
+            screen = crate::hud_art::with(&ctx, state, |state, images| {
+                canvas(ui, state, images, WIDTH, &mut actions)
+            });
             nudge(ui, state, &mut actions);
             for action in actions {
                 match action {

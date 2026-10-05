@@ -1,16 +1,19 @@
 //! "Apples & tunnels" card on the Minimap page (`hud::apples_tunnels`). Edits are made on
-//! a copy of `profile.hud.apples_tunnels` and stored whole; they go out with the normal Apply.
+//! a copy of `profile.hud.apples_tunnels` and handed back whole; they go out with the
+//! normal Apply.
 
 use dt_core::hud::apples_tunnels::{
     APPLES, ApplesTunnels, DOT_SIZE_RANGE, Dots, GAME_BUILD, RADIUS_RANGE, TUNNEL_ENTRANCES,
     TunnelHero,
 };
+use dt_core::hud::art;
 use dt_core::hud::minimap_colors::Color;
 use eframe::egui::color_picker::{Alpha, color_edit_button_srgba};
 use eframe::egui::{
     self, Align, Color32, Layout, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, pos2, vec2,
 };
 
+use crate::hud_art::Images;
 use crate::minimap_view::marked;
 use crate::state::AppState;
 use crate::theme::{ACCENT, BORDER, RAIL, TEXT, WARN, WEAK};
@@ -20,7 +23,8 @@ const PREVIEW: f32 = 170.0;
 /// Where the preview puts the stand-in hero, as map fractions.
 const SAMPLE_HERO: [f64; 2] = [0.5, 0.52];
 
-pub fn card(ui: &mut Ui, state: &mut AppState) {
+/// The card; `Some` with the whole new setting when it was edited.
+pub fn card(ui: &mut Ui, state: &AppState, images: &mut Images) -> Option<ApplesTunnels> {
     let current = state.profile.hud.apples_tunnels;
     let mut next = current;
     widgets::card(ui, |ui| {
@@ -33,15 +37,13 @@ pub fn card(ui: &mut Ui, state: &mut AppState) {
                     controls(ui, &current, &mut next);
                 });
                 ui.add_space(12.0);
-                preview(ui, &current);
+                preview(ui, &current, images);
             });
         } else {
             controls(ui, &current, &mut next);
         }
     });
-    if next != current {
-        state.set_apples_tunnels(next);
-    }
+    (next != current).then_some(next)
 }
 
 fn header(ui: &mut Ui, current: &ApplesTunnels, next: &mut ApplesTunnels) {
@@ -165,27 +167,35 @@ fn to_color32(c: Color) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
-fn preview(ui: &mut Ui, style: &ApplesTunnels) {
+fn preview(ui: &mut Ui, style: &ApplesTunnels, images: &mut Images) {
     ui.vertical(|ui| {
         let (rect, _) = ui.allocate_exact_size(vec2(PREVIEW, PREVIEW), Sense::hover());
-        paint(&ui.painter().with_clip_rect(rect), rect, style);
+        let real = paint(&ui.painter().with_clip_rect(rect), rect, style, images);
         ui.label(
-            RichText::new("Mock-up, hero in the middle")
-                .size(11.0)
-                .color(WEAK),
+            RichText::new(if real {
+                "Your game's map, hero in the middle"
+            } else {
+                "Mock-up, hero in the middle"
+            })
+            .size(11.0)
+            .color(WEAK),
         );
     });
 }
 
-fn paint(p: &Painter, rect: Rect, style: &ApplesTunnels) {
+/// The dots over the game's map, or over a sketch of one; true when the map is the game's.
+fn paint(p: &Painter, rect: Rect, style: &ApplesTunnels, images: &mut Images) -> bool {
     let c = rect.center();
     let r = rect.width() / 2.0 - 2.0;
-    p.circle_filled(c, r, RAIL);
-    let lane = Stroke::new(1.0, Color32::from_rgb(52, 57, 66));
-    for x in [0.3, 0.45, 0.55, 0.7] {
-        let x = rect.left() + rect.width() * x;
-        let dy = (r * r - (x - c.x).powi(2)).max(0.0).sqrt();
-        p.line_segment([pos2(x, c.y - dy), pos2(x, c.y + dy)], lane);
+    let real = images.paint(p, art::MINIMAP_MAP, rect, Color32::WHITE);
+    if !real {
+        p.circle_filled(c, r, RAIL);
+        let lane = Stroke::new(1.0, Color32::from_rgb(52, 57, 66));
+        for x in [0.3, 0.45, 0.55, 0.7] {
+            let x = rect.left() + rect.width() * x;
+            let dy = (r * r - (x - c.x).powi(2)).max(0.0).sqrt();
+            p.line_segment([pos2(x, c.y - dy), pos2(x, c.y + dy)], lane);
+        }
     }
     p.circle_stroke(c, r, Stroke::new(1.5, BORDER));
     let at = |u: f64, v: f64| -> Pos2 {
@@ -225,4 +235,5 @@ fn paint(p: &Painter, rect: Rect, style: &ApplesTunnels) {
     }
     p.circle_filled(hero, 4.5, Color32::from_rgb(0x4D, 0xA3, 0xFF));
     p.circle_stroke(hero, 4.5, Stroke::new(1.0, Color32::WHITE));
+    real
 }

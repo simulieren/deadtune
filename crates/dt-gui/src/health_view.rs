@@ -1,12 +1,15 @@
-//! Health bar page: style presets, the controls behind them and a painted preview of the
-//! health number at full, hurt and low health. Edits go out with the HUD addon on Apply.
+//! Health bar page: style presets, the controls behind them and a preview of the health
+//! number at full, hurt and low health, drawn from the game's bar, frame and backer when
+//! they load. Edits go out with the HUD addon on Apply.
 
+use dt_core::hud::art;
 use dt_core::hud::health_style::{HealthPreset, HealthStyle, NUMBER_SCALE_RANGE};
 use eframe::egui::{
     self, Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, RichText, Sense, Stroke, Ui,
     pos2, vec2,
 };
 
+use crate::hud_art::Images;
 use crate::minimap_view::{marked, percent_slider};
 use crate::state::AppState;
 use crate::theme::{self, ACCENT, BORDER, RAIL, TEXT, WARN, WEAK};
@@ -16,30 +19,36 @@ use crate::widgets;
 const HEALTHY: Color32 = Color32::from_rgb(0xFF, 0xEF, 0xD7);
 const LOW: Color32 = Color32::from_rgb(0xFF, 0x56, 0x56);
 const HURT: Color32 = Color32::from_rgb(0xFF, 0xB3, 0x47);
+/// `vivaciousGreen`, the backer's wash, and the frame's `#142304`.
+const BACKER: Color32 = Color32::from_rgb(0x2E, 0x6B, 0x3A);
+const FRAME: Color32 = Color32::from_rgb(0x14, 0x23, 0x04);
 const PREVIEW_WIDTH: f32 = 300.0;
 
 pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
     crate::hud_view::show_layout_note(ui, state, dt_core::hud::elements::ElementId::HealthAndAmmo);
     let mut style = state.profile.hud.health.clone();
-    if ui.available_width() >= 760.0 {
-        ui.horizontal_top(|ui| {
-            let gap = 12.0;
-            let left = ui.available_width() - PREVIEW_WIDTH - gap;
-            ui.vertical(|ui| {
-                ui.set_width(left);
-                controls(ui, &mut style);
+    let ctx = ui.ctx().clone();
+    crate::hud_art::with(&ctx, state, |_, images| {
+        if ui.available_width() >= 760.0 {
+            ui.horizontal_top(|ui| {
+                let gap = 12.0;
+                let left = ui.available_width() - PREVIEW_WIDTH - gap;
+                ui.vertical(|ui| {
+                    ui.set_width(left);
+                    controls(ui, &mut style);
+                });
+                ui.add_space(gap - ui.spacing().item_spacing.x);
+                ui.vertical(|ui| {
+                    ui.set_width(PREVIEW_WIDTH);
+                    preview(ui, &style, images);
+                });
             });
-            ui.add_space(gap - ui.spacing().item_spacing.x);
-            ui.vertical(|ui| {
-                ui.set_width(PREVIEW_WIDTH);
-                preview(ui, &style);
-            });
-        });
-    } else {
-        preview(ui, &style);
-        controls(ui, &mut style);
-    }
+        } else {
+            preview(ui, &style, images);
+            controls(ui, &mut style);
+        }
+    });
     credits(ui);
     if style != state.profile.hud.health {
         state.set_health_style(style);
@@ -145,9 +154,9 @@ fn toggle(ui: &mut Ui, value: &mut bool, label: &str, help: &str) {
     ui.add_space(4.0);
 }
 
-/// The health block at three health levels, painted from the style; a sketch, not the
-/// game's art.
-fn preview(ui: &mut Ui, style: &HealthStyle) {
+/// The health block at three health levels with the style applied: the game's bar parts
+/// where they load, painted shapes where they don't.
+fn preview(ui: &mut Ui, style: &HealthStyle, images: &mut Images) {
     widgets::card(ui, |ui| {
         widgets::caption(ui, "Preview");
         let height = 190.0;
@@ -165,26 +174,49 @@ fn preview(ui: &mut Ui, style: &HealthStyle) {
             ("Low", 0.2, LOW, true),
         ];
         let column = rect.width() / 3.0;
+        let mut real = false;
         for (i, (label, fill, color, low)) in states.into_iter().enumerate() {
             let x = rect.left() + column * (i as f32 + 0.5);
             let bar =
                 Rect::from_center_size(pos2(x - 22.0, rect.center().y - 6.0), vec2(16.0, 110.0));
-            painter.rect(
-                bar,
-                CornerRadius::same(3),
-                Color32::from_gray(45),
-                Stroke::new(1.0, BORDER),
-                egui::StrokeKind::Inside,
-            );
             let filled = Rect::from_min_max(
                 pos2(bar.left(), bar.bottom() - bar.height() * fill),
                 bar.max,
             );
-            painter.rect_filled(
-                filled.shrink(2.0),
-                CornerRadius::same(2),
-                if low { LOW } else { HEALTHY },
-            );
+            let fill_tint = if low { LOW } else { Color32::WHITE };
+            let parts = images
+                .get(art::HEALTH_FILL, bar.height())
+                .zip(images.get(art::HEALTH_FRAME, bar.height()));
+            if let Some((texture, _)) = parts {
+                real = true;
+                painter.rect_filled(
+                    bar,
+                    CornerRadius::same(3),
+                    Color32::from_rgba_unmultiplied(0x33, 0x33, 0x33, 0xEA),
+                );
+                let uv = Rect::from_min_max(pos2(0.0, 1.0 - fill), pos2(1.0, 1.0));
+                painter.image(texture.id(), filled, uv, fill_tint);
+                let [w, h] = art::HEALTH_FRAME.size.map(f32::from);
+                let [bw, bh] = art::HEALTH_FILL.size.map(f32::from);
+                let frame = Rect::from_center_size(
+                    bar.center(),
+                    vec2(bar.width() * w / bw, bar.height() * h / bh),
+                );
+                images.paint(painter, art::HEALTH_FRAME, frame, FRAME);
+            } else {
+                painter.rect(
+                    bar,
+                    CornerRadius::same(3),
+                    Color32::from_gray(45),
+                    Stroke::new(1.0, BORDER),
+                    egui::StrokeKind::Inside,
+                );
+                painter.rect_filled(
+                    filled.shrink(2.0),
+                    CornerRadius::same(2),
+                    if low { LOW } else { HEALTHY },
+                );
+            }
             let scale = f32::from(style.number_scale_pct) / 100.0;
             let size = if low { 15.0 } else { 13.0 } * scale;
             let number = ((fill * 700.0) as u32).to_string();
@@ -194,11 +226,9 @@ fn preview(ui: &mut Ui, style: &HealthStyle) {
                     pos2(anchor.x - 2.0, anchor.y - size * 0.8),
                     vec2(size * 2.2, size * 1.25),
                 );
-                painter.rect_filled(
-                    backer,
-                    CornerRadius::same(3),
-                    Color32::from_rgb(0x2E, 0x6B, 0x3A).gamma_multiply(0.7),
-                );
+                if !images.paint(painter, art::HEALTH_BACKER, backer, BACKER) {
+                    painter.rect_filled(backer, CornerRadius::same(3), BACKER.gamma_multiply(0.7));
+                }
             }
             let shake = if low && !style.no_shake { 1.5 } else { 0.0 };
             let galley = painter.text(
@@ -216,8 +246,11 @@ fn preview(ui: &mut Ui, style: &HealthStyle) {
                 TEXT.gamma_multiply(if style.clear_max_health { 0.85 } else { 0.2 }),
             );
             if !style.hide_regen {
+                let regen = pos2(bar.center().x, bar.top() - 9.0);
+                let arrows = Rect::from_center_size(regen - vec2(9.0, 0.0), vec2(7.0, 8.0));
+                images.paint(painter, art::REGEN, arrows, TEXT.gamma_multiply(0.3));
                 painter.text(
-                    pos2(bar.center().x, bar.top() - 9.0),
+                    regen,
                     Align2::CENTER_CENTER,
                     "+4",
                     FontId::proportional(8.5),
@@ -234,7 +267,11 @@ fn preview(ui: &mut Ui, style: &HealthStyle) {
         }
         widgets::hint(
             ui,
-            "A sketch of the settings above, not the game's own art.",
+            if real {
+                "Your game's health bar parts with the settings above."
+            } else {
+                "A sketch of the settings above, not the game's own art."
+            },
         );
     });
 }

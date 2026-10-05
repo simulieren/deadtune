@@ -11,6 +11,7 @@ mod compact;
 mod friendly;
 mod game_files_view;
 mod health_view;
+mod hud_art;
 mod hud_view;
 mod icons;
 mod images;

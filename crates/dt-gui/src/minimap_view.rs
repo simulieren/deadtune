@@ -600,7 +600,12 @@ fn minimap(p: &Painter, rect: Rect, state: &AppState, images: &mut Images) -> bo
     for (y, tint) in [(-0.84, enemy_obj), (0.84, ally_set.unwrap_or(TEXT))] {
         let at = map.at(0.0, y);
         let scale = scale(MarkerGroup::Objectives);
-        if !images.paint(p, art::PATRON, map.rect(art::PATRON, scale, at), tint) {
+        if !images.paint(
+            p,
+            art::PATRON.fill,
+            map.rect(art::PATRON.fill, scale, at),
+            tint,
+        ) {
             tower(p, at, tint);
         }
     }

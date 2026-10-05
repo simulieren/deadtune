@@ -326,7 +326,7 @@ fn preview_stand_ins(template: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, Box<d
         }
         let shape = if a.path.contains("/minimap/base/") {
             Shape::Map
-        } else if a.path.contains("_vertical_") {
+        } else if a.path.contains("_card_") {
             Shape::Portrait
         } else if a.path.contains("compass_frame") {
             Shape::Frame

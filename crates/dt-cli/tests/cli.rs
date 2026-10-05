@@ -440,6 +440,47 @@ fn profile_new_show_and_overrides_round_trip() {
 }
 
 #[test]
+fn sidelock_lists_its_licence_and_works_as_a_base_after_an_accepted_import() {
+    let fake = Fake::new();
+    let list = fake.ok(&["presets"]);
+    let line = list.lines().find(|l| l.starts_with("sidelock")).unwrap();
+    for part in [
+        "by hitmeupwhenyourelonely",
+        "CC BY-NC-ND 4.0",
+        "https://gamebanana.com/mods/722944",
+        "not downloaded",
+    ] {
+        assert!(line.contains(part), "{line}");
+    }
+    let new = ["profile", "new", "side.toml", "--base", "sidelock"];
+    assert!(fake.expect(&new, 1).contains("presets import sidelock"));
+
+    let standin = repo("crates/dt-core/tests/fixtures/sidelock_standin/cfg.zip");
+    let import = fake.ok(&["presets", "import", "sidelock", standin.to_str().unwrap()]);
+    assert!(
+        import.contains("differs from the file DeadTune checked"),
+        "{import}"
+    );
+    assert!(
+        import.contains("citadel_damage_indicator_radius: (not set) -> 1"),
+        "{import}"
+    );
+    assert!(import.contains("presets accept sidelock"), "{import}");
+    assert!(fake.expect(&new, 1).contains("presets accept sidelock"));
+
+    fake.ok(&["presets", "accept", "sidelock"]);
+    assert!(fake.ok(&["presets"]).contains("ready (accepted update)"));
+    assert!(
+        fake.expect(&["presets", "accept", "sidelock"], 1)
+            .contains("no upstream update")
+    );
+    fake.ok(&new);
+    let diff = fake.ok(&["diff", "--profile", "side.toml"]);
+    assert!(diff.contains("citadel_damage_indicator_radius"), "{diff}");
+    assert!(!diff.contains("VulkanUseSecondaryCommandBuffers"), "{diff}");
+}
+
+#[test]
 fn hud_apply_status_remove() {
     let fake = Fake::new();
     fs::write(

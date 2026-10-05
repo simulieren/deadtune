@@ -1,8 +1,9 @@
 //! Writes a `pak01_dir.vpk` carrying the game files the native addon builders read, so a
 //! fake install (`scripts/fake-install.sh`) can build every addon: the stylesheet as
 //! Sqooky's pak97 copied it, the game's empty particle, the Sinner's Sacrifice mask and
-//! model in their stock layout (made from the upstream pak like the unit tests do) and a
-//! 512 px stand-in for the scope overlay.
+//! model in their stock layout (made from the upstream pak like the unit tests do), a
+//! 512 px stand-in for the scope overlay, and the top bar's stylesheet and layout (the
+//! HUD stylesheet standing in for the former).
 //!
 //! cargo run -p dt-core --example fake_pak01 -- <out pak01_dir.vpk>
 
@@ -12,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use dt_core::addons::{native_blur, native_particles, native_scope, native_sinner};
 use dt_core::hud::resource::Resource;
+use dt_core::hud::topbar::{TOP_BAR_LAYOUT, TOP_BAR_STYLE};
 use dt_core::hud::vpk::{self, VpkDir};
 use dt_core::texture::vtex::Vtex;
 
@@ -98,6 +100,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         (
             native_scope::TEXTURE.to_string(),
             scope_original(&pak89, 512)?,
+        ),
+        (
+            TOP_BAR_STYLE.to_string(),
+            std::fs::read(here("tests/fixtures/hud/hud_vanilla.vcss_c"))?,
+        ),
+        (
+            TOP_BAR_LAYOUT.to_string(),
+            std::fs::read(here("tests/fixtures/hud/top_bar_vanilla.vxml_c"))?,
         ),
     ]);
     std::fs::write(&out, vpk::write(&files))?;

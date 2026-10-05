@@ -159,16 +159,16 @@
         return true;
     }
 
-    // Entrances appear within `show` of the hero and stay until past `hide`, so one at the
-    // edge does not flicker.
-    function updateEntrances(at) {
-        for (var i = 0; i < tunnels.dots.length; i++) {
-            var dot = tunnels.dots[i];
-            var near = false;
+    // Dots appear within `show` of the hero and stay until past `hide`, so one at the
+    // edge does not flicker. Without a hero position every dot takes `unknown`.
+    function updateNear(set, at, show, hide, unknown) {
+        for (var i = 0; i < set.dots.length; i++) {
+            var dot = set.dots[i];
+            var near = unknown;
             if (at) {
-                var du = tunnels.points[i][0] - at.u;
-                var dv = tunnels.points[i][1] - at.v;
-                var r = dot.dtNear ? CONFIG.hide : CONFIG.show;
+                var du = set.points[i][0] - at.u;
+                var dv = set.points[i][1] - at.v;
+                var r = dot.dtNear ? hide : show;
                 near = du * du + dv * dv <= r * r;
             }
             if (near !== dot.dtNear) {
@@ -181,14 +181,19 @@
     function tick() {
         if (!valid(context)) { return; }
         try {
-            if (ensureLayers() && tunnels) {
-                var show = canUseTunnels() && !inTunnels();
-                updateEntrances(show ? heroOnMap() : null);
+            if (ensureLayers()) {
+                var near = CONFIG.near_apples;
+                var at = tunnels || near ? heroOnMap() : null;
+                if (tunnels) {
+                    var show = canUseTunnels() && !inTunnels();
+                    updateNear(tunnels, show ? at : null, CONFIG.show, CONFIG.hide, false);
+                }
+                if (apples && near) { updateNear(apples, at, near.show, near.hide, true); }
             }
         } catch (e) {
             try { $.Warning("DeadTune minimap: " + e); } catch (e2) {}
         }
-        $.Schedule(CONFIG.tunnels ? 0.2 : 2.0, tick);
+        $.Schedule(CONFIG.tunnels || CONFIG.near_apples ? 0.2 : 2.0, tick);
     }
 
     $.Schedule(1.0, tick);

@@ -140,7 +140,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
 fn settings(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
     official(ui, state, actions);
     map_style(ui, state, images, actions);
-    if let Some(next) = crate::apples_view::card(ui, state) {
+    if let Some(next) = crate::apples_view::card(ui, state, images) {
         actions.push(Action::Apples(next));
     }
     icons(ui, state, images, actions);
@@ -830,6 +830,7 @@ fn minimap(p: &Painter, rect: Rect, state: &AppState, images: &mut Images) -> bo
     let real = base(p, images, rect, area, fade, !style.minimal);
     crate::apples_view::overlay(
         p,
+        images,
         area,
         &state.profile.hud.apples_tunnels,
         map.at(ME.0, ME.1),

@@ -32,9 +32,11 @@ pub const GAME_BUILD: u32 = 25_712_201;
 /// The dl_midtown map build of `GAME_BUILD`.
 pub const MAP_BUILD: u32 = 6722;
 
-pub const DOT_SIZE_RANGE: RangeInclusive<u8> = 3..=12;
+pub const DOT_SIZE_RANGE: RangeInclusive<u8> = 3..=16;
 /// Percent of the map width.
 pub const RADIUS_RANGE: RangeInclusive<u8> = 5..=25;
+/// Percent of the map width, for apples shown only near the hero.
+pub const APPLE_RADIUS_RANGE: RangeInclusive<u8> = 5..=40;
 /// An entrance stays shown until the hero is this many percent past the show radius.
 pub const HIDE_MARGIN_PCT: u8 = 2;
 
@@ -163,21 +165,82 @@ impl TunnelHero {
     }
 }
 
-/// One kind of dot: shown or not, its size in px at 1080p and its colour. A table in a
-/// profile states all three; each kind has its own defaults on `ApplesTunnels`.
+/// What marks a spot: a shape drawn by CSS or one of the game's own icons, tinted with
+/// the dot colour.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DotIcon {
+    #[default]
+    Dot,
+    Ring,
+    Diamond,
+    Cross,
+    Heart,
+    Stairs,
+}
+
+impl DotIcon {
+    pub const ALL: [DotIcon; 6] = [
+        DotIcon::Dot,
+        DotIcon::Ring,
+        DotIcon::Diamond,
+        DotIcon::Cross,
+        DotIcon::Heart,
+        DotIcon::Stairs,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            DotIcon::Dot => "Dot",
+            DotIcon::Ring => "Ring",
+            DotIcon::Diamond => "Diamond",
+            DotIcon::Cross => "Heal cross",
+            DotIcon::Heart => "Heart",
+            DotIcon::Stairs => "Tunnel stairs",
+        }
+    }
+
+    /// The game picture behind an icon, compiled path; `None` for the CSS shapes. White
+    /// SVGs, so `wash-color` tints them.
+    pub fn image(self) -> Option<&'static str> {
+        match self {
+            DotIcon::Dot | DotIcon::Ring | DotIcon::Diamond => None,
+            DotIcon::Cross => Some("panorama/images/hud/ping/ping_icon_heal.vsvg_c"),
+            DotIcon::Heart => Some("panorama/images/hud/ping/ping_icon_heart.vsvg_c"),
+            DotIcon::Stairs => Some("panorama/images/minimap/icon_stairs.vsvg_c"),
+        }
+    }
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// One kind of dot: shown or not, its size in px at 1080p, its colour, icon and dark
+/// outline. Each kind has its own defaults on `ApplesTunnels`; older profiles without
+/// `icon` or `outline` get a plain outlined dot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Dots {
     pub on: bool,
     pub size_px: u8,
     pub color: Color,
+    #[serde(default)]
+    pub icon: DotIcon,
+    #[serde(default = "yes")]
+    pub outline: bool,
 }
 
 /// `Default` is vanilla: nothing emitted, no addon files.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct ApplesTunnels {
-    /// Every hero sees these, in tunnel view too.
+    /// Every hero sees these; in tunnel view too unless `apples_in_tunnels` is off.
     pub apples: Dots,
+    /// Only the apple spots within `apple_radius_pct` of the hero; all of them while the
+    /// hero's marker can't be found.
+    pub apples_near: bool,
+    pub apple_radius_pct: u8,
+    pub apples_in_tunnels: bool,
     /// Only for `TunnelHero`es, only near the hero, hidden in tunnel view.
     pub tunnels: Dots,
     /// Entrances closer than this percent of the map width are shown.
@@ -196,11 +259,18 @@ impl Default for ApplesTunnels {
                 on: false,
                 size_px: 5,
                 color: APPLE_COLOR,
+                icon: DotIcon::Dot,
+                outline: true,
             },
+            apples_near: false,
+            apple_radius_pct: 20,
+            apples_in_tunnels: true,
             tunnels: Dots {
                 on: false,
                 size_px: 5,
                 color: TUNNEL_COLOR,
+                icon: DotIcon::Dot,
+                outline: true,
             },
             tunnel_radius_pct: 11,
             clear_switching: false,
@@ -210,10 +280,12 @@ impl Default for ApplesTunnels {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ApplesTunnelsError {
-    #[error("dot size {0}px outside 3..=12")]
+    #[error("dot size {0}px outside 3..=16")]
     DotSize(u8),
     #[error("tunnel radius {0}% outside 5..=25")]
     Radius(u8),
+    #[error("apple radius {0}% outside 5..=40")]
+    AppleRadius(u8),
 }
 
 /// What apples and tunnels add to the addon.
@@ -241,11 +313,13 @@ impl ApplesTunnels {
         self.apples.on || self.tunnels.on
     }
 
-    /// Switches on, for the page's "Changed" count.
+    /// Switches away from the game's own, for the page's "Changed" count.
     pub fn changed_count(&self) -> usize {
         usize::from(self.apples.on)
             + usize::from(self.tunnels.on)
             + usize::from(self.clear_switching)
+            + usize::from(self.apples.on && self.apples_near)
+            + usize::from(self.apples.on && !self.apples_in_tunnels)
     }
 
     pub fn validate(&self) -> Result<(), ApplesTunnelsError> {
@@ -256,6 +330,9 @@ impl ApplesTunnels {
         }
         if !RADIUS_RANGE.contains(&self.tunnel_radius_pct) {
             return Err(ApplesTunnelsError::Radius(self.tunnel_radius_pct));
+        }
+        if !APPLE_RADIUS_RANGE.contains(&self.apple_radius_pct) {
+            return Err(ApplesTunnelsError::AppleRadius(self.apple_radius_pct));
         }
         Ok(())
     }
@@ -314,23 +391,23 @@ impl ApplesTunnels {
                 &format!(".dl_midtown {layer}"),
                 &[("visibility", "visible".into())],
             ));
-            let size = dots.size_px;
-            let half = number(f64::from(size) / 2.0);
-            let mut decls = vec![
-                ("width", format!("{size}px")),
-                ("height", format!("{size}px")),
-                (
-                    "transform",
-                    format!("translateX(-{half}px) translateY(-{half}px)"),
-                ),
-                ("background-color", dots.color.to_string()),
-                ("border", "1px solid #000000B0".into()),
-                ("border-radius", "50%".into()),
-            ];
-            if class == "DtTunnelDot" {
+            let mut decls = icon_decls(dots);
+            if class == "DtTunnelDot" || (class == "DtAppleDot" && self.apples_near) {
                 decls.push(("visibility", "collapse".into()));
             }
             out.push_str(&emit_rule(&format!(".{class}"), &decls));
+        }
+        if self.apples.on && self.apples_near {
+            out.push_str(&emit_rule(
+                ".DtAppleDot.DtNear",
+                &[("visibility", "visible".into())],
+            ));
+        }
+        if self.apples.on && !self.apples_in_tunnels {
+            out.push_str(&emit_rule(
+                ".dl_midtown.in_tunnels #DtApples",
+                &[("visibility", "collapse".into())],
+            ));
         }
         if self.tunnels.on {
             out.push_str(&emit_rule(
@@ -366,11 +443,18 @@ impl ApplesTunnels {
         };
         let show = f64::from(self.tunnel_radius_pct) / 100.0;
         let hide = f64::from(self.tunnel_radius_pct + HIDE_MARGIN_PCT) / 100.0;
+        let near_apples = (self.apples.on && self.apples_near).then(|| {
+            serde_json::json!({
+                "show": f64::from(self.apple_radius_pct) / 100.0,
+                "hide": f64::from(self.apple_radius_pct + HIDE_MARGIN_PCT) / 100.0,
+            })
+        });
         let config = serde_json::json!({
             "apples": points(self.apples.on, &APPLES),
             "tunnels": points(self.tunnels.on, &TUNNEL_ENTRANCES),
             "show": show,
             "hide": hide,
+            "near_apples": near_apples,
             "heroes": TunnelHero::ALL.map(TunnelHero::name),
             "tokens": TunnelHero::ALL.map(TunnelHero::token),
         });
@@ -396,6 +480,62 @@ impl ApplesTunnels {
         }
         Ok(patch)
     }
+}
+
+/// Size, place and look of one dot, centred on its spot.
+fn icon_decls(dots: Dots) -> Vec<(&'static str, String)> {
+    const SHADE: &str = "#000000B0";
+    let color = dots.color.to_string();
+    // A diamond is a turned square; this side keeps its corners inside the dot size.
+    let side = match dots.icon {
+        DotIcon::Diamond => (f64::from(dots.size_px) * 0.72).round().max(2.0),
+        _ => f64::from(dots.size_px),
+    };
+    let half = number(side / 2.0);
+    let place = format!("translateX(-{half}px) translateY(-{half}px)");
+    let mut decls = vec![
+        ("width", format!("{}px", number(side))),
+        ("height", format!("{}px", number(side))),
+    ];
+    match dots.icon {
+        DotIcon::Dot => {
+            decls.push(("transform", place));
+            decls.push(("background-color", color));
+            if dots.outline {
+                decls.push(("border", format!("1px solid {SHADE}")));
+            }
+            decls.push(("border-radius", "50%".into()));
+        }
+        DotIcon::Ring => {
+            let width = (dots.size_px / 4).max(1);
+            decls.push(("transform", place));
+            decls.push(("border", format!("{width}px solid {color}")));
+            decls.push(("border-radius", "50%".into()));
+            if dots.outline {
+                decls.push(("box-shadow", format!("{SHADE} 0px 0px 1px 1px")));
+            }
+        }
+        DotIcon::Diamond => {
+            decls.push(("transform", format!("{place} rotateZ(45deg)")));
+            decls.push(("background-color", color));
+            if dots.outline {
+                decls.push(("border", format!("1px solid {SHADE}")));
+            }
+        }
+        DotIcon::Cross | DotIcon::Heart | DotIcon::Stairs => {
+            let image = dots.icon.image().expect("picture icon");
+            let image = image.strip_suffix("_c").unwrap_or(image);
+            decls.push(("transform", place));
+            decls.push(("background-image", format!("url(\"s2r://{image}\")")));
+            decls.push(("background-size", "100% 100%".into()));
+            decls.push(("background-repeat", "no-repeat".into()));
+            decls.push(("wash-color", color));
+            if dots.outline {
+                decls.push(("img-shadow", format!("0px 0px 2px {SHADE}")));
+            }
+        }
+    }
+    decls
 }
 
 fn number(value: f64) -> String {
@@ -520,6 +660,7 @@ mod tests {
                 on: true,
                 size_px: 8,
                 color: Color([0xAA, 0x55, 0xFF, 0xC0]),
+                ..ApplesTunnels::default().tunnels
             },
             tunnel_radius_pct: 15,
             ..ApplesTunnels::default()
@@ -552,6 +693,94 @@ mod tests {
     }
 
     #[test]
+    fn icons_shape_the_dots_and_pictures_come_from_the_game() {
+        let mut s = ApplesTunnels::default();
+        s.apples = Dots {
+            on: true,
+            size_px: 10,
+            icon: DotIcon::Heart,
+            outline: true,
+            ..s.apples
+        };
+        s.tunnels = Dots {
+            on: true,
+            size_px: 10,
+            icon: DotIcon::Diamond,
+            outline: false,
+            ..s.tunnels
+        };
+        let sheet = &s.compile().unwrap().own_files[OWN_STYLE];
+        assert!(
+            sheet.contains(
+                ".DtAppleDot{width:10px;height:10px;transform:translateX(-5px) translateY(-5px);\
+             background-image:url(\"s2r://panorama/images/hud/ping/ping_icon_heart.vsvg\");\
+             background-size:100% 100%;background-repeat:no-repeat;wash-color:#74F06A;\
+             img-shadow:0px 0px 2px #000000B0;}"
+            ),
+            "{sheet}"
+        );
+        assert!(
+            sheet.contains(
+                ".DtTunnelDot{width:7px;height:7px;\
+             transform:translateX(-3.5px) translateY(-3.5px) rotateZ(45deg);\
+             background-color:#E5B8FF;visibility:collapse;}"
+            ),
+            "{sheet}"
+        );
+        assert!(css::parse_rules(sheet).is_ok());
+        for icon in DotIcon::ALL {
+            assert_eq!(
+                icon.image().is_some(),
+                icon.image().is_some_and(|p| p.ends_with(".vsvg_c"))
+            );
+        }
+    }
+
+    #[test]
+    fn apples_near_the_hero_hide_the_rest_and_can_leave_tunnel_view() {
+        let mut s = ApplesTunnels::default();
+        s.apples.on = true;
+        s.apples_near = true;
+        s.apple_radius_pct = 30;
+        s.apples_in_tunnels = false;
+        assert_eq!(s.changed_count(), 3);
+        let patch = s.compile().unwrap();
+        let sheet = &patch.own_files[OWN_STYLE];
+        assert!(
+            sheet.contains("border-radius:50%;visibility:collapse;}"),
+            "{sheet}"
+        );
+        assert!(
+            sheet.ends_with(
+                ".DtAppleDot.DtNear{visibility:visible;}\
+             .dl_midtown.in_tunnels #DtApples{visibility:collapse;}"
+            ),
+            "{sheet}"
+        );
+        let config = patch.own_files[OWN_SCRIPT]
+            .lines()
+            .next()
+            .unwrap()
+            .to_string();
+        assert!(
+            config.contains("\"near_apples\":{\"hide\":0.32,\"show\":0.3}"),
+            "{config}"
+        );
+        s.apples_near = false;
+        let config = s.script().unwrap();
+        assert!(config.contains("\"near_apples\":null"));
+    }
+
+    #[test]
+    fn older_profiles_without_icon_or_outline_read_as_outlined_dots() {
+        let old: ApplesTunnels =
+            toml::from_str("[apples]\non = true\nsize_px = 6\ncolor = \"#74F06A\"\n").unwrap();
+        assert_eq!(old.apples.icon, DotIcon::Dot);
+        assert!(old.apples.outline);
+        assert!(old.apples_in_tunnels && !old.apples_near);
+    }
+
+    #[test]
     fn script_uses_only_its_config_for_map_data() {
         assert!(!SCRIPT.contains("0.64136905"));
         assert!(!SCRIPT.contains("Nathan"));
@@ -580,11 +809,14 @@ mod tests {
         s.apples.size_px = 2;
         assert_eq!(s.compile(), Err(ApplesTunnelsError::DotSize(2)));
         let mut s = on();
-        s.tunnels.size_px = 13;
-        assert_eq!(s.compile(), Err(ApplesTunnelsError::DotSize(13)));
+        s.tunnels.size_px = 17;
+        assert_eq!(s.compile(), Err(ApplesTunnelsError::DotSize(17)));
         let mut s = on();
         s.tunnel_radius_pct = 30;
         assert_eq!(s.compile(), Err(ApplesTunnelsError::Radius(30)));
+        let mut s = on();
+        s.apple_radius_pct = 41;
+        assert_eq!(s.compile(), Err(ApplesTunnelsError::AppleRadius(41)));
     }
 
     #[test]

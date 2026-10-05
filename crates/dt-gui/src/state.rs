@@ -21,7 +21,9 @@ use dt_core::bridge::boot::BootCfg;
 use dt_core::bridge::conlog::LogTail;
 use dt_core::catalog::{ApplyClass, Catalog};
 use dt_core::gi::{self, Override};
-use dt_core::hud::apples_tunnels::{ApplesTunnels, DOT_SIZE_RANGE, RADIUS_RANGE};
+use dt_core::hud::apples_tunnels::{
+    APPLE_RADIUS_RANGE, ApplesTunnels, DOT_SIZE_RANGE, RADIUS_RANGE,
+};
 use dt_core::hud::elements::ElementId;
 use dt_core::hud::health_style::HealthStyle;
 use dt_core::hud::ingame::{self, IngameSettings};
@@ -2015,6 +2017,9 @@ impl AppState {
         style.tunnel_radius_pct = style
             .tunnel_radius_pct
             .clamp(*RADIUS_RANGE.start(), *RADIUS_RANGE.end());
+        style.apple_radius_pct = style
+            .apple_radius_pct
+            .clamp(*APPLE_RADIUS_RANGE.start(), *APPLE_RADIUS_RANGE.end());
         self.profile.hud.apples_tunnels = style;
         self.refresh_preview();
     }
@@ -3489,10 +3494,12 @@ mod tests {
         style.apples.on = true;
         style.apples.size_px = 40;
         style.tunnel_radius_pct = 1;
+        style.apple_radius_pct = 90;
         state.set_apples_tunnels(style);
         let stored = state.profile.hud.apples_tunnels;
-        assert_eq!(stored.apples.size_px, 12);
+        assert_eq!(stored.apples.size_px, 16);
         assert_eq!(stored.tunnel_radius_pct, 5);
+        assert_eq!(stored.apple_radius_pct, 40);
         assert_eq!(state.minimap_changed_count(), 1);
         assert!(state.is_dirty());
         state.apply_hud_preset(HudPreset::Competitive);

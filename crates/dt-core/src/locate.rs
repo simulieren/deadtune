@@ -109,6 +109,12 @@ pub fn parse_buildid(acf: &str) -> Option<String> {
     })
 }
 
+/// The installed build, read from the Steam appmanifest when there is one.
+pub fn buildid(paths: &GamePaths) -> Option<String> {
+    let acf = std::fs::read_to_string(paths.appmanifest.as_ref()?).ok()?;
+    parse_buildid(&acf)
+}
+
 /// `userdata/<id>/760/remote/1422450/screenshots` for every Steam user.
 pub fn screenshot_dirs(steam_root: &Path) -> Vec<PathBuf> {
     let Ok(users) = std::fs::read_dir(steam_root.join("userdata")) else {
@@ -196,6 +202,14 @@ mod tests {
             paths.steam_root,
             Some(steam.path().to_path_buf()),
             "library with userdata is the steam root"
+        );
+        assert_eq!(buildid(&paths).as_deref(), Some("20419345"));
+        assert_eq!(
+            buildid(&GamePaths {
+                appmanifest: None,
+                ..paths
+            }),
+            None
         );
     }
 

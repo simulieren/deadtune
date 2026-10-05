@@ -394,6 +394,7 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
                     Page::Section(Section::TopBar) => crate::topbar_view::page(ui, state),
                     Page::Section(Section::Addons) => crate::addons_view::addons(ui, state),
                     Page::Section(Section::System) => crate::checks_view::page(ui, state),
+                    Page::Section(Section::GameFiles) => crate::game_files_view::page(ui, state),
                     Page::Section(Section::Safety) => safety(ui, state, &mut edits),
                     Page::Section(section) => {
                         settings_page(ui, state, section, inline_help, &mut edits)
@@ -462,6 +463,7 @@ fn section_changes(state: &AppState, section: Section) -> usize {
         Section::Health => state.health_changed_count(),
         Section::Addons => state.addons_enabled_count(),
         Section::System => state.check_problems(),
+        Section::GameFiles => state.snapshot_impact_count(),
         Section::Safety => 0,
         s => state.changed_count(friendly::section_names(s)),
     }
@@ -600,6 +602,7 @@ fn section_icon(section: Section) -> Icon {
         Section::Health => Icon::Heart,
         Section::Addons => Icon::Addons,
         Section::System => Icon::System,
+        Section::GameFiles => Icon::Folder,
         Section::Safety => Icon::Safety,
     }
 }

@@ -110,11 +110,7 @@ pub fn take(
     }
     let pak = VpkDir::open(&pak_path)?;
     let inventory = Inventory::from_pak(&pak, spec::loose_files(paths)?);
-    let buildid = paths
-        .appmanifest
-        .as_ref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|acf| locate::parse_buildid(&acf));
+    let buildid = locate::buildid(paths);
     let taken = Utc::now();
     let root = store::dir(data_dir);
     let existing = store::list(&root)?

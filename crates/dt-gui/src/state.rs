@@ -198,11 +198,12 @@ pub enum Section {
     Health,
     Addons,
     System,
+    GameFiles,
     Safety,
 }
 
 impl Section {
-    pub const ALL: [Section; 13] = [
+    pub const ALL: [Section; 14] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -215,6 +216,7 @@ impl Section {
         Section::Health,
         Section::Addons,
         Section::System,
+        Section::GameFiles,
         Section::Safety,
     ];
 
@@ -232,6 +234,7 @@ impl Section {
             Section::Health => "Health bar",
             Section::Addons => "Addons",
             Section::System => "System check",
+            Section::GameFiles => "Game files",
             Section::Safety => "Safety & setup",
         }
     }
@@ -253,6 +256,9 @@ impl Section {
             }
             Section::System => {
                 "Is everything set up for good FPS? Checks the game files, DeadTune and your Windows settings."
+            }
+            Section::GameFiles => {
+                "Saves copies of the game's interface files so we can see what an update changed."
             }
             Section::Safety => "Undo, restore, ranked-safe mode and instant changes.",
         }
@@ -402,6 +408,10 @@ pub struct UiState {
     pub launch_options_open: bool,
     /// The Top bar page's mock shows an enemy out of vision and a dead hero.
     pub top_bar_preview: TopBarPreview,
+    /// The Game files page's compare pickers: indexes into `snapshots` (older, newer).
+    pub snapshot_compare: (usize, usize),
+    /// The snapshot whose Delete button was pressed once and waits for a second press.
+    pub snapshot_delete_armed: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -634,6 +644,18 @@ pub struct AppState {
     pub texture_build: Option<TextureBuild>,
     /// What the last finished build did, for the card.
     pub last_texture_build: Option<Result<TextureStats, String>>,
+    /// A game file snapshot or comparison running on its own thread (`crate::snapshots`).
+    pub snapshot_job: Option<crate::snapshots::SnapshotJob>,
+    /// What the last snapshot job did, for the Game files page.
+    pub last_snapshot: Option<Result<crate::snapshots::SnapshotDone, String>>,
+    /// Snapshot folders, newest first; refreshed after every job and delete.
+    pub snapshots: Vec<dt_core::snapshot::SnapshotInfo>,
+    /// The newest report among the snapshots.
+    pub latest_diff: Option<dt_core::snapshot::SnapshotDiff>,
+    /// The pak tree classified, scanned when the page first needs it; dropped on a game update.
+    pub snapshot_inventory: Option<Result<dt_core::snapshot::Inventory, String>>,
+    /// The game build the appmanifest reports, read with the snapshot listing.
+    pub game_build: Option<String>,
     /// Creation time of the backup the last Undo restored; cleared by Apply.
     pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
@@ -767,6 +789,12 @@ impl AppState {
             addons_cache: None,
             texture_build: None,
             last_texture_build: None,
+            snapshot_job: None,
+            last_snapshot: None,
+            snapshots: Vec::new(),
+            latest_diff: None,
+            snapshot_inventory: None,
+            game_build: None,
             undo_cursor: None,
             checks: None,
             checks_at: None,
@@ -782,6 +810,7 @@ impl AppState {
         }
         state.refresh_preview();
         state.reload_bench();
+        state.refresh_snapshots();
         Ok(state)
     }
 
@@ -1504,6 +1533,7 @@ impl AppState {
         });
         let new_sha = sha256_hex(new.gameinfo.as_bytes());
         let overwritten = new_sha != self.known_gameinfo_sha;
+        let updated = build.is_some();
         if overwritten {
             let diff = FileWrite {
                 path: self.paths.gameinfo.clone(),
@@ -1523,6 +1553,13 @@ impl AppState {
         self.hud_cache = None;
         self.addons_cache = None;
         self.refresh_preview();
+        if updated {
+            self.snapshot_inventory = None;
+            self.game_build = dt_core::locate::buildid(&self.paths);
+            if self.settings.snapshots.auto {
+                self.start_snapshot(true);
+            }
+        }
     }
 
     /// Why the addons cannot be planned right now, if they cannot.

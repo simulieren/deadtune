@@ -82,53 +82,8 @@ const LEGACY_LZ4: [u8; 16] = [
     0x8A, 0x34, 0x47, 0x68, 0xA1, 0x63, 0x5C, 0x4F, 0xA1, 0x97, 0x53, 0x80, 0x6F, 0xD9, 0xB1, 0x19,
 ];
 
-/// Decodes one raw LZ4 block (no frame header) into exactly `out_len` bytes.
-pub fn lz4_decode(src: &[u8], out_len: usize) -> Result<Vec<u8>, Kv3Error> {
-    let mut out = Vec::with_capacity(out_len);
-    let mut i = 0;
-    let byte = |i: &mut usize| -> Result<u8, Kv3Error> {
-        let b = *src.get(*i).ok_or(Kv3Error::Lz4)?;
-        *i += 1;
-        Ok(b)
-    };
-    let extended = |i: &mut usize, mut n: usize| -> Result<usize, Kv3Error> {
-        if n == 15 {
-            loop {
-                let b = byte(i)?;
-                n += b as usize;
-                if b != 255 {
-                    break;
-                }
-            }
-        }
-        Ok(n)
-    };
-    while i < src.len() {
-        let token = byte(&mut i)?;
-        let literals = extended(&mut i, (token >> 4) as usize)?;
-        let end = i
-            .checked_add(literals)
-            .filter(|&e| e <= src.len())
-            .ok_or(Kv3Error::Lz4)?;
-        out.extend_from_slice(&src[i..end]);
-        i = end;
-        if i >= src.len() {
-            break;
-        }
-        let offset = u16::from_le_bytes([byte(&mut i)?, byte(&mut i)?]) as usize;
-        let length = extended(&mut i, (token & 0xF) as usize)? + 4;
-        if offset == 0 || offset > out.len() {
-            return Err(Kv3Error::Lz4);
-        }
-        let start = out.len() - offset;
-        for k in 0..length {
-            out.push(out[start + k]);
-        }
-    }
-    if out.len() != out_len {
-        return Err(Kv3Error::Lz4);
-    }
-    Ok(out)
+fn lz4_decode(src: &[u8], out_len: usize) -> Result<Vec<u8>, Kv3Error> {
+    crate::lz4::decode_block(src, out_len).map_err(|_| Kv3Error::Lz4)
 }
 
 struct Lane<'a> {
@@ -662,21 +617,6 @@ mod tests {
             Value::Array(items) => items.iter().map(|v| count(v, etype)).sum(),
             _ => 0,
         }
-    }
-
-    #[test]
-    fn lz4_literals_and_matches() {
-        assert_eq!(lz4_decode(&[0x30, b'a', b'b', b'c'], 3).unwrap(), b"abc");
-        let repeated = [0x35, b'a', b'b', b'c', 3, 0];
-        assert_eq!(lz4_decode(&repeated, 12).unwrap(), b"abcabcabcabc");
-        let long = [0x3F, b'x', b'y', b'z', 1, 0, 0x00, 0x10, b'!'];
-        let out = lz4_decode(&long, 3 + 19 + 1).unwrap();
-        assert_eq!(&out[..3], b"xyz");
-        assert!(out[3..22].iter().all(|&b| b == b'z'));
-        assert_eq!(out[22], b'!');
-        assert_eq!(lz4_decode(&[0x30, b'a'], 3), Err(Kv3Error::Lz4));
-        assert_eq!(lz4_decode(&[0x05, 9, 0], 4), Err(Kv3Error::Lz4));
-        assert_eq!(lz4_decode(&[0x30, b'a', b'b', b'c'], 4), Err(Kv3Error::Lz4));
     }
 
     #[test]

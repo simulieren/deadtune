@@ -631,59 +631,8 @@ impl<'a> Walker<'a> {
     }
 }
 
-/// One LZ4 block (no frame header) that inflates to exactly `len` bytes.
 fn lz4_block(src: &[u8], len: usize) -> Result<Vec<u8>, AddonError> {
-    let bad = || malformed("LZ4 block is corrupt");
-    let mut out = Vec::with_capacity(len.min(src.len().saturating_mul(255)));
-    let mut i = 0;
-    let byte = |i: &mut usize| -> Result<usize, AddonError> {
-        let b = *src.get(*i).ok_or_else(bad)?;
-        *i += 1;
-        Ok(b as usize)
-    };
-    loop {
-        let token = byte(&mut i)?;
-        let mut literals = token >> 4;
-        if literals == 15 {
-            loop {
-                let b = byte(&mut i)?;
-                literals += b;
-                if b != 255 {
-                    break;
-                }
-            }
-        }
-        out.extend_from_slice(src.get(i..i + literals).ok_or_else(bad)?);
-        i += literals;
-        if i == src.len() {
-            break;
-        }
-        let offset = byte(&mut i)? | (byte(&mut i)? << 8);
-        let mut matched = (token & 15) + 4;
-        if token & 15 == 15 {
-            loop {
-                let b = byte(&mut i)?;
-                matched += b;
-                if b != 255 {
-                    break;
-                }
-            }
-        }
-        if offset == 0 || offset > out.len() || out.len() + matched > len {
-            return Err(bad());
-        }
-        let start = out.len() - offset;
-        for k in 0..matched {
-            out.push(out[start + k]);
-        }
-    }
-    if out.len() != len {
-        return Err(malformed(format!(
-            "LZ4 block inflated to {} bytes, expected {len}",
-            out.len()
-        )));
-    }
-    Ok(out)
+    crate::lz4::decode_block(src, len).map_err(|e| malformed(e.to_string()))
 }
 
 #[cfg(test)]
@@ -909,27 +858,5 @@ pub(crate) mod tests {
         assert!(kv.int(&constant(T_STRING)).is_err());
         let lod = kv.lod_slots().unwrap();
         assert!(kv.set_int(&lod.masks[0], u64::from(u32::MAX) + 1).is_err());
-    }
-
-    #[test]
-    fn lz4_handles_long_runs_and_overlapping_matches() {
-        let src: Vec<u8> = (0..20).chain(b"ab".repeat(150)).chain(40..60).collect();
-        let packed = hex(
-            "ff07000102030405060708090a0b0c0d0e0f1011121361620200ff18f00528292a2b2c2d2e2f303132333435363738393a3b",
-        );
-        assert_eq!(lz4_block(&packed, src.len()).unwrap(), src);
-        assert!(lz4_block(&packed, src.len() + 1).is_err());
-        assert!(lz4_block(&packed[..packed.len() - 1], src.len()).is_err());
-        assert!(
-            lz4_block(&[0x10, b'a', 0x05, 0x00], 10).is_err(),
-            "offset past start"
-        );
-    }
-
-    fn hex(s: &str) -> Vec<u8> {
-        (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect()
     }
 }

@@ -14,6 +14,7 @@ pub mod hud;
 pub mod launch;
 pub mod launch_options;
 pub mod locate;
+pub mod lz4;
 pub mod power;
 pub mod practice;
 pub mod preset;

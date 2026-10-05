@@ -28,7 +28,7 @@ pub const MASK: &str = "models/props_gameplay/sinners_sacrifice_vault/materials/
 const LOD_MASKS: &str = "m_refLODGroupMasks";
 const LOD_DISTANCES: &str = "m_lodGroupSwitchDistances";
 /// Upstream's value; past any distance the camera reaches.
-const FAR: f64 = 1_000_000.0;
+pub const FAR: f64 = 1_000_000.0;
 
 /// Pak path -> bytes: the game's mask texture and vault model, changed as upstream does.
 pub fn build(game: &VpkDir) -> Result<BTreeMap<String, Vec<u8>>, AddonError> {
@@ -687,7 +687,7 @@ fn lz4_block(src: &[u8], len: usize) -> Result<Vec<u8>, AddonError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::path::Path;
 
     use super::*;
@@ -714,7 +714,7 @@ mod tests {
 
     /// The upstream model with the DATA block as the stock game file most likely stores
     /// it (fixture made by `tests/fixtures/sinner/make_stock_data.py`).
-    fn stock_model() -> Vec<u8> {
+    pub fn stock_model() -> Vec<u8> {
         with_data(&upstream().read(MODEL).unwrap(), STOCK_DATA)
     }
 
@@ -722,7 +722,7 @@ mod tests {
     /// 1024x1024 level and `NO_LOD` cleared: the stock texture's 701,196-byte layout
     /// (2,132 header bytes in the game's file, 16 fewer than upstream's) with the same
     /// level 0. The small levels' pixels are filler.
-    fn stock_mask() -> Vec<u8> {
+    pub fn stock_mask() -> Vec<u8> {
         let up = upstream().read(MASK).unwrap();
         let v = Vtex::parse(&up).unwrap();
         let header = v.pixel_start() - data_block_len(&up).unwrap();
@@ -736,6 +736,19 @@ mod tests {
         }
         out.extend_from_slice(&up[v.pixel_start()..]);
         out
+    }
+
+    /// The stock model with its DATA block marked zstd, which the builder refuses.
+    pub fn zstd_model() -> Vec<u8> {
+        let stock = stock_model();
+        let mut data = Resource::parse(&stock)
+            .unwrap()
+            .block(b"DATA")
+            .unwrap()
+            .data
+            .clone();
+        put_u32(&mut data, H_COMPRESSION, 2);
+        with_data(&stock, &data)
     }
 
     #[test]

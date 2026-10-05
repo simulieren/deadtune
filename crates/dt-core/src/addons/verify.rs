@@ -1,28 +1,44 @@
 //! Reads a pak back the way the engine will before it goes into the game folder: every
 //! entry at its recorded length with a matching CRC, every compiled resource we generate
-//! parsing back to the same bytes, and every generated stylesheet carrying the game's own
-//! RED2, SrMa, image table and source CRC. A pak that fails here is never installed.
+//! parsing back to the same bytes, and every rebuilt file matching the game's own file it
+//! came from. A pak that fails here is never installed.
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
 use super::install::read_record;
-use super::{AddonId, Kind, blur, info, particles, sources};
+use super::{AddonId, Kind, info, native_scope, native_sinner};
 use crate::hud::crc32::crc32;
 use crate::hud::install::{ADDON_FILE as HUD_ADDON_FILE, GAME_PAK, addons_dir};
 use crate::hud::resource::{self, Resource};
 use crate::hud::vpk::VpkDir;
 use crate::locate::GamePaths;
-use crate::texture::vtex::{Layout, Vtex};
+use crate::texture::vtex::{Flags, Layout, Vtex};
 
-/// What a pak's content must match beyond being readable.
+/// What one entry must match beyond being readable, taken from the game's own file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Check {
+    /// Exactly these bytes.
+    Bytes(Vec<u8>),
+    /// A compiled stylesheet generated from this one: same RED2, SrMa, image table and
+    /// source CRC, only the text differs.
+    StyleFrom(Vec<u8>),
+    /// This texture with every level but the largest dropped and `NO_LOD` set.
+    TopMipOf(Vec<u8>),
+    /// This model with its LOD arrays pinned to the full-detail mesh, every other block
+    /// the same.
+    PinnedLodsOf(Vec<u8>),
+    /// This texture area-averaged smaller with its aspect, format and flags kept.
+    ResampledFrom(Vec<u8>),
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Expect {
-    /// Every `.vpcf_c` entry must be exactly these bytes (the upstream empty-particle stub).
+    /// Every `.vpcf_c` entry must be exactly these bytes (the game's empty particle).
     pub particle_stub: Option<Vec<u8>>,
-    /// The game's own compiled file that a generated `.vcss_c` at the same path came from.
-    pub originals: BTreeMap<String, Vec<u8>>,
+    /// Per path.
+    pub checks: BTreeMap<String, Check>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -119,17 +135,29 @@ fn style_facts(data: &[u8]) -> Result<String, String> {
 
 fn check_content(path: &str, data: &[u8], expect: &Expect) -> Result<(), String> {
     match path.rsplit_once('.').map_or("", |(_, ext)| ext) {
-        "vcss_c" => check_style(data, expect.originals.get(path)),
-        "vtex_c" => check_texture(data),
-        "vpcf_c" => match &expect.particle_stub {
-            Some(stub) if data != stub => Err("not the upstream empty-particle stub".into()),
-            _ => Ok(()),
-        },
-        _ => Ok(()),
+        "vcss_c" => check_style(data)?,
+        "vtex_c" => check_texture(data)?,
+        "vpcf_c" => {
+            if let Some(stub) = &expect.particle_stub
+                && data != stub
+            {
+                return Err("not the game's empty particle".into());
+            }
+        }
+        _ => {}
+    }
+    match expect.checks.get(path) {
+        None => Ok(()),
+        Some(Check::Bytes(want)) if data == want => Ok(()),
+        Some(Check::Bytes(_)) => Err("not the game's current file".into()),
+        Some(Check::StyleFrom(original)) => style_from(data, original),
+        Some(Check::TopMipOf(original)) => top_mip_of(data, original),
+        Some(Check::PinnedLodsOf(original)) => pinned_lods_of(data, original),
+        Some(Check::ResampledFrom(original)) => resampled_from(data, original),
     }
 }
 
-fn check_style(data: &[u8], original: Option<&Vec<u8>>) -> Result<(), String> {
+fn check_style(data: &[u8]) -> Result<(), String> {
     let res = Resource::parse(data).map_err(|e| e.to_string())?;
     if res.to_bytes() != data {
         return Err("does not serialise back to the same bytes".into());
@@ -139,9 +167,11 @@ fn check_style(data: &[u8], original: Option<&Vec<u8>>) -> Result<(), String> {
     if again != res {
         return Err("DATA image table does not survive a rewrite".into());
     }
-    let Some(original) = original else {
-        return Ok(());
-    };
+    Ok(())
+}
+
+fn style_from(data: &[u8], original: &[u8]) -> Result<(), String> {
+    let res = Resource::parse(data).map_err(|e| e.to_string())?;
     let orig = Resource::parse(original).map_err(|e| format!("game's original: {e}"))?;
     let names = |r: &Resource| r.blocks.iter().map(|b| b.name).collect::<Vec<_>>();
     if names(&res) != names(&orig) {
@@ -185,45 +215,118 @@ fn check_texture(data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// What `id`'s pak must match, from the upstream cache and the game's own files. A source
-/// that cannot be read leaves that check out; the pak's own integrity is always checked.
-pub fn expect_for(id: AddonId, paths: &GamePaths, state_dir: &Path) -> Expect {
-    let mut expect = Expect::default();
-    match info(id).kind {
-        Kind::ParticleGroups => {
-            expect.particle_stub = sources::cached(&sources::cache_dir(state_dir), id)
-                .ok()
-                .flatten()
-                .and_then(|src| VpkDir::open(&src.path).ok())
-                .and_then(|pak| particles::stub_from_upstream(&pak).ok())
-                .map(|stub| stub.particle);
-        }
-        Kind::Blur => {
-            let rebuilt = read_record(state_dir)
-                .ok()
-                .and_then(|r| r.installed.get(id.key()).map(|i| i.from_game))
-                .unwrap_or(false);
-            if rebuilt && let Some(bytes) = game_file(paths, blur::STYLE) {
-                expect.originals.insert(blur::STYLE.to_string(), bytes);
-            }
-        }
-        Kind::Toggle | Kind::Textures => {}
+fn parse_both(data: &[u8], original: &[u8]) -> Result<(Vtex, Vtex), String> {
+    let ours = Vtex::parse(data).map_err(|e| e.to_string())?;
+    let orig = Vtex::parse(original).map_err(|e| format!("game's original: {e}"))?;
+    Ok((ours, orig))
+}
+
+fn top_mip_of(data: &[u8], original: &[u8]) -> Result<(), String> {
+    let (ours, orig) = parse_both(data, original)?;
+    if ours.mips.len() != 1 {
+        return Err(format!(
+            "{} mip levels; expected only the largest",
+            ours.mips.len()
+        ));
     }
-    expect
+    if !ours.flags.contains(Flags::NO_LOD) {
+        return Err("NO_LOD flag is not set".into());
+    }
+    if (ours.width, ours.height, ours.format) != (orig.width, orig.height, orig.format) {
+        return Err("size or format differs from the game's texture".into());
+    }
+    let top = orig.mips.first().map_or(0, |m| m.stored_len);
+    if top > original.len()
+        || data[ours.pixel_start().min(data.len())..] != original[original.len() - top..]
+    {
+        return Err("pixels are not the game texture's largest level".into());
+    }
+    Ok(())
+}
+
+fn pinned_lods_of(data: &[u8], original: &[u8]) -> Result<(), String> {
+    let (masks, distances) = native_sinner::lod_fields(data).map_err(|e| e.to_string())?;
+    let (orig_masks, orig_distances) =
+        native_sinner::lod_fields(original).map_err(|e| format!("game's original: {e}"))?;
+    let want_masks: Vec<u64> = orig_masks
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            if i == 0 {
+                orig_masks.iter().fold(0, |a, m| a | m)
+            } else {
+                0
+            }
+        })
+        .collect();
+    let want_distances: Vec<f64> = orig_distances
+        .iter()
+        .enumerate()
+        .map(|(i, d)| if i == 0 { *d } else { native_sinner::FAR })
+        .collect();
+    if masks != want_masks || distances != want_distances {
+        return Err(format!(
+            "LOD arrays are {masks:?} / {distances:?}, expected {want_masks:?} / {want_distances:?}"
+        ));
+    }
+    let res = Resource::parse(data).map_err(|e| e.to_string())?;
+    let orig = Resource::parse(original).map_err(|e| format!("game's original: {e}"))?;
+    let others = |r: &Resource| {
+        r.blocks
+            .iter()
+            .filter(|b| &b.name != b"DATA")
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    if others(&res) != others(&orig) {
+        return Err("a block other than DATA differs from the game's model".into());
+    }
+    Ok(())
+}
+
+fn resampled_from(data: &[u8], original: &[u8]) -> Result<(), String> {
+    let (ours, orig) = parse_both(data, original)?;
+    if ours.format != orig.format || ours.flags != orig.flags {
+        return Err("format or flags differ from the game's texture".into());
+    }
+    if ours.mips.len() != 1 {
+        return Err(format!("{} mip levels; expected one", ours.mips.len()));
+    }
+    let side = ours.width.max(ours.height);
+    let want = native_scope::target_dims(orig.width, orig.height, side);
+    if side > orig.width.max(orig.height) || (ours.width, ours.height) != want {
+        return Err(format!(
+            "{}x{} is not the game's {}x{} texture scaled to {side}",
+            ours.width, ours.height, orig.width, orig.height
+        ));
+    }
+    Ok(())
+}
+
+/// What `id`'s pak must match, from the game's own files. A game archive that cannot be
+/// read leaves those checks out; the pak's own integrity is always checked.
+pub fn expect_for(id: AddonId, paths: &GamePaths) -> Expect {
+    match info(id).kind {
+        Kind::Native(native) => VpkDir::open(&paths.citadel_dir.join(GAME_PAK))
+            .ok()
+            .and_then(|pak| native.expect(&pak).ok())
+            .unwrap_or_default(),
+        Kind::Toggle | Kind::Textures => Expect::default(),
+    }
 }
 
 /// The HUD pak patches whichever stylesheets the layout touches; each must come from the
 /// game's file at the same path.
 pub fn expect_for_hud(paths: &GamePaths, pak: &VpkDir) -> Expect {
-    let originals = pak
+    let checks = pak
         .entries
         .keys()
         .filter(|p| p.ends_with(".vcss_c"))
-        .filter_map(|p| game_file(paths, p).map(|b| (p.clone(), b)))
+        .filter_map(|p| game_file(paths, p).map(|b| (p.clone(), Check::StyleFrom(b))))
         .collect();
     Expect {
         particle_stub: None,
-        originals,
+        checks,
     }
 }
 
@@ -268,7 +371,7 @@ pub fn verify_installed(paths: &GamePaths, state_dir: &Path) -> Vec<PakReport> {
         };
         let path = dir.join(&rec.file);
         let result = VpkDir::open(&path)
-            .map(|pak| verify(&pak, &expect_for(id, paths, state_dir)))
+            .map(|pak| verify(&pak, &expect_for(id, paths)))
             .map_err(|e| e.to_string());
         out.push(PakReport {
             label: info(id).name.to_string(),
@@ -305,8 +408,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::addons::BlurOptions;
-    use crate::addons::install;
+    use crate::addons::native::tests::fake_game;
+    use crate::addons::{AddonsConfig, Native, ScopeOptions, install, native_blur, sources};
     use crate::hud::vpk;
     use crate::texture::vtex::tests::{COLOR, MASK};
 
@@ -314,50 +417,31 @@ mod tests {
         VpkDir::open(&sources::tests::research(dir, file)).unwrap()
     }
 
+    fn one(path: &str, bytes: Vec<u8>) -> VpkDir {
+        VpkDir::in_memory(vpk::write(&BTreeMap::from([(path.to_string(), bytes)]))).unwrap()
+    }
+
+    fn with_check(path: &str, check: Check) -> Expect {
+        Expect {
+            particle_stub: None,
+            checks: BTreeMap::from([(path.to_string(), check)]),
+        }
+    }
+
     #[test]
-    fn every_upstream_file_passes() {
+    fn every_upstream_file_passes_the_generic_checks() {
         for (dir, file) in [
             ("Sinner Light Fix Mod", "pak26_dir.vpk"),
             ("Vindicta Scope Downscale", "pak89_dir.vpk"),
             ("Optimized Soul Container", "pak01_dir.vpk"),
             ("Blur Disabler", "pak97_dir.vpk"),
+            ("Screenspace Particle Disabler", "pak02_dir.vpk"),
         ] {
             let pak = upstream(dir, file);
             let got = verify(&pak, &Expect::default());
             assert!(got.is_ok(), "{file}: {got}");
             assert_eq!(got.entries, pak.entries.len());
         }
-        let particles = upstream("Screenspace Particle Disabler", "pak02_dir.vpk");
-        let stub = particles::stub_from_upstream(&particles).unwrap();
-        let expect = Expect {
-            particle_stub: Some(stub.particle),
-            originals: BTreeMap::new(),
-        };
-        let got = verify(&particles, &expect);
-        assert!(got.is_ok(), "{got}");
-        assert_eq!(got.entries, 109);
-    }
-
-    #[test]
-    fn generated_blur_pak_passes_against_the_games_stylesheet() {
-        let tmp = tempfile::tempdir().unwrap();
-        let game = blur::tests::fake_game_pak(tmp.path());
-        let built = blur::build(&game, &BlurOptions::default()).unwrap();
-        let pak = VpkDir::in_memory(vpk::write(&BTreeMap::from([(
-            blur::STYLE.to_string(),
-            built,
-        )])))
-        .unwrap();
-        let expect = Expect {
-            particle_stub: None,
-            originals: BTreeMap::from([(blur::STYLE.to_string(), game.read(blur::STYLE).unwrap())]),
-        };
-        let got = verify(&pak, &expect);
-        assert!(got.is_ok(), "{got}");
-        assert_eq!(
-            got.to_string(),
-            format!("ok: 1 entries, {} bytes", got.bytes)
-        );
     }
 
     #[test]
@@ -392,7 +476,7 @@ mod tests {
 
     #[test]
     fn a_stylesheet_with_a_damaged_image_table_fails() {
-        let mut res = Resource::parse(&blur::tests::vanilla_style()).unwrap();
+        let mut res = Resource::parse(&native_blur::tests::vanilla_style()).unwrap();
         let data = &mut res
             .blocks
             .iter_mut()
@@ -400,12 +484,7 @@ mod tests {
             .unwrap()
             .data;
         data[4..6].copy_from_slice(&7u16.to_le_bytes());
-        let pak = VpkDir::in_memory(vpk::write(&BTreeMap::from([(
-            blur::STYLE.to_string(),
-            res.to_bytes(),
-        )])))
-        .unwrap();
-        let got = verify(&pak, &Expect::default());
+        let got = verify(&one(native_blur::STYLE, res.to_bytes()), &Expect::default());
         assert_eq!(got.problems.len(), 1, "{got}");
         assert!(
             got.problems[0].contains("image"),
@@ -415,18 +494,12 @@ mod tests {
 
     #[test]
     fn a_stylesheet_from_another_source_fails_the_original_comparison() {
-        let vanilla = blur::tests::vanilla_style();
+        let vanilla = native_blur::tests::vanilla_style();
         let other = include_bytes!("../../tests/fixtures/hud/hud_vanilla.vcss_c").to_vec();
-        let pak = VpkDir::in_memory(vpk::write(&BTreeMap::from([(
-            blur::STYLE.to_string(),
-            other,
-        )])))
-        .unwrap();
-        let expect = Expect {
-            particle_stub: None,
-            originals: BTreeMap::from([(blur::STYLE.to_string(), vanilla)]),
-        };
-        let got = verify(&pak, &expect);
+        let got = verify(
+            &one(native_blur::STYLE, other),
+            &with_check(native_blur::STYLE, Check::StyleFrom(vanilla)),
+        );
         assert_eq!(got.problems.len(), 1, "{got}");
         assert!(
             got.problems[0].contains("differs from the game's file"),
@@ -435,33 +508,112 @@ mod tests {
     }
 
     #[test]
-    fn a_particle_pak_without_the_stub_fails() {
-        let upstream = upstream("Screenspace Particle Disabler", "pak02_dir.vpk");
-        let stub = particles::stub_from_upstream(&upstream).unwrap();
-        let mut files = BTreeMap::from([
-            (particles::STUB_PATH.to_string(), stub.particle.clone()),
-            (particles::DEBUG_TEXTURE.to_string(), stub.texture.clone()),
-        ]);
-        let expect = Expect {
-            particle_stub: Some(stub.particle.clone()),
-            originals: BTreeMap::new(),
-        };
-        let pak = VpkDir::in_memory(vpk::write(&files)).unwrap();
-        assert!(verify(&pak, &expect).is_ok());
+    fn the_blur_base_must_be_the_games_current_file() {
+        let game = fake_game();
+        let mut files = Native::Blur.build(&game, &AddonsConfig::default()).unwrap();
+        let expect = Native::Blur.expect(&game).unwrap();
+        assert!(verify(&VpkDir::in_memory(vpk::write(&files)).unwrap(), &expect).is_ok());
+        files.insert(
+            native_blur::BASE.to_string(),
+            include_bytes!("../../tests/fixtures/hud/hud_vanilla.vcss_c").to_vec(),
+        );
+        let got = verify(&VpkDir::in_memory(vpk::write(&files)).unwrap(), &expect);
+        assert_eq!(
+            got.problems,
+            [format!(
+                "{}: not the game's current file",
+                native_blur::BASE
+            )]
+        );
+    }
 
-        let mut wrong = stub.particle.clone();
+    #[test]
+    fn a_particle_pak_with_another_particle_fails() {
+        let game = fake_game();
+        let mut files = Native::Particles
+            .build(&game, &AddonsConfig::default())
+            .unwrap();
+        let expect = Native::Particles.expect(&game).unwrap();
+        assert!(verify(&VpkDir::in_memory(vpk::write(&files)).unwrap(), &expect).is_ok());
+        let mut wrong = expect.particle_stub.clone().unwrap();
         wrong.push(0);
         files.insert(
             "particles/abilities/lash/lash_final_strike_screen.vpcf_c".into(),
             wrong,
         );
-        let pak = VpkDir::in_memory(vpk::write(&files)).unwrap();
-        let got = verify(&pak, &expect);
+        let got = verify(&VpkDir::in_memory(vpk::write(&files)).unwrap(), &expect);
         assert_eq!(
             got.problems,
             [
-                "particles/abilities/lash/lash_final_strike_screen.vpcf_c: not the upstream empty-particle stub"
+                "particles/abilities/lash/lash_final_strike_screen.vpcf_c: not the game's empty particle"
             ]
+        );
+    }
+
+    #[test]
+    fn the_sinner_mask_must_be_the_games_top_level_alone_and_the_model_pinned() {
+        let game = fake_game();
+        let files = Native::Sinner
+            .build(&game, &AddonsConfig::default())
+            .unwrap();
+        let expect = Native::Sinner.expect(&game).unwrap();
+        let mask = game.read(native_sinner::MASK).unwrap();
+        let got = verify(&one(native_sinner::MASK, mask), &expect);
+        assert_eq!(got.problems.len(), 1, "{got}");
+        assert!(got.problems[0].contains("mip levels"), "{got}");
+
+        let mut ours = files[native_sinner::MASK].clone();
+        let last = ours.len() - 1;
+        ours[last] ^= 0xff;
+        let got = verify(&one(native_sinner::MASK, ours), &expect);
+        assert!(got.problems[0].contains("largest level"), "{got}");
+
+        let model = game.read(native_sinner::MODEL).unwrap();
+        let got = verify(&one(native_sinner::MODEL, model), &expect);
+        assert_eq!(got.problems.len(), 1, "{got}");
+        assert!(got.problems[0].contains("LOD arrays"), "{got}");
+        let upstream = upstream("Sinner Light Fix Mod", "pak26_dir.vpk");
+        assert!(
+            verify(&upstream, &expect).is_ok(),
+            "upstream is the same rebuild"
+        );
+    }
+
+    #[test]
+    fn the_scope_texture_must_be_the_games_scaled_with_its_aspect() {
+        let game = fake_game();
+        let config = AddonsConfig {
+            scope: ScopeOptions { side: 256 },
+            ..AddonsConfig::default()
+        };
+        let files = Native::Scope.build(&game, &config).unwrap();
+        let expect = Native::Scope.expect(&game).unwrap();
+        let pak = VpkDir::in_memory(vpk::write(&files)).unwrap();
+        assert!(verify(&pak, &expect).is_ok());
+
+        let ours = &files[native_scope::TEXTURE];
+        let v = Vtex::parse(ours).unwrap();
+        let mut res = Resource::parse(ours).unwrap();
+        let data = &mut res
+            .blocks
+            .iter_mut()
+            .find(|b| &b.name == b"DATA")
+            .unwrap()
+            .data;
+        data[22..24].copy_from_slice(&128u16.to_le_bytes());
+        let mut squashed = res.to_bytes();
+        squashed.extend_from_slice(&ours[v.pixel_start()..v.pixel_start() + 256 * 128 * 4]);
+        let got = verify(&one(native_scope::TEXTURE, squashed), &expect);
+        assert_eq!(got.problems.len(), 1, "{got}");
+        assert!(got.problems[0].contains("256x128"), "{got}");
+
+        let upstream = upstream("Vindicta Scope Downscale", "pak89_dir.vpk")
+            .read(native_scope::TEXTURE)
+            .unwrap();
+        let got = verify(&one(native_scope::TEXTURE, upstream), &expect);
+        assert!(
+            got.problems[0].contains("1080x1080"),
+            "larger than this fake game's 512 original: {got}"
         );
     }
 
@@ -491,21 +643,11 @@ mod tests {
     }
 
     #[test]
-    fn verify_installed_covers_addons_and_the_hud_pak() {
+    fn verify_installed_covers_native_addons_and_the_hud_pak() {
         let (steam, paths) = install::tests::fake_install("1");
         let state = steam.path().join("data");
         assert!(verify_installed(&paths, &state).is_empty());
-        sources::import(
-            &sources::cache_dir(&state),
-            &sources::tests::research("Sinner Light Fix Mod", "pak26_dir.vpk"),
-        )
-        .unwrap();
-        sources::import(
-            &sources::cache_dir(&state),
-            &sources::tests::research("Blur Disabler", "pak97_dir.vpk"),
-        )
-        .unwrap();
-        let config = super::super::AddonsConfig {
+        let config = AddonsConfig {
             enabled: [AddonId::SinnerLightFix, AddonId::BlurDisabler]
                 .into_iter()
                 .collect(),
@@ -536,6 +678,28 @@ mod tests {
             facts[0].contains("base/citadel_base_styles.vcss_c: v3 blocks [RED2:787 DATA:98558 SrMa:97775] images 0 (table 2 bytes)")
                 && facts[0].contains("prefix a14d7c62 crc32(text) 40574f7b"),
             "{facts:?}"
+        );
+        assert!(
+            text[1].starts_with("Sinner's Sacrifice light fix (pak73_dir.vpk): ok: 2 entries"),
+            "{text:?}"
+        );
+
+        let mut base = native_blur::tests::vanilla_style();
+        base[100] ^= 1;
+        std::fs::write(
+            paths.citadel_dir.join(GAME_PAK),
+            vpk::write(&BTreeMap::from([(native_blur::STYLE.to_string(), base)])),
+        )
+        .unwrap();
+        let reports = verify_installed(&paths, &state);
+        let blur = &reports[0].result.as_ref().unwrap().problems;
+        assert_eq!(
+            blur,
+            &[format!(
+                "{}: not the game's current file",
+                native_blur::BASE
+            )],
+            "a game update shows up as a stale base"
         );
 
         std::fs::write(addons_dir(&paths).join("pak73_dir.vpk"), b"broken").unwrap();

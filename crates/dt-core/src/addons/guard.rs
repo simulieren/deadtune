@@ -321,8 +321,8 @@ pub fn rollback(guard: &mut Guard, ids: &[AddonId], paths: &GamePaths, state_dir
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::addons::AddonsConfig;
     use crate::addons::install::tests::fake_install;
-    use crate::addons::{AddonsConfig, sources};
 
     const T0: u64 = 1_800_000_000;
 
@@ -580,16 +580,6 @@ mod tests {
     fn rollback_removes_only_the_changed_addons_and_only_our_files() {
         let (steam, paths) = fake_install("1");
         let state = steam.path().join("data");
-        sources::import(
-            &sources::cache_dir(&state),
-            &sources::tests::research("Sinner Light Fix Mod", "pak26_dir.vpk"),
-        )
-        .unwrap();
-        sources::import(
-            &sources::cache_dir(&state),
-            &sources::tests::research("Blur Disabler", "pak97_dir.vpk"),
-        )
-        .unwrap();
         let config = AddonsConfig {
             enabled: [AddonId::SinnerLightFix, AddonId::BlurDisabler]
                 .into_iter()

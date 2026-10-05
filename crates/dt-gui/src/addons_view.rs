@@ -7,13 +7,16 @@ use std::path::PathBuf;
 
 use dt_core::addons::install::{Action, Blocker, InstalledState, game_updated_since};
 use dt_core::addons::textures::{category_label, summary};
-use dt_core::addons::{self, AddonId, AddonInfo, Kind, Source, particles};
-use dt_core::addons::{Factor, TextureCategory, TextureDownscale};
+use dt_core::addons::{self, AddonId, AddonInfo, Kind, Native, Source, particles};
+use dt_core::addons::{Factor, ScopeOptions, TextureCategory, TextureDownscale};
 use eframe::egui::{self, Align, Color32, Layout, RichText, Ui, vec2};
 
 use crate::simple::{caption, card_title, switch};
 use crate::state::{AppState, Badge, Status};
 use crate::theme::{self, ACCENT, BAD, GOOD, WARN, WEAK};
+
+/// Width kept free on the right of a card's header for the status line and badge.
+const STATUS_COLUMN: f32 = 250.0;
 
 enum Edit {
     Enable(AddonId, bool),
@@ -21,6 +24,7 @@ enum Edit {
     Particle(&'static str, bool),
     AllParticles(bool),
     Blur(addons::BlurOptions),
+    Scope(ScopeOptions),
     Textures(TextureDownscale),
     Import(PathBuf),
     #[cfg(feature = "fetch")]
@@ -102,6 +106,7 @@ pub fn addons(ui: &mut Ui, state: &mut AppState) {
                 }
             }
             Edit::Blur(opts) => state.set_blur(opts),
+            Edit::Scope(opts) => state.set_scope(opts),
             Edit::Textures(cfg) => state.set_textures(cfg),
             Edit::Import(path) => {
                 state.status = Some(match state.import_addon(&path) {
@@ -140,7 +145,10 @@ pub fn addons(ui: &mut Ui, state: &mut AppState) {
 }
 
 fn info_has_options(id: AddonId) -> bool {
-    !matches!(addons::info(id).kind, Kind::Toggle)
+    !matches!(
+        addons::info(id).kind,
+        Kind::Toggle | Kind::Native(Native::Sinner)
+    )
 }
 
 /// Colour and text for the card's status line, from the previewed plan and the record.
@@ -162,6 +170,7 @@ fn status(
         Some(InstalledState::Current(_) | InstalledState::Stale(_))
     );
     let building = info.id == AddonId::TextureDownscaler && state.texture_build.is_some();
+    let native = matches!(info.kind, Kind::Native(_));
     match state.addon_action(info.id) {
         _ if building => (ACCENT, "Building now".into(), None),
         None if on => match (state.addons_error(), &state.preview) {
@@ -179,6 +188,14 @@ fn status(
         },
         None => (WEAK, "Off".into(), None),
         Some(Action::Keep) => (GOOD, "Installed".into(), None),
+        Some(Action::Write(_)) if native && is_installed => (
+            ACCENT,
+            "Rebuilds from your game files on Apply".into(),
+            None,
+        ),
+        Some(Action::Write(_)) if native => {
+            (ACCENT, "Builds from your game files on Apply".into(), None)
+        }
         Some(Action::Write(_)) if is_installed => (ACCENT, "Rebuilds on Apply".into(), None),
         Some(Action::Write(_)) => (ACCENT, "Installs on Apply".into(), None),
         Some(Action::Remove) => (WARN, "Comes off on Apply".into(), None),
@@ -375,14 +392,15 @@ fn card(
             }
             ui.add_space(4.0);
             ui.vertical(|ui| {
+                // A wrapped description would otherwise take the whole row and squeeze the
+                // status column on the right into one character per line.
+                ui.set_max_width(ui.available_width() - STATUS_COLUMN);
                 ui.spacing_mut().item_spacing.y = 2.0;
                 ui.horizontal(|ui| {
                     card_title(ui, info.name);
                     ui.add_space(4.0);
                     ui.hyperlink_to(
-                        RichText::new(format!("by {}", info.author))
-                            .small()
-                            .color(WEAK),
+                        RichText::new(info.credit()).small().color(WEAK),
                         info.credit_url,
                     )
                     .on_hover_text(info.credit_url);
@@ -425,15 +443,14 @@ fn card(
                 });
             });
         });
-        if info.id == AddonId::BlurDisabler
-            && !state.profile.addons.blur.rebuild
+        if info.kind == Kind::Toggle
             && let Some(InstalledState::Current(rec)) = installed
             && game_updated_since(rec, &state.paths)
         {
             ui.colored_label(
                 WARN,
-                "Deadlock updated since this was installed. If the blur is back, Sqooky may have \
-                 published a newer file: download or import it again.",
+                "Deadlock updated since this was installed. If it stopped working, its author \
+                 may have published a newer file: download or import it again.",
             );
         }
         for c in state.addon_conflicts(info.id) {
@@ -472,10 +489,11 @@ fn card(
         }
         ui.add_space(4.0);
         match info.kind {
-            Kind::ParticleGroups => particle_options(ui, state, edits),
-            Kind::Blur => blur_options(ui, state, edits),
+            Kind::Native(Native::Particles) => particle_options(ui, state, edits),
+            Kind::Native(Native::Blur) => blur_options(ui, state, edits),
+            Kind::Native(Native::Scope) => scope_options(ui, state, edits),
             Kind::Textures => texture_options(ui, state, edits),
-            Kind::Toggle => {}
+            Kind::Native(Native::Sinner) | Kind::Toggle => {}
         }
     });
 }
@@ -540,56 +558,46 @@ fn particle_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
 
 fn blur_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
     let blur = state.profile.addons.blur;
-    if !blur.rebuild {
-        ui.label(
-            RichText::new(
-                "Sqooky's published pak97, copied as is (a stub stylesheet plus its copy of the game's base \
-                 stylesheet). After a game patch it can go out of date; DeadTune warns on the card when the game \
-                 updated since it was installed, and a newer file from Sqooky's repository replaces it.",
-            )
-            .small()
-            .color(WEAK),
-        );
-        ui.add_space(4.0);
-    }
-    let mut rebuild = blur.rebuild;
-    if ui
-        .checkbox(
-            &mut rebuild,
-            RichText::new("Experimental: rebuild from my game files (may stop Deadlock from starting)")
-                .color(WARN),
-        )
-        .on_hover_text(
-            "Rewrites the two blur defines inside your game's current citadel_base_styles.vcss_c instead of \
-             using Sqooky's file. The first such build stopped Deadlock from starting. The pak is read back \
-             before it is installed, and the next launch is a trial: if the game fails to start, DeadTune removes it.",
-        )
-        .changed()
-    {
-        edits.push(Edit::Blur(addons::BlurOptions { rebuild, ..blur }));
-    }
-    if !blur.rebuild {
-        return;
-    }
-    ui.indent("blur_rebuild_options", |ui| {
-        caption(ui, "Turn off blur behind");
-        ui.horizontal(|ui| {
-            let mut hud = blur.hud;
-            let mut menu = blur.menu;
-            let a = ui
-                .checkbox(&mut hud, "HUD panels (minimap frame and friends)")
-                .changed();
-            let b = ui.checkbox(&mut menu, "Menus").changed();
-            if a || b {
-                edits.push(Edit::Blur(addons::BlurOptions { hud, menu, ..blur }));
-            }
-        });
-        ui.label(
-            RichText::new("Rebuilt automatically after every game update.")
-                .small()
-                .color(WEAK),
-        );
+    caption(ui, "Turn off blur behind");
+    ui.horizontal(|ui| {
+        let mut hud = blur.hud;
+        let mut menu = blur.menu;
+        let a = ui
+            .checkbox(&mut hud, "HUD panels (minimap frame and friends)")
+            .changed();
+        let b = ui.checkbox(&mut menu, "Menus").changed();
+        if a || b {
+            edits.push(Edit::Blur(addons::BlurOptions { hud, menu }));
+        }
     });
+    let note = if blur.hud || blur.menu {
+        "Sqooky's stub stylesheet over your game's own base stylesheet, so it never goes stale: \
+         rebuilt automatically after every game update."
+    } else {
+        "Both left on means nothing to install."
+    };
+    ui.label(RichText::new(note).small().color(WEAK));
+}
+
+fn scope_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
+    let scope = state.profile.addons.scope;
+    ui.horizontal(|ui| {
+        caption(ui, "Scope size");
+        for side in [720u16, 1080, 1440, 2048] {
+            let label = format!("{side} px");
+            if ui.selectable_label(scope.side == side, label).clicked() && scope.side != side {
+                edits.push(Edit::Scope(ScopeOptions { side }));
+            }
+        }
+    });
+    ui.label(
+        RichText::new(
+            "1080 px is what the published mod ships and fills a 1080p screen; pick the next size up for a \
+             1440p or 4K screen. The game's own overlay is 4096 px. Rebuilt automatically after every game update.",
+        )
+        .small()
+        .color(WEAK),
+    );
 }
 
 fn texture_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
@@ -711,11 +719,12 @@ fn texture_options(ui: &mut Ui, state: &AppState, edits: &mut Vec<Edit>) {
 fn import_card(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     theme::card().show(ui, |ui| {
         ui.set_width(ui.available_width());
-        card_title(ui, "Import downloaded files");
+        card_title(ui, "Import a downloaded file");
         ui.label(
             RichText::new(
-                "Have the upstream .vpk files already? Paste the path to one file or to the extracted folder. \
-                 DeadTune recognises them by content, whatever they are called.",
+                "Only the soul container is a download (Jayie's hand-made model); the other addons are rebuilt \
+                 from your game files. Have its pak01_dir.vpk already? Paste the path to the file or to the \
+                 extracted folder. DeadTune recognises it by content, whatever it is called.",
             )
             .color(WEAK),
         );

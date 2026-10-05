@@ -89,6 +89,19 @@ fn extra_kinds(data: &[u8]) -> impl Iterator<Item = u32> + '_ {
         .filter_map(u32_at)
 }
 
+/// Size of a `width` x `height` texture scaled so its longer side is `side` (clamped to
+/// `MIN_SIDE`), aspect kept; the input size when `side` is not smaller.
+pub fn target_dims(width: u16, height: u16, side: u16) -> (u16, u16) {
+    let long = width.max(height);
+    let side = side.max(MIN_SIDE);
+    if side >= long {
+        return (width, height);
+    }
+    let scale = f64::from(side) / f64::from(long);
+    let shrink = |d: u16| ((f64::from(d) * scale).round() as u16).max(1);
+    (shrink(width), shrink(height))
+}
+
 /// `original` (a whole `.vtex_c`) with its single mip area-averaged so the longer side is
 /// `side`, clamped to `MIN_SIDE`; the input unchanged when `side` is not smaller.
 pub fn resize(original: &[u8], side: u16) -> Result<Vec<u8>, ScopeError> {
@@ -138,14 +151,10 @@ pub fn resize(original: &[u8], side: u16) -> Result<Vec<u8>, ScopeError> {
         ));
     }
 
-    let long = v.width.max(v.height);
-    let side = side.max(MIN_SIDE);
-    if side >= long {
+    let (width, height) = target_dims(v.width, v.height, side);
+    if (width, height) == (v.width, v.height) {
         return Ok(original.to_vec());
     }
-    let scale = f64::from(side) / f64::from(long);
-    let shrink = |d: u16| ((f64::from(d) * scale).round() as u16).max(1);
-    let (width, height) = (shrink(v.width), shrink(v.height));
     let image = Image::new(
         u32::from(v.width),
         u32::from(v.height),
@@ -185,7 +194,7 @@ pub fn build(game: &VpkDir, opts: &ScopeOptions) -> Result<BTreeMap<String, Vec<
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::addons::sources;
     use crate::addons::verify::{Expect, verify};
@@ -287,7 +296,7 @@ mod tests {
 
     /// Upstream's header with the dims patched, over pixels nearest-neighbour upscaled
     /// from upstream's own: the game's original, as near as we can make it on this Mac.
-    fn synthetic_original(side: usize) -> Vec<u8> {
+    pub fn synthetic_original(side: usize) -> Vec<u8> {
         let up = upstream();
         let v = Vtex::parse(&up).unwrap();
         let (w, start) = (v.width as usize, v.pixel_start());

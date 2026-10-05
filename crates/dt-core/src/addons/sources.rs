@@ -138,28 +138,28 @@ pub(crate) mod tests {
         let cache = cache_dir(tmp.path());
         let renamed = tmp.path().join("whatever.vpk");
         std::fs::copy(
-            research("Vindicta Scope Downscale", "pak89_dir.vpk"),
+            research("Optimized Soul Container", "pak01_dir.vpk"),
             &renamed,
         )
         .unwrap();
-        assert_eq!(cached(&cache, AddonId::VindictaScope).unwrap(), None);
+        assert_eq!(cached(&cache, AddonId::SoulContainer).unwrap(), None);
         assert_eq!(
             import(&cache, &renamed).unwrap(),
-            vec![AddonId::VindictaScope]
+            vec![AddonId::SoulContainer]
         );
-        let got = cached(&cache, AddonId::VindictaScope).unwrap().unwrap();
-        assert_eq!(got.path, cache.join("vindicta_scope/pak89_dir.vpk"));
+        let got = cached(&cache, AddonId::SoulContainer).unwrap().unwrap();
+        assert_eq!(got.path, cache.join("soul_container/pak01_dir.vpk"));
         assert!(got.path.is_file());
         assert_eq!(cached(&cache, AddonId::BlurDisabler).unwrap(), None);
     }
 
     #[test]
-    fn imports_every_known_file_from_a_folder_and_rejects_strangers() {
+    fn imports_the_soul_container_from_a_folder_and_rejects_the_rest() {
         let tmp = tempfile::tempdir().unwrap();
         let cache = cache_dir(tmp.path());
         let folder = tmp.path().join("Various Addons");
         for (dir, file) in [
-            ("Screenspace Particle Disabler", "pak02_dir.vpk"),
+            ("Optimized Soul Container", "pak01_dir.vpk"),
             ("Sinner Light Fix Mod", "pak26_dir.vpk"),
         ] {
             std::fs::create_dir_all(folder.join(dir)).unwrap();
@@ -169,7 +169,8 @@ pub(crate) mod tests {
         std::fs::write(folder.join("stranger_dir.vpk"), b"not an addon").unwrap();
         assert_eq!(
             import(&cache, &folder).unwrap(),
-            vec![AddonId::ParticleDisabler, AddonId::SinnerLightFix]
+            vec![AddonId::SoulContainer],
+            "the rebuilt addons' upstream files are no longer anything to import"
         );
         let stranger = folder.join("stranger_dir.vpk");
         assert!(matches!(
@@ -188,10 +189,10 @@ pub(crate) mod tests {
     fn a_corrupt_cache_file_reads_as_absent() {
         let tmp = tempfile::tempdir().unwrap();
         let cache = cache_dir(tmp.path());
-        let path = cache.join("sinner_light_fix/pak26_dir.vpk");
+        let path = cache.join("soul_container/pak01_dir.vpk");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, b"garbage").unwrap();
-        assert_eq!(cached(&cache, AddonId::SinnerLightFix).unwrap(), None);
+        assert_eq!(cached(&cache, AddonId::SoulContainer).unwrap(), None);
     }
 
     #[cfg(feature = "fetch")]

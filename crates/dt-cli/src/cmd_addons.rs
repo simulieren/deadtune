@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use dt_core::addons::install::{self, Action, InstalledState};
-use dt_core::addons::{self, AddonId, Kind, Source, sources, textures};
+use dt_core::addons::{self, AddonId, Kind, Native, Source, sources, textures};
 use dt_core::locate::GamePaths;
 
 use crate::args::{Args, CliError, CliResult, fail, usage};
@@ -18,7 +18,7 @@ fn parse_id(text: &str) -> Result<AddonId, CliError> {
 
 fn source_status(env: &Env, id: AddonId) -> String {
     match addons::info(id).source {
-        Source::Generated => "generated from game files".to_string(),
+        Source::Generated => "nothing to download".to_string(),
         Source::Upstream { url, .. } => {
             match sources::cached(&sources::cache_dir(&env.data_dir), id) {
                 Ok(Some(_)) => "downloaded".to_string(),
@@ -53,17 +53,14 @@ pub fn list(env: &Env, args: &Args) -> CliResult {
             Some(InstalledState::Foreign(_)) => "file replaced by another program",
         };
         let kind = match a.kind {
-            Kind::Toggle => "on/off",
-            Kind::ParticleGroups => "per effect group",
-            Kind::Blur => "upstream pak; or rebuilt from game files (experimental)",
+            Kind::Toggle => "on/off, the author's file",
+            Kind::Native(Native::Particles) => "per effect group, rebuilt from your game files",
+            Kind::Native(Native::Blur) => "HUD and menu blur, rebuilt from your game files",
+            Kind::Native(Native::Sinner) => "on/off, rebuilt from your game files",
+            Kind::Native(Native::Scope) => "scope size, rebuilt from your game files",
             Kind::Textures => "built on demand",
         };
-        println!(
-            "{enabled} {:<20} {:<40} by {}",
-            a.id.key(),
-            a.name,
-            a.author
-        );
+        println!("{enabled} {:<20} {:<40} {}", a.id.key(), a.name, a.credit());
         println!(
             "    {kind}; {installed}; {}\n    {}",
             source_status(env, a.id),
@@ -150,7 +147,7 @@ pub fn fetch(env: &Env, args: &Args) -> CliResult {
 #[cfg(not(feature = "fetch"))]
 pub fn fetch(_: &Env, _: &Args) -> CliResult {
     Err(fail(
-        "this build has no downloader; download the file from https://github.com/Sqooky/OptimizationLock and run `addons import <file>`",
+        "this build has no downloader; only the soul container needs one: download its pak01_dir.vpk from https://github.com/Sqooky/OptimizationLock and run `addons import <file>`",
     ))
 }
 

@@ -30,12 +30,22 @@ cargo check -p dt-gui -p dt-cli --target x86_64-pc-windows-gnu --features dt-gui
 
 All four must pass before you commit. Run the full workspace tests, not just your crate. Read the passed/failed totals; cargo stops at the first failing test binary. GitHub Actions is disabled, so the Windows cross-check above is the only Windows build gate on the Mac.
 
-Run the GUI against a fake game:
+Open the app on a fake game with one command (builds with the quick `fast` profile, about 2 s after a change; the first build of a worktree takes about a minute):
+
+```sh
+scripts/app.sh                                   # fake install + throwaway data in target/
+scripts/app.sh --images <Save all images folder> # previews and UI images page from an export
+scripts/app.sh --fresh                           # new fake install and empty data
+```
+
+Or by hand:
 
 ```sh
 G=$(scripts/fake-install.sh /tmp/dt-fake)
 DEADTUNE_DATA_DIR=/tmp/dt-data cargo run -p dt-gui -- --game-dir "$G"
 ```
+
+Build profiles: `dev` optimises dependencies (`opt-level = 2`) and dt-core a little (`opt-level = 1`), so debug runs and texture tests are fast while our own code still rebuilds in seconds. `fast` is release without LTO, for running locally. `release` (size-optimised, fat LTO) is only for shipping and takes minutes.
 
 Use a throwaway `DEADTUNE_DATA_DIR`; never point experiments at the real data dir. Put `onboarded = true` in `<data>/settings.toml` to skip the welcome screen.
 

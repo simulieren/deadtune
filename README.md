@@ -63,6 +63,10 @@ DeadTune turns that into an app:
 
 <img src="docs/images/health.png" alt="Health bar page: Big number preset, size slider, colour by health and a preview at three health levels" width="900">
 
+- **UI images page**: browse all of the game's interface images (about 2,700) by folder, then drag a PNG or SVG onto the page to replace one. Your picture is sized to the game's slot. Choose Fit, Fill or Stretch, or drag and zoom it into place, and see it next to the original. Recolour images one at a time or in bulk (tint, colorize, hue, brightness, swap a vector icon's colours) with undo. Pick several tiles to export or recolour them together. **Export › My changes** saves every changed image as one zip. Drop that zip, or any folder of images named like the game's, back on the page to import it as a collection after a preview.
+
+<img src="docs/images/ui-images.png" alt="UI images page: folder list, thumbnail grid with two picked tiles, and a replaced minimap icon filled and positioned in its slot" width="900">
+
 All of these are written from scratch against your installed game files and go into the same single HUD addon; the mods that inspired them are credited in the app and stay their authors' work.
 
 ### Performance addons

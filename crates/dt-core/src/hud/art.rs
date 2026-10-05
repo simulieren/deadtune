@@ -136,7 +136,8 @@ pub struct Hero {
     /// 25 px on screen (the local hero's 28 px, with the bust at 110%).
     pub marker: Art,
     /// The top bar badge's `#HeroImage`: the `_card` bust, the one picture whose 280x380
-    /// frame the badge's mask (`PORTRAIT_MASK`) is cut for. 80% of the 88 px player panel
+    /// frame the badge's mask (`hero_badges/hero_image_mask_psd`, straight top, round
+    /// bottom) is cut for. 80% of the 88 px player panel
     /// wide, so 70x95, over a 70 px disc at its bottom.
     pub portrait: Art,
 }
@@ -175,12 +176,6 @@ pub const ENEMIES: [Hero; 6] = [
     hero!("warden"),
 ];
 
-/// `CitadelHeroBadge #HeroImage`'s opacity mask: straight sides and top, a round bottom.
-pub const PORTRAIT_MASK: Art = art(
-    "panorama/images/hero_badges/hero_image_mask_psd.vtex_c",
-    70,
-    95,
-);
 /// `.team1 .TeamIcon` / `.team2 .TeamIcon`, beside each team's souls.
 pub const TEAM_ICONS: [Art; 2] = [
     art("panorama/images/hud/core/icon_team1_psd.vtex_c", 30, 26),
@@ -211,24 +206,13 @@ pub const PORTRAIT_HEALTH: Art = art(
     16,
     50,
 );
-/// `#HealthBar_Contents`'s opacity mask, the slanted bar the fill shows through.
-pub const PORTRAIT_HEALTH_MASK: Art = art(
-    "panorama/images/hud/healthbar/healthbar_backer_vert_mask.vsvg_c",
-    16,
-    50,
-);
 
 /// `.healthBacker`, washed vivacious green, behind the health number (90% of 100x65).
 pub const HEALTH_BACKER: Art = art("panorama/images/hud/core/health_backer.vsvg_c", 90, 65);
-/// `#health_bar .ProgressBarLeft`: paper texture, offWhite, cut by `HEALTH_MASK`.
+/// `#health_bar .ProgressBarLeft`: paper texture, offWhite, cut to the bar's slanted ruler
+/// shape by `healthbar_backer_mask`.
 pub const HEALTH_FILL: Art = art(
     "panorama/images/hud/healthbar/healthbar_fill_texture_png.vtex_c",
-    66,
-    212,
-);
-/// `#health_bar`'s opacity mask: the slanted ruler shape of the bar.
-pub const HEALTH_MASK: Art = art(
-    "panorama/images/hud/healthbar/healthbar_backer_mask.vsvg_c",
     66,
     212,
 );
@@ -251,17 +235,14 @@ pub fn all() -> Vec<Art> {
         MINIMAP_MAP,
         MINIMAP_FRAME,
         VIEW_CONE,
-        PORTRAIT_MASK,
         TEAM_REJUV,
         REJUV_ICON,
         ULTIMATE_OFF,
         ULTIMATE,
         SKULL,
         PORTRAIT_HEALTH,
-        PORTRAIT_HEALTH_MASK,
         HEALTH_BACKER,
         HEALTH_FILL,
-        HEALTH_MASK,
         HEALTH_FRAME,
         REGEN,
     ];
@@ -315,7 +296,6 @@ mod tests {
                 h.portrait.path
             );
         }
-        assert_eq!(PORTRAIT_MASK.size, ALLIES[0].portrait.size);
     }
 
     fn missing_in(listed: &std::collections::BTreeSet<&str>) -> Vec<&'static str> {

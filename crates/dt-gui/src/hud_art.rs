@@ -126,8 +126,47 @@ impl Images<'_> {
         }
     }
 
-    /// Paints the top of `art` cut to a circle of `radius` around `centre`, as Panorama's
-    /// round portrait masks do; false when the picture is not available.
+    /// Paints `art`, laid over `image`, only inside the convex polygon `shape` (screen
+    /// points, in order round the outline), the way Panorama's opacity masks cut a picture.
+    /// Pixels of `image` outside `shape` are not drawn, and `shape` may reach outside
+    /// `image`, where the texture clamps. False when the picture is not available.
+    pub fn paint_shape(
+        &mut self,
+        p: &Painter,
+        art: Art,
+        image: Rect,
+        shape: &[Pos2],
+        tint: Color32,
+    ) -> bool {
+        if shape.len() < 3 {
+            return false;
+        }
+        let Some(texture) = self.get(art, image.width().max(image.height())) else {
+            return false;
+        };
+        let uv = |at: Pos2| {
+            pos2(
+                (at.x - image.left()) / image.width(),
+                (at.y - image.top()) / image.height(),
+            )
+        };
+        let mut mesh = Mesh::with_texture(texture.id());
+        for &at in shape {
+            mesh.vertices.push(Vertex {
+                pos: at,
+                uv: uv(at),
+                color: tint,
+            });
+        }
+        for i in 1..shape.len() as u32 - 1 {
+            mesh.add_triangle(0, i, i + 1);
+        }
+        p.add(mesh);
+        true
+    }
+
+    /// Paints `art` cut to a circle of `radius` around `centre`, the picture scaled so its
+    /// shorter side spans the circle; false when the picture is not available.
     pub fn paint_disc(
         &mut self,
         p: &Painter,
@@ -136,36 +175,54 @@ impl Images<'_> {
         radius: f32,
         tint: Color32,
     ) -> bool {
-        let Some(texture) = self.get(art, radius * 2.0) else {
-            return false;
-        };
         let [w, h] = art.size.map(f32::from);
-        let (du, dv) = if w <= h {
-            (0.5, 0.5 * w / h)
-        } else {
-            (0.5 * h / w, 0.5)
-        };
-        let middle = pos2(0.5, dv);
-        let mut mesh = Mesh::with_texture(texture.id());
-        mesh.vertices.push(Vertex {
-            pos: centre,
-            uv: middle,
-            color: tint,
-        });
-        let n = 48u32;
-        for i in 0..n {
-            let a = i as f32 / n as f32 * std::f32::consts::TAU;
-            let (sin, cos) = a.sin_cos();
-            mesh.vertices.push(Vertex {
-                pos: centre + vec2(cos, sin) * radius,
-                uv: middle + vec2(cos * du, sin * dv),
-                color: tint,
-            });
-            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % n);
-        }
-        p.add(mesh);
-        true
+        let size = vec2(w, h) * (2.0 * radius / w.min(h));
+        let image = Rect::from_center_size(centre, size);
+        self.paint_shape(p, art, image, &circle(centre, radius), tint)
     }
+}
+
+/// `n` points round a circle, from the right, clockwise on screen.
+pub fn circle(centre: Pos2, radius: f32) -> Vec<Pos2> {
+    arc(centre, radius, 0.0, std::f32::consts::TAU, 48)
+}
+
+/// Points along an arc from angle `from` to `to` (radians, clockwise on screen from the
+/// right), `n` segments.
+pub fn arc(centre: Pos2, radius: f32, from: f32, to: f32, n: u32) -> Vec<Pos2> {
+    (0..=n)
+        .map(|i| {
+            let a = from + (to - from) * i as f32 / n as f32;
+            centre + vec2(a.cos(), a.sin()) * radius
+        })
+        .collect()
+}
+
+/// The hero badge's portrait mask: `rect` with its bottom rounded off to a half circle
+/// (straight sides down to the circle's centre line, then the arc).
+pub fn badge_mask(rect: Rect) -> Vec<Pos2> {
+    let radius = rect.width() / 2.0;
+    let centre = pos2(rect.center().x, rect.bottom() - radius);
+    let mut out = vec![rect.left_top(), rect.right_top()];
+    out.extend(arc(centre, radius, 0.0, std::f32::consts::PI, 32));
+    out
+}
+
+/// The part of convex `shape` at or below the line `y` (screen points, y down).
+pub fn cut_top(shape: &[Pos2], y: f32) -> Vec<Pos2> {
+    let mut out = Vec::new();
+    for (i, &a) in shape.iter().enumerate() {
+        let b = shape[(i + 1) % shape.len()];
+        let (a_in, b_in) = (a.y >= y, b.y >= y);
+        if a_in {
+            out.push(a);
+        }
+        if a_in != b_in {
+            let t = (y - a.y) / (b.y - a.y);
+            out.push(pos2(a.x + (b.x - a.x) * t, y));
+        }
+    }
+    out
 }
 
 /// Runs `draw` with the previews' pictures, made on first use.
@@ -209,6 +266,46 @@ mod tests {
     }
 
     const ALLY_PNG: &str = "panorama/images/minimap/hero_ally_psd.png";
+
+    #[test]
+    fn cut_top_keeps_the_part_of_a_shape_below_a_line() {
+        let trapezoid = [
+            pos2(0.0, 0.0),
+            pos2(10.0, 0.0),
+            pos2(8.0, 20.0),
+            pos2(2.0, 20.0),
+        ];
+        let lower = cut_top(&trapezoid, 10.0);
+        assert_eq!(
+            lower,
+            [
+                pos2(9.0, 10.0),
+                pos2(8.0, 20.0),
+                pos2(2.0, 20.0),
+                pos2(1.0, 10.0)
+            ]
+        );
+        assert_eq!(
+            cut_top(&trapezoid, -1.0).len(),
+            4,
+            "a line above keeps it whole"
+        );
+        assert!(
+            cut_top(&trapezoid, 21.0).is_empty(),
+            "a line below leaves nothing"
+        );
+        let badge = badge_mask(Rect::from_min_size(Pos2::ZERO, vec2(70.0, 95.0)));
+        assert_eq!(badge[0], Pos2::ZERO);
+        assert_eq!(
+            badge[2],
+            pos2(70.0, 60.0),
+            "the arc starts level with its centre"
+        );
+        let last = badge.last().unwrap();
+        assert!(last.distance(pos2(0.0, 60.0)) < 0.01, "{last:?}");
+        let bottom = badge.iter().map(|p| p.y).fold(0.0f32, f32::max);
+        assert!((bottom - 95.0).abs() < 0.01, "{bottom}");
+    }
 
     #[test]
     fn a_chosen_image_folder_wins_then_the_game_then_the_snapshot() {

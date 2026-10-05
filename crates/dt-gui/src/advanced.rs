@@ -935,8 +935,8 @@ fn pending(ui: &mut Ui, state: &mut AppState) {
     {
         action = Some(PendingAction::Push);
     }
-    if widgets::wide_button(ui, state.is_dirty(), "Revert all")
-        .on_hover_text("Throw away unsaved profile edits")
+    if widgets::wide_button(ui, state.is_dirty(), crate::simple::DISCARD)
+        .on_hover_text(crate::simple::DISCARD_HINT)
         .clicked()
     {
         action = Some(PendingAction::RevertAll);

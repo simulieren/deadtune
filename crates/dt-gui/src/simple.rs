@@ -260,6 +260,9 @@ pub fn apply(ctx: &egui::Context, state: &mut AppState) -> bool {
     }
 }
 
+pub(crate) const DISCARD: &str = "Discard changes";
+pub(crate) const DISCARD_HINT: &str = "Throw away changes since your last Apply";
+
 /// Ranked-safe on or off from any view, with the same words.
 pub(crate) fn toggle_ranked_safe(state: &mut AppState) -> Status {
     let was_on = state.settings.source == TargetSource::RankedSafe;
@@ -1153,7 +1156,10 @@ fn hero(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                 if tweaks > 0 {
                     if ui
                         .button("Reset all to preset")
-                        .on_hover_text("Drops every tweak and goes back to the preset as is")
+                        .on_hover_text(
+                            "Drops your setting changes and goes back to the preset. HUD, addons \
+                             and other video edits stay.",
+                        )
                         .clicked()
                     {
                         edits.push(Edit::ResetAll);
@@ -1958,8 +1964,8 @@ fn apply_bar(ui: &mut Ui, state: &mut AppState) {
             .clicked();
         if state.is_dirty() {
             clicks.discard = ui
-                .add(egui::Button::new("Discard").min_size(vec2(90.0, 36.0)))
-                .on_hover_text("Throw away changes you haven't applied")
+                .add(egui::Button::new(DISCARD).min_size(vec2(90.0, 36.0)))
+                .on_hover_text(DISCARD_HINT)
                 .clicked();
         }
         if restart {
@@ -2237,7 +2243,7 @@ fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
                     Ok(()) => Status::Info(
                         "Undone. The game files are back to before your last Apply.".into(),
                     ),
-                    Err(e) => Status::Info(e),
+                    Err(e) => Status::Error(e),
                 });
             }
             ui.label(
@@ -2247,20 +2253,27 @@ fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
             );
             ui.add_space(6.0);
             if ui
-                .add(egui::Button::new("Restore original game files").min_size(vec2(190.0, 30.0)))
+                .add(
+                    egui::Button::new("Restore original settings files")
+                        .min_size(vec2(190.0, 30.0)),
+                )
                 .clicked()
             {
                 state.status = Some(match state.restore_original_files() {
                     Ok(()) => Status::Info(
-                        "The game files are back to how they were before DeadTune.".into(),
+                        "The game's settings files are back to how they were before DeadTune."
+                            .into(),
                     ),
-                    Err(e) => Status::Info(e),
+                    Err(e) => Status::Error(e),
                 });
             }
             ui.label(
-                RichText::new("Puts the game exactly back to how it was before DeadTune.")
-                    .small()
-                    .color(WEAK),
+                RichText::new(
+                    "Puts the game's two settings files back to how they were before DeadTune. \
+                     Addons and the HUD stay until you turn them off.",
+                )
+                .small()
+                .color(WEAK),
             );
         });
     };

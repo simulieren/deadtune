@@ -116,6 +116,16 @@ impl ImageSource {
         Ok(ImageSource::Game(VpkDir::open(&pak)?))
     }
 
+    /// `dir` by what it holds: a "Save all images" export (its `manifest.json`) is read
+    /// decoded, anything else as compiled files ([`ImageSource::folder`]).
+    pub fn at(dir: &Path) -> ImageSource {
+        if dir.join(MANIFEST_JSON).is_file() {
+            ImageSource::decoded(dir)
+        } else {
+            ImageSource::folder(dir)
+        }
+    }
+
     /// A snapshot folder (its `raw/` is used when there is one) or a bare folder.
     pub fn folder(dir: &Path) -> ImageSource {
         let raw = dir.join(RAW);
@@ -706,6 +716,32 @@ mod tests {
             Ok(Found::Decoded(file)) => file,
             Ok(Found::Compiled(_)) => panic!("{path} came compiled"),
             Err(e) => panic!("{path}: {e}"),
+        }
+    }
+
+    #[test]
+    fn a_folder_is_read_by_what_it_holds() {
+        let tmp = tempfile::tempdir().unwrap();
+        let export = tmp.path().join("ui-images-1-2026-10-05");
+        std::fs::create_dir_all(export.join("panorama/images")).unwrap();
+        std::fs::write(export.join(MANIFEST_JSON), "{}").unwrap();
+        assert!(matches!(
+            ImageSource::at(&export),
+            ImageSource::Decoded { .. }
+        ));
+
+        let snapshot = tmp.path().join("2026-10-05_build1");
+        std::fs::create_dir_all(snapshot.join(RAW)).unwrap();
+        match ImageSource::at(&snapshot) {
+            ImageSource::Folder { root, .. } => assert_eq!(root, snapshot.join(RAW)),
+            other => panic!("{}", other.describe()),
+        }
+
+        let bare = tmp.path().join("bare");
+        std::fs::create_dir_all(bare.join("panorama/images")).unwrap();
+        match ImageSource::at(&bare) {
+            ImageSource::Folder { root, .. } => assert_eq!(root, bare),
+            other => panic!("{}", other.describe()),
         }
     }
 

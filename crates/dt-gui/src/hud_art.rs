@@ -52,7 +52,7 @@ impl AppState {
             chain.push(game);
         }
         if let Some(dir) = &self.images.from {
-            chain.push(ImageSource::folder(dir));
+            chain.push(ImageSource::at(dir));
             chain.push(ImageSource::decoded(&dir.join(TEXT)));
         }
         ImageSource::Chain(chain)

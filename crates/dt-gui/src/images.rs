@@ -338,7 +338,8 @@ fn plain_error(error: &IconError) -> String {
 pub struct ImagesState {
     /// `None` until the page first opens.
     pub library: Option<Result<Library, String>>,
-    /// A snapshot folder to preview instead of the game's pak (`DEADTUNE_IMAGES_FROM`).
+    /// A snapshot or "Save all images" folder to preview instead of the game's pak
+    /// (`DEADTUNE_IMAGES_FROM`).
     pub from: Option<PathBuf>,
     /// Below `panorama/images/`; `None` shows every folder.
     pub folder: Option<String>,
@@ -379,13 +380,14 @@ impl ImagesState {
 }
 
 impl AppState {
-    /// Reads the image list on first use: the snapshot folder when one is set, else pak01.
+    /// Reads the image list on first use: the snapshot or export folder when one is set,
+    /// else pak01.
     pub fn load_images(&mut self) {
         if self.images.library.is_some() {
             return;
         }
         let source = match &self.images.from {
-            Some(dir) => Ok(ImageSource::folder(dir)),
+            Some(dir) => Ok(ImageSource::at(dir)),
             None => ImageSource::game(&self.paths)
                 .map_err(|e| format!("Couldn't read the game's images ({e}). Check the game folder in Safety & setup.")),
         };
@@ -769,6 +771,53 @@ pub mod tests {
         )
         .unwrap();
         assert_eq!((shown.image.width, shown.image.height), (48, 24));
+    }
+
+    #[test]
+    fn a_save_all_images_export_stands_in_for_the_game() {
+        let (dir, mut state) = testutil::state();
+        let export = dir.path().join("ui-images-25712201-2026-10-05");
+        let write = |rel: &str, bytes: &[u8]| {
+            let file = export.join(rel);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, bytes).unwrap();
+        };
+        write(
+            "panorama/images/hud/top_bar/icon_ultimate.svg",
+            GAME_SVG.as_bytes(),
+        );
+        write(
+            "panorama/images/hud/top_bar/icon_ultimate.png",
+            &my_png(4, 4),
+        );
+        write("panorama/images/minimap/hero_ally_psd.png", &my_png(8, 4));
+        write("manifest.json", b"{}");
+        state.images.from = Some(export);
+        state.load_images();
+        let lib = state.image_library().unwrap();
+        assert_eq!(
+            paths(&lib.entries.iter().collect::<Vec<_>>()),
+            [TEXTURE, TOP_BAR],
+            "a vector's drawn PNG is not a second entry"
+        );
+        assert_eq!(
+            lib.source.describe(),
+            "Previewing images from ui-images-25712201-2026-10-05"
+        );
+        let shown = render(
+            &lib.source,
+            &Picture::Game {
+                path: TEXTURE.into(),
+                side: 8,
+            },
+        )
+        .unwrap();
+        assert_eq!((shown.image.width, shown.image.height), (8, 4));
+        assert_eq!(
+            state.preview_source().describe(),
+            "Previewing images from ui-images-25712201-2026-10-05",
+            "the HUD previews read the same export"
+        );
     }
 
     #[test]

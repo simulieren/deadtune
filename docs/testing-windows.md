@@ -112,7 +112,7 @@ How it works now: DeadTune writes `cfg\deadtune_boot.cfg` (binds F8, sets the pr
 
 ### 4. Ranked
 - [ ] **P0-3**: with modified ConVars, can you queue matchmaking? With Ranked-safe mode on? With only the HUD addon installed (**H0-4**)?
-- [ ] Practice mode (section 15): is queueing refused with it on, and does Ranked-safe mode make queueing work again?
+- [ ] Practice mode (section 14): is queueing refused with it on, and does Ranked-safe mode make queueing work again?
 
 ### 5. Restart loop
 - [ ] Apply + relaunch (Advanced): closes `deadlock.exe`, starts it through Steam, the countdown runs and "restart pending" clears.
@@ -247,7 +247,7 @@ SideLock is CC BY-NC-ND, so DeadTune never ships it; it downloads the author's f
 - [ ] **S-4 Review**: put any other `gameinfo.gi` (say a copy of your game's) into the Import box: the card says the file differs, "Show the N changed settings" lists them, nothing changes until **Accept**; **Discard** drops it.
 - [ ] **S-5 CLI**: `tools\deadtune-cli.exe presets` shows the licence and state; `presets fetch sidelock`, then `profile new side.toml --base sidelock` and `diff --profile side.toml` work.
 
-### 15. Practice mode (Performance page)
+### 14. Practice mode (Performance page)
 
 Since the September 2026 update the game ignores the big shadow and fog ConVars in `gameinfo.gi`. Practice mode edits the `SceneSystem` section instead, the way the SideLock config (GameBanana 722944) does: shadows (`CSMCascadeResolution`, the shadow atlas and texture sizes, `DynamicShadowResolution` to 0), fog (`VolumetricFog`, `CubemapFog`, `NonTexturedGradientFog` to 0) and batching (`LayerBatchThresholdFullsort 20`, `DisableLateAllocatedTransformBuffer 1`, `MinimumLateAllocatedVertexCacheBufferSizeMB 64`). The game's matchmaking check refuses "unsupported changes" to `Engine2`, `MaterialSystem2`, `NetworkSystem`, `Particles`, `RenderSystem`, `SceneSystem` and `WorldRenderer`, so we expect queueing to be refused while it is on. Nothing here could be proven on the Mac. DeadTune only ever touches keys it wrote itself: before it writes a practice value it records what the key held (`practice.toml` in its data folder), and switching the group off puts that back. Keys it never wrote are left exactly as they are, so a hand-installed SideLock `SceneSystem` survives a normal Apply. Ranked-safe mode is the explicit "make me queueable" action and resets all of them to Valve's stock values, whoever wrote them; leaving Ranked-safe returns to the profile's state.
 
@@ -263,8 +263,7 @@ Setup: a `gameinfo.gi` that is otherwise stock (Vanilla preset or Ranked-safe on
 - [ ] **PM-8 SideLock stays yours**: with the SideLock `gameinfo.gi` installed by hand and practice mode off, press Apply on any preset. The `SceneSystem` block is untouched (its zeros and the three batching lines are still there). System check's "Matchmaking sections" row lists those keys plus SideLock's other edits (for example `RenderSystem/SwapChainSampleableDepth`), says Ranked-safe mode resets the shadow, fog and batching keys and points to Verify integrity for the rest. Turn practice mode on and off again: the block is still SideLock's, because DeadTune never changed those values. Does queueing fail in that state too?
 - [ ] **PM-9 CLI**: `tools\deadtune-cli.exe practice on --fog --profile my.toml`, then `diff --profile my.toml` lists the three fog keys under "practice mode", `apply --profile my.toml --yes` writes them, `ranked-safe --yes` restores stock, `practice off --profile my.toml` drops the table from the profile.
 
-### 14. Send the diagnostic report
-### 13. System check page
+### 15. System check page
 
 - [ ] The page opens with a summary ("Everything looks good" or "N things need your attention"), then a card per problem with "What to do", then every check grouped as Deadlock files, HUD and addons, Windows and hardware, DeadTune. "Check again" reruns; "Copy report" copies the diagnostic report.
 - [ ] **Steam launch options**: in Steam set Deadlock's launch options to `+fps_max 60`, press Check again: a warning names `+fps_max 60`. With only `+exec deadtune_boot` (or `-dx11`) it passes and shows the options. Clear them afterwards.
@@ -272,11 +271,11 @@ Setup: a `gameinfo.gi` that is otherwise stock (Vanilla preset or Ranked-safe on
 - [ ] **Free disk space**: shows the free space on the game's drive; it warns under 10 GB (check the number against Explorer).
 - [ ] **Steam background work**: while Steam shows "Processing Vulkan shaders" (or `fossilize_replay.exe` runs in Task Manager) it warns; otherwise it passes.
 
-### 14. Send the diagnostic report
+### 16. Send the diagnostic report
 
 Whenever something misbehaves, and once when everything works, press **Copy report** on the System check page (or run `tools\deadtune-cli.exe doctor --report > report.txt`) and send the text along with your notes. It holds the DeadTune version, the `SearchPaths` block of `gameinfo.gi`, the files in `game\citadel\addons` with sizes and who owns each, DeadTune's addon and HUD records, the launch guard state, the last launch arguments, the last 80 lines of `console.log` and the read-back of every installed pak. It contains no account data; paths show your Windows user name.
 
-### 14. Launch options and Vulkan
+### 17. Launch options and Vulkan
 
 The menu beside **Launch Deadlock** > **Launch options** (or the Launch tab in the advanced view) holds the renderer choice, Skip intro video, the console window, extra options, and a check of every option against the game's own list (`research/configs/OptimizationLock/launch_options.txt`).
 
@@ -287,7 +286,7 @@ The menu beside **Launch Deadlock** > **Launch options** (or the Launch tab in t
 - [ ] **L-5 Shader cache**: the first Vulkan start compiles shaders, so expect long loading and stutter in the first match or two. Note how long the first start took to the main menu and whether the second start is faster. Don't judge Vulkan FPS on the first match.
 - [ ] **L-6 FPS vs default**: on the same map and spot (a bot match, measured the way section 8 does), compare average and 1% low FPS for Default and Vulkan, after Vulkan's shader cache is warm. Note GPU model and driver version with the numbers.
 
-### 10. Developer checks (repo checkout on Windows)
+### 18. Developer checks (repo checkout on Windows)
 - [ ] `cargo test --workspace --all-features` passes, including the Windows-only `push_uses_crlf_on_windows`.
 - [ ] With `core.autocrlf=true`, a fresh clone still passes the catalog drift test.
 - [ ] `cargo test -p dt-core --features fetch -- --ignored fetch` downloads every preset, SideLock included, and SideLock still matches its pinned sha256.

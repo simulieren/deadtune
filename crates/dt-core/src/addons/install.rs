@@ -16,7 +16,10 @@ use sha2::{Digest, Sha256};
 
 use super::textures::{self, Progress};
 use super::verify::{self, Expect};
-use super::{AddonError, AddonId, AddonsConfig, Kind, Source, blur, info, particles, sources};
+use super::{
+    AddonError, AddonId, AddonsConfig, Kind, Source, blur, clutter, info, native_particles,
+    particles, sources,
+};
 use crate::backup::{atomic_write, sha256_hex};
 use crate::hud::install::{ADDON_FILE as HUD_ADDON_FILE, GAME_PAK, addons_dir};
 use crate::hud::searchpaths;
@@ -350,15 +353,9 @@ fn inputs(
             }
         }
         Kind::Toggle | Kind::Blur => {
-            let pak_path = paths.citadel_dir.join(GAME_PAK);
-            if !pak_path.is_file() {
-                return Ok(Err(Blocker::GameFiles(format!(
-                    "{GAME_PAK} not found; is the game fully installed?"
-                ))));
-            }
-            let pak = match VpkDir::open(&pak_path) {
+            let pak = match game_pak(paths) {
                 Ok(pak) => pak,
-                Err(e) => return Ok(Err(Blocker::GameFiles(e.to_string()))),
+                Err(blocker) => return Ok(Err(blocker)),
             };
             let Some(entry) = pak.entries.get(blur::STYLE) else {
                 return Ok(Err(Blocker::GameFiles(format!(
@@ -389,6 +386,32 @@ fn inputs(
                 }),
             }
         }
+        Kind::Clutter => {
+            let pak = match game_pak(paths) {
+                Ok(pak) => pak,
+                Err(blocker) => return Ok(Err(blocker)),
+            };
+            let hidden = clutter::hidden_paths(&config.hide_clutter, &pak);
+            let mut parts = vec!["clutter", build_id.unwrap_or("")];
+            parts.extend(config.hide_clutter.iter().map(String::as_str));
+            Inputs {
+                input: fingerprint(&parts),
+                ships: hidden.clone(),
+                make: Box::new(move || {
+                    let files = clutter::build(&pak, &hidden)?;
+                    if files.is_empty() {
+                        return Ok(None);
+                    }
+                    let expect = Expect {
+                        particle_stub: Some(pak.read(native_particles::EMPTY_PARTICLE)?),
+                        originals: BTreeMap::new(),
+                    };
+                    let bytes = vpk::write(&files);
+                    checked(&VpkDir::in_memory(bytes.clone())?, &expect)?;
+                    Ok(Some(Build::Bytes(bytes)))
+                }),
+            }
+        }
         Kind::Textures => Inputs {
             input: fingerprint(&[
                 "textures",
@@ -400,6 +423,16 @@ fn inputs(
         },
     };
     Ok(Ok(out))
+}
+
+fn game_pak(paths: &GamePaths) -> Result<VpkDir, Blocker> {
+    let pak_path = paths.citadel_dir.join(GAME_PAK);
+    if !pak_path.is_file() {
+        return Err(Blocker::GameFiles(format!(
+            "{GAME_PAK} not found; is the game fully installed?"
+        )));
+    }
+    VpkDir::open(&pak_path).map_err(|e| Blocker::GameFiles(e.to_string()))
 }
 
 /// Pure planning plus reads: our record, the cache, the game pak for generated addons,
@@ -506,7 +539,7 @@ pub fn plan(
             path: dir.join(file),
             action,
             input: Some(prepared.input),
-            from_game: matches!(info(id).kind, Kind::Textures)
+            from_game: matches!(info(id).kind, Kind::Textures | Kind::Clutter)
                 || (info(id).kind == Kind::Blur && config.blur.rebuild),
             ships: prepared.ships,
         });
@@ -1310,6 +1343,62 @@ pub(crate) mod tests {
         let mounted = searchpaths::ensure_addons(CLEAN_GAMEINFO).unwrap();
         std::fs::write(&paths.gameinfo, mounted).unwrap();
         assert!(!plan(&paths, &config, &state).unwrap().needs_search_path);
+    }
+
+    #[test]
+    fn clutter_pak_holds_the_games_empty_particle_and_rebuilds_on_game_update() {
+        let (steam, paths) = fake_install("1");
+        let state = state_dir(&steam);
+        let pak01 = paths.citadel_dir.join(GAME_PAK);
+        let game = VpkDir::open(&pak01).unwrap();
+        let mut files: BTreeMap<String, Vec<u8>> = game
+            .entries
+            .keys()
+            .map(|p| (p.clone(), game.read(p).unwrap()))
+            .collect();
+        let empty = include_bytes!("../../tests/fixtures/particles/empty.vpcf_c").to_vec();
+        files.insert(native_particles::EMPTY_PARTICLE.into(), empty.clone());
+        files.insert("particles/a/fire.vpcf_c".into(), b"real".to_vec());
+        std::fs::write(&pak01, vpk::write(&files)).unwrap();
+
+        let mut config = AddonsConfig::default();
+        config.set_enabled(AddonId::ClutterRemover, true);
+        assert_eq!(
+            config.hide_clutter,
+            BTreeSet::from([clutter::CITY.to_string()])
+        );
+        let first = plan(&paths, &config, &state).unwrap();
+        let entry = first.get(AddonId::ClutterRemover).unwrap();
+        assert_eq!(entry.path, addons_dir(&paths).join("pak78_dir.vpk"));
+        assert!(entry.from_game);
+        execute(&first, &paths, &state).unwrap();
+        let ours = VpkDir::open(&entry.path).unwrap();
+        assert_eq!(ours.entries.len(), 8);
+        assert!(ours.contains("particles/environment/crows_circling_tower.vpcf_c"));
+        assert!(ours.entries.keys().all(|p| ours.read(p).unwrap() == empty));
+        assert!(plan(&paths, &config, &state).unwrap().is_empty());
+
+        config.hide_clutter = BTreeSet::from([clutter::EVERYTHING.to_string()]);
+        let all = plan(&paths, &config, &state).unwrap();
+        execute(&all, &paths, &state).unwrap();
+        let ours = VpkDir::open(&entry.path).unwrap();
+        assert_eq!(
+            ours.entries.keys().collect::<Vec<_>>(),
+            ["particles/a/fire.vpcf_c"]
+        );
+
+        write_manifest(&steam.path().join("steamapps"), "2");
+        assert!(matches!(
+            action(
+                &plan(&paths, &config, &state).unwrap(),
+                AddonId::ClutterRemover
+            ),
+            Action::Write(Build::Bytes(_))
+        ));
+
+        config.hide_clutter.clear();
+        let none = plan(&paths, &config, &state).unwrap();
+        assert_eq!(action(&none, AddonId::ClutterRemover), &Action::Remove);
     }
 
     fn game_with_textures(paths: &GamePaths) {

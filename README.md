@@ -38,6 +38,7 @@ DeadTune turns that into an app:
 - **Simple view** grouped the way players think: Display, Shadows, Lighting and effects, World detail, Performance. The biggest FPS wins sit on the Overview page.
 - **Advanced view** with every one of the **761 catalogued ConVars**, searchable, with type-aware controls, defaults, preset values and an impact rating.
 - **Honest apply classes.** Each setting is tagged *live*, *live in sandbox*, *needs restart* or *ignored* (the game no longer reads it from `gameinfo.gi`), so you know when a change takes effect and whether it does anything.
+- **Particle cleanup** you choose effect by effect: the screen-edge flashes (low health, burns, hero debuffs) and world clutter after Laund's Clutter Be Gone (city steam and smoke, Graves and Walker effects). Built from your own game files, nothing to download.
 - **Profiles** stored as small TOML files. Import and export Sqooky's `overrides.gi` format, so you can switch between his updater and DeadTune.
 
 ### HUD editor
@@ -190,6 +191,7 @@ DeadTune stands on the work of the Deadlock tuning community:
 - [Sqooky/OptimizationLock](https://github.com/Sqooky/OptimizationLock): presets and the override model DeadTune's `gameinfo.gi` editor is ported from
 - [dacooderr/OptiLock](https://github.com/dacooderr/OptiLock): presets including `video.txt` tuning
 - Kaizuchaneru and Boot: minimum-spec and max-FPS presets
+- [Laund](https://gamebanana.com/mods/722853): the screen-edge particle disabler and Clutter Be Gone, whose effect lists DeadTune's particle cleanup uses
 - [Deadlock Mod Manager](https://github.com/deadlock-mod-manager/deadlock-mod-manager): reference for KeyValues handling and Steam paths
 - [ValveResourceFormat](https://github.com/ValveResourceFormat/ValveResourceFormat): the reference for compiled resource and VPK formats
 - [Inter](https://rsms.me/inter/) by Rasmus Andersson (SIL OFL 1.1), the UI font

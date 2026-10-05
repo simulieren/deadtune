@@ -212,9 +212,9 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "addons enable",
-        usage: "addons enable <id> --profile <file> [--keep <group,...>]",
+        usage: "addons enable <id> --profile <file> [--keep <group,...>] [--hide <group,...>]",
         summary: "turn an addon on in a profile (apply --profile installs it)",
-        values: &["profile", "keep"],
+        values: &["profile", "keep", "hide"],
         switches: &[],
         run: cmd_addons::enable,
     },

@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 pub mod blur;
+pub mod clutter;
 pub mod guard;
 pub mod install;
 pub mod native_blur;
@@ -41,16 +42,18 @@ pub enum AddonId {
     VindictaScope,
     SoulContainer,
     TextureDownscaler,
+    ClutterRemover,
 }
 
 impl AddonId {
-    pub const ALL: [AddonId; 6] = [
+    pub const ALL: [AddonId; 7] = [
         AddonId::ParticleDisabler,
         AddonId::BlurDisabler,
         AddonId::SinnerLightFix,
         AddonId::VindictaScope,
         AddonId::SoulContainer,
         AddonId::TextureDownscaler,
+        AddonId::ClutterRemover,
     ];
 
     /// Same string serde uses; the CLI id and the cache folder name.
@@ -62,6 +65,7 @@ impl AddonId {
             AddonId::VindictaScope => "vindicta_scope",
             AddonId::SoulContainer => "soul_container",
             AddonId::TextureDownscaler => "texture_downscaler",
+            AddonId::ClutterRemover => "clutter_remover",
         }
     }
 
@@ -83,6 +87,9 @@ pub enum Kind {
     /// Our pak holds the game's own textures with their top mip levels dropped
     /// (`crate::texture`). Built on demand (minutes, gigabytes read), not by Apply.
     Textures,
+    /// Our pak holds the game's empty particle at the paths of the [`clutter`] groups the
+    /// player hides.
+    Clutter,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -132,7 +139,7 @@ macro_rules! upstream {
     };
 }
 
-pub static ADDONS: [AddonInfo; 6] = [
+pub static ADDONS: [AddonInfo; 7] = [
     AddonInfo {
         id: AddonId::ParticleDisabler,
         name: "Screen-edge particle disabler",
@@ -219,6 +226,17 @@ pub static ADDONS: [AddonInfo; 6] = [
         source: Source::Generated,
         slot: 76,
     },
+    AddonInfo {
+        id: AddonId::ClutterRemover,
+        name: "World clutter remover",
+        author: "Laund (Clutter Be Gone)",
+        credit_url: "https://gamebanana.com/mods/722853",
+        description: "Hides particles you pick: city steam and smoke, Graves and Walker effects. Built from your own game files.",
+        benefit: "Cleaner view and fewer FPS drops near vents and in team fights",
+        kind: Kind::Clutter,
+        source: Source::Generated,
+        slot: 78,
+    },
 ];
 
 pub fn all() -> &'static [AddonInfo] {
@@ -272,6 +290,9 @@ pub struct AddonsConfig {
     /// Particle groups ([`particles::GROUPS`] ids) left visible while the disabler is on.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub keep_particles: BTreeSet<String>,
+    /// [`clutter::GROUPS`] ids hidden while the clutter remover is on.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub hide_clutter: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BlurOptions::is_default")]
     pub blur: BlurOptions,
     #[serde(default, skip_serializing_if = "textures::is_default")]
@@ -287,8 +308,13 @@ impl AddonsConfig {
         self.enabled.contains(&id)
     }
 
+    /// Turning the clutter remover on with nothing picked hides the city ambience, the
+    /// one group with no gameplay cost.
     pub fn set_enabled(&mut self, id: AddonId, on: bool) {
         if on {
+            if id == AddonId::ClutterRemover && self.hide_clutter.is_empty() {
+                self.hide_clutter.insert(clutter::CITY.to_string());
+            }
             self.enabled.insert(id);
         } else {
             self.enabled.remove(&id);

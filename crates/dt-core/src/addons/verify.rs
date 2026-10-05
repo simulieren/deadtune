@@ -8,7 +8,7 @@ use std::fmt;
 use std::path::Path;
 
 use super::install::read_record;
-use super::{AddonId, Kind, blur, info, particles, sources};
+use super::{AddonId, Kind, blur, info, native_particles, particles, sources};
 use crate::hud::crc32::crc32;
 use crate::hud::install::{ADDON_FILE as HUD_ADDON_FILE, GAME_PAK, addons_dir};
 use crate::hud::resource::{self, Resource};
@@ -206,6 +206,9 @@ pub fn expect_for(id: AddonId, paths: &GamePaths, state_dir: &Path) -> Expect {
             if rebuilt && let Some(bytes) = game_file(paths, blur::STYLE) {
                 expect.originals.insert(blur::STYLE.to_string(), bytes);
             }
+        }
+        Kind::Clutter => {
+            expect.particle_stub = game_file(paths, native_particles::EMPTY_PARTICLE);
         }
         Kind::Toggle | Kind::Textures => {}
     }

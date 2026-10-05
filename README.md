@@ -80,6 +80,8 @@ DeadTune only works through files, launch options and the official console.
 
 **Matchmaking.** Edited ConVars do not block matchmaking (checked on Windows). Since March 2026 the game only refuses to queue when the `Engine2`, `MaterialSystem2`, `NetworkSystem`, `Particles`, `RenderSystem`, `SceneSystem` or `WorldRenderer` sections of `gameinfo.gi` are changed, or the game runs in Tools mode. DeadTune never edits those sections. Since September 2026 the game also ignores 77 ConVars when they are set in `gameinfo.gi` (shadows, fog, outlines, glow and others). DeadTune marks these as *ignored*, so you can see which preset lines no longer do anything.
 
+**No ads, no analytics, no tracking.** DeadTune collects nothing about you or your PC and has no telemetry. It goes online only to check GitHub for a new version and to download presets and addons from their authors' GitHub repos. Those requests send nothing about you.
+
 **Ranked-safe mode.** If Valve tightens the rules again, one click restores the stock ConVars block and removes the HUD addon, while keeping your `video.txt` settings (those are normal menu options). One more click brings your profile back.
 
 ## Install

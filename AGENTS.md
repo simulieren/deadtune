@@ -45,7 +45,7 @@ UI work is not done until you have produced screenshots and read them. Levers (r
 
 - `DEADTUNE_SCREENSHOT=<png>` renders a few frames, writes a PNG and exits. `--size WxH` sets the window.
 - `DEADTUNE_SCREENSHOT_APPLY=1` presses Apply first.
-- `DEADTUNE_SECTION=<name>` opens a simple-view section, `DEADTUNE_TAB=<name>` an advanced tab, `DEADTUNE_HUD_PAGE=colors` (Minimap page), `DEADTUNE_HUD_SELECT`, `DEADTUNE_SEARCH`, `DEADTUNE_SET=name=value,...`, `DEADTUNE_PRACTICE=shadows,fog,batching`, `DEADTUNE_FAKE_GAME=1`, `DEADTUNE_FAKE_PUSH`, `DEADTUNE_FAKE_TRIAL`, `DEADTUNE_FAKE_UPDATE`, `DEADTUNE_BASE=<preset key>`, `DEADTUNE_OPEN_PRESETS=1` (holds the Overview's "All presets" dropdown open).
+- `DEADTUNE_SECTION=<name>` opens a simple-view section, `DEADTUNE_TAB=<name>` an advanced tab, `DEADTUNE_HUD_PAGE=colors` (Minimap page), `DEADTUNE_HUD_SELECT`, `DEADTUNE_SEARCH`, `DEADTUNE_SCROLL=<px>`, `DEADTUNE_FAKE_WINDOWS=1` (Windows checks on sample facts), `DEADTUNE_SET=name=value,...`, `DEADTUNE_FAKE_GAME=1`, `DEADTUNE_FAKE_PUSH`, `DEADTUNE_FAKE_TRIAL`, `DEADTUNE_FAKE_UPDATE`, `DEADTUNE_PRACTICE=shadows,fog,batching`, `DEADTUNE_BASE=<preset key>`, `DEADTUNE_OPEN_PRESETS=1` (holds the Overview's "All presets" dropdown open).
 
 Check 1280x800 and 1600x1000. The screenshot PNGs are uncompressed; convert with `sips` before reading or committing them.
 

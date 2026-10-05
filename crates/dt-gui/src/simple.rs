@@ -375,25 +375,32 @@ pub fn simple(ui: &mut Ui, state: &mut AppState) {
             bottom: 0,
         }))
         .show(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink(false)
-                .show(ui, |ui| {
-                    header(ui, state, page, &mut edits);
-                    match page {
-                        Page::Results => results(ui, state, inline_help, &mut edits),
-                        Page::Section(Section::Overview) => overview(ui, state, &mut edits),
-                        Page::Section(Section::Hud) => crate::hud_view::layout_page(ui, state),
-                        Page::Section(Section::Minimap) => crate::minimap_view::page(ui, state),
-                        Page::Section(Section::TopBar) => crate::topbar_view::page(ui, state),
-                        Page::Section(Section::Addons) => crate::addons_view::addons(ui, state),
-                        Page::Section(Section::System) => system(ui, state),
-                        Page::Section(Section::Safety) => safety(ui, state, &mut edits),
-                        Page::Section(section) => {
-                            settings_page(ui, state, section, inline_help, &mut edits)
-                        }
+            let mut scroll = egui::ScrollArea::vertical().auto_shrink(false);
+            // Screenshot lever: `DEADTUNE_SCROLL=600` opens the page scrolled down that far.
+            if let Some(y) = std::env::var("DEADTUNE_SCROLL")
+                .ok()
+                .and_then(|v| v.parse::<f32>().ok())
+            {
+                scroll = scroll.vertical_scroll_offset(y);
+            }
+            scroll.show(ui, |ui| {
+                header(ui, state, page, &mut edits);
+                match page {
+                    Page::Results => results(ui, state, inline_help, &mut edits),
+                    Page::Section(Section::Overview) => overview(ui, state, &mut edits),
+                    Page::Section(Section::Hud) => crate::hud_view::layout_page(ui, state),
+                    Page::Section(Section::Minimap) => crate::minimap_view::page(ui, state),
+                    Page::Section(Section::Health) => crate::health_view::page(ui, state),
+                    Page::Section(Section::TopBar) => crate::topbar_view::page(ui, state),
+                    Page::Section(Section::Addons) => crate::addons_view::addons(ui, state),
+                    Page::Section(Section::System) => crate::checks_view::page(ui, state),
+                    Page::Section(Section::Safety) => safety(ui, state, &mut edits),
+                    Page::Section(section) => {
+                        settings_page(ui, state, section, inline_help, &mut edits)
                     }
-                    ui.add_space(24.0);
-                });
+                }
+                ui.add_space(24.0);
+            });
         });
     for edit in edits {
         match edit {
@@ -452,6 +459,7 @@ fn section_changes(state: &AppState, section: Section) -> usize {
         Section::Hud => state.hud_changed_count(),
         Section::Minimap => state.minimap_changed_count(),
         Section::TopBar => state.top_bar_changed_count(),
+        Section::Health => state.health_changed_count(),
         Section::Addons => state.addons_enabled_count(),
         Section::System => state.check_problems(),
         Section::Safety => 0,
@@ -589,6 +597,7 @@ fn section_icon(section: Section) -> Icon {
         Section::Hud => Icon::Hud,
         Section::Minimap => Icon::Minimap,
         Section::TopBar => Icon::TopBar,
+        Section::Health => Icon::Heart,
         Section::Addons => Icon::Addons,
         Section::System => Icon::System,
         Section::Safety => Icon::Safety,
@@ -2046,16 +2055,6 @@ fn fps_meter(ui: &mut Ui, filled: usize) {
 }
 
 /// Runs the checks the first time the page opens, so there is always something to read.
-fn system(ui: &mut Ui, state: &mut AppState) {
-    if state.checks.is_none() && !state.checks_running() {
-        state.run_checks();
-    }
-    theme::card().show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        check_setup(ui, state, true);
-    });
-}
-
 fn safety(ui: &mut Ui, state: &mut AppState, edits: &mut Vec<Edit>) {
     let wide = ui.available_width() >= 900.0;
     let undo = |ui: &mut Ui, state: &mut AppState| {
@@ -2292,7 +2291,7 @@ fn instant_changes(ui: &mut Ui, state: &mut AppState) {
 }
 
 /// `plain` hides the technical detail behind a tooltip.
-pub fn check_setup(ui: &mut Ui, state: &mut AppState, plain: bool) {
+pub fn check_setup(ui: &mut Ui, state: &mut AppState) {
     ui.horizontal(|ui| {
         ui.label(
             RichText::new("Check setup")
@@ -2337,12 +2336,8 @@ pub fn check_setup(ui: &mut Ui, state: &mut AppState, plain: bool) {
         };
         ui.horizontal(|ui| {
             ui.colored_label(color, RichText::new(mark).strong());
-            let name = ui.label(RichText::new(check.name).strong());
-            if plain {
-                name.on_hover_text(&check.detail);
-            } else {
-                ui.weak(&check.detail);
-            }
+            ui.label(RichText::new(check.name).strong());
+            ui.weak(&check.detail);
         });
         if check.status != CheckStatus::Pass
             && let Some(fix) = &check.fix

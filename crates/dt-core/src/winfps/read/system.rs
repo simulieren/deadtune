@@ -206,28 +206,36 @@ pub fn memory() -> Vec<MemoryStick> {
     parse::memory_sticks(&String::from_utf8_lossy(&out))
 }
 
-pub fn overlays() -> Vec<&'static str> {
+pub fn process_names() -> Vec<String> {
     let mut system = System::new();
     system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
-    let names: Vec<String> = system
+    system
         .processes()
         .values()
         .map(|p| p.name().to_string_lossy().into_owned())
-        .collect();
-    parse::match_overlays(&names)
+        .collect()
 }
 
 pub fn drive_kind(path: &Path) -> Option<DriveKind> {
     let disks = Disks::new_with_refreshed_list();
+    match game_disk(&disks, path)?.kind() {
+        DiskKind::SSD => Some(DriveKind::Ssd),
+        DiskKind::HDD => Some(DriveKind::Hdd),
+        _ => None,
+    }
+}
+
+pub fn free_mib(path: &Path) -> Option<u64> {
+    let disks = Disks::new_with_refreshed_list();
+    Some(game_disk(&disks, path)?.available_space() / (1024 * 1024))
+}
+
+fn game_disk<'a>(disks: &'a Disks, path: &Path) -> Option<&'a sysinfo::Disk> {
     let mounts: Vec<String> = disks
         .list()
         .iter()
         .map(|d| d.mount_point().to_string_lossy().into_owned())
         .collect();
     let index = parse::longest_mount(&path.to_string_lossy(), &mounts)?;
-    match disks.list()[index].kind() {
-        DiskKind::SSD => Some(DriveKind::Ssd),
-        DiskKind::HDD => Some(DriveKind::Hdd),
-        _ => None,
-    }
+    disks.list().get(index)
 }

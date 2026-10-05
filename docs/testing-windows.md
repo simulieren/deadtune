@@ -144,6 +144,13 @@ Every option here is a CSS rule appended to the game's own `citadel_hud_top_bar.
 - [ ] **T-7 Purchase popups**: with the shop closed, when a hero on either team buys an item, its name pops under that hero's portrait for 10 s (at most three per hero), bordered weapon orange, vitality green or spirit purple. If popups never appear, note whether the shop's Recent purchases list shows the buys: the script maps them to portraits through the hero image's `heroid`.
 - [ ] **T-8 Vanilla removes**: preset "Vanilla", Apply: `pak77_dir.vpk` is gone (when nothing else on the HUD or Minimap pages is set) and the game is stock.
 - [ ] **T-9 After an update**: the Top bar settings survive a game update through the usual "Deadlock updated" re-apply, and `addons verify` is `ok` again.
+### 7c. Health bar page (experimental)
+
+- [ ] Pick **Big number**, Apply, start a match or the hideout: the health number is clearly bigger and not cut off, max health ("/ 700") is easy to read, the green backer is gone.
+- [ ] Take damage to between half and a third of your health: the number turns orange; below that it is red as in vanilla, and the bar and HUD no longer shake.
+- [ ] **Hide health regen** hides the small regen number; **Reset** brings the game's health bar back after Apply.
+- [ ] Try a hero with an extra bar (Rat King armour, a shield item) and note anything that overlaps.
+- [ ] With bytenode's Minimal Healthbar or budhud mod installed alongside, System check lists it under "Other HUD mods".
 
 ### 8. Benchmark
 - [ ] **P0-7**: capture 3 identical 60 s runs with PresentMon, import each in Advanced > Bench. Variance under 3%? Note which CSV columns your PresentMon version writes (`MsBetweenPresents` or `FrameTime`).
@@ -202,7 +209,7 @@ Each addon is one `game\citadel\addons\pakNN_dir.vpk` that DeadTune writes and r
 - [ ] A multi-file output (`pak78_dir.vpk` plus `pak78_000.vpk`) mounts. Half size on a full game should produce one.
 - [ ] Matchmaking still queues with the addon mounted (same question as **H0-4**).
 
-- [ ] Links open: an author credit opens the browser, and System check's "Open Windows Settings" opens the right Settings page (`ms-settings:` links).
+- [ ] Links open: an author credit opens the browser, and System check's "Open the Windows setting" opens the right Settings page (`ms-settings:` links).
 
 ### 12. Launch guard (addons tested on the next launch)
 
@@ -244,8 +251,17 @@ Setup: a `gameinfo.gi` that is otherwise stock (Vanilla preset or Ranked-safe on
 - [ ] **PM-9 CLI**: `tools\deadtune-cli.exe practice on --fog --profile my.toml`, then `diff --profile my.toml` lists the three fog keys under "practice mode", `apply --profile my.toml --yes` writes them, `ranked-safe --yes` restores stock, `practice off --profile my.toml` drops the table from the profile.
 
 ### 14. Send the diagnostic report
+### 13. System check page
 
-Whenever something misbehaves, and once when everything works, press **Copy diagnostic report** on the System check page (or run `tools\deadtune-cli.exe doctor --report > report.txt`) and send the text along with your notes. It holds the DeadTune version, the `SearchPaths` block of `gameinfo.gi`, the files in `game\citadel\addons` with sizes and who owns each, DeadTune's addon and HUD records, the launch guard state, the last launch arguments, the last 80 lines of `console.log` and the read-back of every installed pak. It contains no account data; paths show your Windows user name.
+- [ ] The page opens with a summary ("Everything looks good" or "N things need your attention"), then a card per problem with "What to do", then every check grouped as Deadlock files, HUD and addons, Windows and hardware, DeadTune. "Check again" reruns; "Copy report" copies the diagnostic report.
+- [ ] **Steam launch options**: in Steam set Deadlock's launch options to `+fps_max 60`, press Check again: a warning names `+fps_max 60`. With only `+exec deadtune_boot` (or `-dx11`) it passes and shows the options. Clear them afterwards.
+- [ ] **Mods from other tools**: copy any mod pak into `game\citadel\addons` as `pak60_dir.vpk`: the row lists it; remove it again.
+- [ ] **Free disk space**: shows the free space on the game's drive; it warns under 10 GB (check the number against Explorer).
+- [ ] **Steam background work**: while Steam shows "Processing Vulkan shaders" (or `fossilize_replay.exe` runs in Task Manager) it warns; otherwise it passes.
+
+### 14. Send the diagnostic report
+
+Whenever something misbehaves, and once when everything works, press **Copy report** on the System check page (or run `tools\deadtune-cli.exe doctor --report > report.txt`) and send the text along with your notes. It holds the DeadTune version, the `SearchPaths` block of `gameinfo.gi`, the files in `game\citadel\addons` with sizes and who owns each, DeadTune's addon and HUD records, the launch guard state, the last launch arguments, the last 80 lines of `console.log` and the read-back of every installed pak. It contains no account data; paths show your Windows user name.
 
 ### 14. Launch options and Vulkan
 
@@ -263,3 +279,5 @@ The menu beside **Launch Deadlock** > **Launch options** (or the Launch tab in t
 - [ ] With `core.autocrlf=true`, a fresh clone still passes the catalog drift test.
 - [ ] `cargo test -p dt-core --features fetch -- --ignored fetch` downloads every preset, SideLock included, and SideLock still matches its pinned sha256.
 - [ ] `tools\deadtune-cli.exe doctor` matches the GUI's Check setup; its y/N confirm prompt works in cmd and PowerShell.
+- [ ] `cargo test -p dt-core --features fetch -- --ignored fetch_latest` downloads every preset.
+- [ ] `tools\deadtune-cli.exe doctor` matches the GUI's System check; its y/N confirm prompt works in cmd and PowerShell.

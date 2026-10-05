@@ -6,6 +6,7 @@ use super::css::CssError;
 use super::elements::{
     self, ELEMENTS, ElementId, ElementSpec, HAlign, HUD_STYLE, ScaleProp, VAlign,
 };
+use super::health_style::{HealthError, HealthStyle};
 use super::inject::LayoutEdit;
 use super::minimap_colors::{self, Color, IconId, MINIMAP_STYLE};
 use super::minimap_style::{MinimapStyle, StyleError};
@@ -62,6 +63,8 @@ pub struct HudLayout {
     /// Experimental, untested in game: the top bar's look and extras (`hud::topbar`).
     #[serde(skip_serializing_if = "TopBarStyle::is_vanilla")]
     pub top_bar: TopBarStyle,
+    /// Experimental, untested in game: health bar styling.
+    pub health: HealthStyle,
     /// Advanced: raw CSS appended after the generated rules, keyed by style file path
     /// (`panorama/styles/hud.vcss_c`). Must parse with balanced braces.
     pub extra_css: BTreeMap<String, String>,
@@ -109,6 +112,8 @@ pub enum LayoutError {
     Minimap(#[from] StyleError),
     #[error("top bar: {0}")]
     TopBar(#[from] TopBarError),
+    #[error("health bar: {0}")]
+    Health(#[from] HealthError),
     #[error("extra css for {0}: {1}")]
     ExtraCss(String, CssError),
 }
@@ -119,12 +124,13 @@ impl HudLayout {
             && self.minimap_colors.is_empty()
             && self.minimap.is_vanilla()
             && self.top_bar.is_vanilla()
+            && self.health.is_vanilla()
             && self.extra_css.values().all(|c| c.trim().is_empty())
     }
 }
 
 /// Validates and emits one rule per non-identity element (sorted by `ElementId`),
-/// one rule per minimap colour (sorted by `IconId`), the minimap style rules, the top
+/// one rule per minimap colour (sorted by `IconId`), the minimap and health bar rules, the top
 /// bar's rules and files, then the minified extra CSS.
 /// Deterministic.
 pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
@@ -155,6 +161,9 @@ pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
             .push_str(&rule);
     }
     for (path, css) in layout.minimap.compile()? {
+        files.entry(path.to_string()).or_default().push_str(&css);
+    }
+    for (path, css) in layout.health.compile()? {
         files.entry(path.to_string()).or_default().push_str(&css);
     }
     let top_bar = layout.top_bar.compile()?;

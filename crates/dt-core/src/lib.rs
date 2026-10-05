@@ -18,6 +18,7 @@ pub mod power;
 pub mod practice;
 pub mod preset;
 pub mod profile;
+pub mod steamcfg;
 pub mod texture;
 pub mod update;
 pub mod video;

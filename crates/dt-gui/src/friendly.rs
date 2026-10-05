@@ -478,6 +478,7 @@ pub fn groups(section: Section) -> &'static [Group] {
         | Section::Hud
         | Section::Minimap
         | Section::TopBar
+        | Section::Health
         | Section::Addons
         | Section::System
         | Section::Safety => &[],

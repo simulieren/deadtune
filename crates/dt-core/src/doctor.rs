@@ -183,6 +183,12 @@ fn game_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
     });
 
     hud_checks(paths, data_dir, checks);
+    checks.push(other_mods(paths, data_dir));
+    if let Some(steam) = &paths.steam_root {
+        checks.push(launch_options_check(&crate::steamcfg::read_launch_options(
+            steam,
+        )));
+    }
     addon_checks(paths, data_dir, checks);
 }
 
@@ -335,6 +341,48 @@ fn matchmaking_check(text: &str, data_dir: &Path) -> Check {
     )
 }
 
+/// Mod paks in the addons folder that DeadTune did not install. Information, not a fault.
+fn other_mods(paths: &GamePaths, data_dir: &Path) -> Check {
+    const NAME: &str = "Other mods";
+    let ours = addon_owners(paths, data_dir);
+    let mut foreign: Vec<String> = std::fs::read_dir(install::addons_dir(paths))
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| {
+            n.ends_with("_dir.vpk") && !ours.get(n).is_some_and(|o| o.starts_with("DeadTune:"))
+        })
+        .collect();
+    foreign.sort();
+    match foreign.len() {
+        0 => pass(NAME, "none"),
+        1 => pass(NAME, format!("1 mod: {}", foreign[0])),
+        n => pass(NAME, format!("{n} mods: {}", foreign.join(", "))),
+    }
+}
+
+/// Deadlock's Steam launch options, warning when they set console values DeadTune also sets.
+pub fn launch_options_check(options: &[String]) -> Check {
+    const NAME: &str = "Steam launch options";
+    if options.is_empty() {
+        return pass(NAME, "none set");
+    }
+    let overrides: Vec<String> = options
+        .iter()
+        .flat_map(|o| crate::steamcfg::console_overrides(o))
+        .collect();
+    if overrides.is_empty() {
+        pass(NAME, options.join(" | "))
+    } else {
+        warn(
+            NAME,
+            format!("{} (sets {})", options.join(" | "), overrides.join(", ")),
+            "These run every time the game starts and can undo DeadTune's settings. Unless you set them on purpose, remove them: in Steam, right-click Deadlock > Properties > General > Launch options.",
+        )
+    }
+}
+
 fn hud_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
     let pak = paths.citadel_dir.join(GAME_PAK);
     checks.push(if !pak.is_file() {
@@ -408,6 +456,14 @@ fn hud_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
 }
 
 /// Other addons that ship their own `hud.vcss_c`; only one of them can win.
+/// Stylesheets DeadTune's HUD addon can replace; another pak shipping one clashes with it.
+const PATCHED_STYLES: [&str; 4] = [
+    HUD_STYLE,
+    crate::hud::minimap_colors::MINIMAP_STYLE,
+    crate::hud::health_style::HEALTH_STYLE,
+    crate::hud::health_style::HEALTH_CONTAINER_STYLE,
+];
+
 pub fn hud_conflicts(paths: &GamePaths) -> Vec<PathBuf> {
     let Ok(dir) = std::fs::read_dir(install::addons_dir(paths)) else {
         return Vec::new();
@@ -419,7 +475,9 @@ pub fn hud_conflicts(paths: &GamePaths) -> Vec<PathBuf> {
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| n.ends_with("_dir.vpk") && n != ADDON_FILE)
         })
-        .filter(|p| VpkDir::open(p).is_ok_and(|v| v.contains(HUD_STYLE)))
+        .filter(|p| {
+            VpkDir::open(p).is_ok_and(|v| PATCHED_STYLES.iter().any(|style| v.contains(style)))
+        })
         .collect();
     found.sort();
     found
@@ -565,10 +623,9 @@ fn section(out: &mut String, title: &str) {
     out.push_str(" ==\n");
 }
 
-/// Every file in the addons folder with its size and whether DeadTune's records own it.
-fn addons_listing(paths: &GamePaths, data_dir: &Path) -> String {
+/// Files in the addons folder that DeadTune's records account for, with who they belong to.
+fn addon_owners(paths: &GamePaths, data_dir: &Path) -> std::collections::BTreeMap<String, String> {
     use crate::addons::{self, InstalledState as Addon};
-    let dir = install::addons_dir(paths);
     let mut ours: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     if let Ok(states) = addons::install::installed_state(paths, data_dir) {
         for (id, state) in states {
@@ -602,6 +659,13 @@ fn addons_listing(paths: &GamePaths, data_dir: &Path) -> String {
         }
         _ => {}
     }
+    ours
+}
+
+/// Every file in the addons folder with its size and whether DeadTune's records own it.
+fn addons_listing(paths: &GamePaths, data_dir: &Path) -> String {
+    let dir = install::addons_dir(paths);
+    let ours = addon_owners(paths, data_dir);
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return format!("{} does not exist\n", dir.display());
     };
@@ -638,6 +702,42 @@ mod tests {
     use super::*;
     use crate::addons::install::{self as addons_install, tests::fake_install};
     use crate::addons::{AddonId, AddonsConfig};
+
+    #[test]
+    fn launch_options_warn_only_on_console_overrides() {
+        assert_eq!(launch_options_check(&[]).status, CheckStatus::Pass);
+        let quiet = launch_options_check(&["-dx11 +exec deadtune_boot".into()]);
+        assert_eq!(
+            (quiet.status, quiet.detail.as_str()),
+            (CheckStatus::Pass, "-dx11 +exec deadtune_boot")
+        );
+        let loud = launch_options_check(&["-high +fps_max 60".into()]);
+        assert_eq!(loud.status, CheckStatus::Warn);
+        assert!(loud.detail.contains("sets +fps_max 60"), "{}", loud.detail);
+        assert!(loud.fix.unwrap().contains("Launch options"));
+    }
+
+    #[test]
+    fn other_mods_lists_paks_deadtune_does_not_own() {
+        let (steam, paths) = fake_install("4242");
+        let data = steam.path().join("data");
+        assert_eq!(other_mods(&paths, &data).detail, "none");
+        let addons = install::addons_dir(&paths);
+        std::fs::create_dir_all(&addons).unwrap();
+        std::fs::write(addons.join("pak60_dir.vpk"), b"x").unwrap();
+        std::fs::write(addons.join("pak60_000.vpk"), b"x").unwrap();
+        let config = AddonsConfig {
+            enabled: [AddonId::SinnerLightFix].into_iter().collect(),
+            ..Default::default()
+        };
+        let plan = addons_install::plan(&paths, &config, &data).unwrap();
+        addons_install::execute(&plan, &paths, &data).unwrap();
+        let check = other_mods(&paths, &data);
+        assert_eq!(
+            (check.status, check.detail.as_str()),
+            (CheckStatus::Pass, "1 mod: pak60_dir.vpk")
+        );
+    }
 
     #[test]
     fn report_quotes_the_search_paths_records_paks_and_the_log_tail() {

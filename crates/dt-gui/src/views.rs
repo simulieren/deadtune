@@ -925,7 +925,7 @@ pub fn settings(ui: &mut egui::Ui, state: &mut AppState, reopen: &mut Option<Set
             ui.end_row();
         });
     });
-    widgets::card(ui, |ui| crate::simple::check_setup(ui, state, false));
+    widgets::card(ui, |ui| crate::simple::check_setup(ui, state));
     widgets::section(ui, "Updates", |ui| {
         crate::update_view::settings(ui, state, false)
     });

@@ -14,6 +14,7 @@ pub mod convars;
 pub mod crc32;
 pub mod css;
 pub mod elements;
+pub mod health_style;
 pub mod inject;
 pub mod install;
 pub mod kv3;

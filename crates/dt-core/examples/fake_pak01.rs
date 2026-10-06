@@ -24,6 +24,7 @@ use dt_core::hud::elements::HUD_STYLE;
 use dt_core::hud::health_style::{HEALTH_CONTAINER_STYLE, HEALTH_STYLE};
 use dt_core::hud::ingame::{self, SETTINGS_LAYOUT};
 use dt_core::hud::inject;
+use dt_core::hud::live;
 use dt_core::hud::minimap_colors::MINIMAP_STYLE;
 use dt_core::hud::resource::{Block, Resource};
 use dt_core::hud::topbar::{TOP_BAR_LAYOUT, TOP_BAR_STYLE};
@@ -403,6 +404,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         (
             SETTINGS_LAYOUT.to_string(),
             inject::compiled_layout(&ingame::stand_in_layout()),
+        ),
+        (
+            live::HUD_LAYOUT.to_string(),
+            inject::compiled_layout(&live::stand_in_layout()),
         ),
     ]);
     let mut files = files;

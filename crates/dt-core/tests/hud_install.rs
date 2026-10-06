@@ -10,6 +10,7 @@ use dt_core::hud::inject;
 use dt_core::hud::install::{
     self, ADDON_FILE, GAME_PAK, HudAction, HudError, InstalledState, Refreshed,
 };
+use dt_core::hud::live;
 use dt_core::hud::resource::{Resource, style_text};
 use dt_core::hud::topbar::{OWN_SCRIPT, OWN_STYLE, TOP_BAR_LAYOUT, TOP_BAR_STYLE};
 use dt_core::hud::vpk::{self, VpkDir, VpkError};
@@ -79,6 +80,10 @@ impl Fake {
             files.insert(TOP_BAR_STYLE.to_string(), vanilla_hud());
             files.insert(TOP_BAR_LAYOUT.to_string(), vanilla_top_bar());
             files.insert(MINIMAP_LAYOUT.to_string(), vanilla_minimap_layout());
+            files.insert(
+                live::HUD_LAYOUT.to_string(),
+                inject::compiled_layout(&live::stand_in_layout()),
+            );
             files.insert("scripts/unrelated.txt".to_string(), b"unrelated".to_vec());
             files.insert(ICON.to_string(), game_icon());
             fs::write(citadel.join(GAME_PAK), vpk::write(&files)).unwrap();
@@ -1098,4 +1103,42 @@ fn the_record_names_the_features_the_pak_carries() {
     install::execute(&plan, &fake.paths, &fake.state).unwrap();
     let record = install::read_record(&fake.state).unwrap().unwrap();
     assert_eq!(record.features, [dt_core::hud::HudFeature::Layout]);
+}
+
+#[test]
+fn live_preview_ships_its_script_in_the_hud_layout() {
+    let fake = Fake::new();
+    let hud = HudLayout {
+        live: true,
+        elements: [(
+            ElementId::Chat,
+            ElementEdit {
+                opacity_pct: 40,
+                ..ElementEdit::default()
+            },
+        )]
+        .into(),
+        ..HudLayout::default()
+    };
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+
+    let addon = VpkDir::open(&fake.addon()).unwrap();
+    let mut entries: Vec<&str> = addon.entries.keys().map(String::as_str).collect();
+    entries.sort_unstable();
+    assert_eq!(entries, [live::HUD_LAYOUT, live::OWN_SCRIPT, HUD]);
+    let original = inject::layout_text(&fake.game().read(live::HUD_LAYOUT).unwrap()).unwrap();
+    let rebuilt = inject::layout_text(&addon.read(live::HUD_LAYOUT).unwrap()).unwrap();
+    assert!(inject::extends(&rebuilt, &original));
+    assert!(rebuilt.contains("<include src=\"s2r://panorama/scripts/deadtune/live_hud.vjs_c\" />"));
+    let script = Resource::parse(&addon.read(live::OWN_SCRIPT).unwrap()).unwrap();
+    let base = live::base_id(&hud).unwrap();
+    assert!(
+        script.blocks[0]
+            .data
+            .starts_with(format!("var DT_LIVE = {{ base: \"{base}\",").as_bytes())
+    );
+    let expect = verify::expect_for_hud(&fake.game(), &addon);
+    let verified = verify::verify(&addon, &expect);
+    assert!(verified.is_ok(), "{verified}");
 }

@@ -195,6 +195,29 @@ The rows go into the game's own `popup_settings.vxml_c`, rebuilt as a text layou
 - [ ] **G-6 Vanilla removes**: Reset all on the page (nothing else set on the HUD pages), Apply: `pak77_dir.vpk` is gone and the settings menu is stock.
 - [ ] **G-7 Another settings mod**: with Mixboat's Wide FOV Slider (or any mod replacing `popup_settings`) installed as `pakNN_dir.vpk`, System check warns under "Other settings menu mods"; note which menu the game shows.
 
+### 7e. Live HUD preview (experimental, docs/plans/live-hud/plan.md)
+
+How it works: with "Live HUD preview" on (Layout page toolbar), the HUD pak carries `panorama/scripts/deadtune/live_hud.vjs_c`, included from the game's own `hud.vxml_c`. Every 250 ms the script runs `exec deadtune_hud`, reads three harmless string ConVars (`iv_debugbone`, `tv_title`, `tv_name`) and restyles HUD panels with whatever rules they carry. DeadTune writes `cfg\deadtune_hud.cfg` (and sends the same lines over netcon when that bridge is on) within about 100 ms of an edit. The script answers through `console.log`: `DEADTUNE_LIVE hello <base>` when it loads and every 10 s, `DEADTUNE_LIVE <seq> ok <base>` after each applied message. `<base>` is the eight-character id of the rules the pak baked, shown on hover of the "Live in game" indicator.
+
+Probes first; each settles one unknown and takes a minute. Launch through DeadTune so `-condebug` is on, open the console with F7.
+
+- [ ] **LH-P1 Script loads and reads**: turn the toggle on, Apply, launch. Within 15 s of the main menu `console.log` has `DEADTUNE_LIVE hello <base>`. Run `tv_title probe123` in the console; the next hello line (at most 10 s later) ends with `tv_title=probe123`. If hello lines never come, the script did not load: note any line naming `hud.vxml_c` or `live_hud`. If hello comes but the value stays `SourceTV`, Panorama's read API does not see console writes: note it (the fallback is a hidden slider).
+- [ ] **LH-P2 Script can exec**: run `echo DEADTUNE_LIVE probe-exec` in a file you save as `game\citadel\cfg\deadtune_hud.cfg`. Within a second `console.log` shows `DEADTUNE_LIVE probe-exec` repeating every 250 ms (delete the file after). If it never shows, `exec` is refused from a script: write it down, and run the remaining checks with netcon (`-netconport 2121`).
+- [ ] **LH-P3 Longest console value**: in the console run `tv_name` followed by a quoted value of 100, then 400, then 1000 `x` characters, and after each run `tv_name` alone. Note the longest length that prints back whole. DeadTune's chunk size is 200.
+- [ ] **LH-P4 Resets**: with the game in the hideout run `tv_title "dt1 1 1/1 <base> full #TopBar^opacity^0.3"` (the base from the hello line). The top bar fades. Then `tv_title "dt1 2 1/1 <base> full "` (empty payload): the top bar is back to normal. Repeat with `#TopBar^wash-color^#ff000080` (red tint) and then the empty message: note whether the tint clears. Repeat with `#minimap_persp^visibility^collapse`.
+- [ ] **LH-P5 Survives game states**: die in a sandbox match or enter and leave the hideout: hello lines keep coming afterwards.
+
+Then the feature itself:
+
+- [ ] **LH-1 Not installed yet**: Vanilla HUD, turn "Live HUD preview" on without Apply: the Layout page shows "Turn on Live HUD preview, Apply, and restart the game once". Apply while the game runs: the message stays (the pak cannot change while the game runs). Close the game, Apply, launch: the indicator reads "Live in game" within 15 s of the main menu.
+- [ ] **LH-2 Drag live**: in the hideout or a sandbox match, drag the minimap on the Layout page and change its size: the game's minimap follows within half a second, no restart. `console.log` shows one `DEADTUNE_LIVE <seq> ok <base>` per push. Note the lag you see.
+- [ ] **LH-3 Tint live**: Minimap page, pick an enemy hero colour: enemy markers recolour live. Top bar page, set Missing portraits to 30%: out-of-vision portraits dim live (with up to 250 ms delay when vision changes).
+- [ ] **LH-4 Needs a restart**: turn on a top bar extra (spawn timers): the page lists "Needs Apply and a restart: top bar extras" and nothing changes in game.
+- [ ] **LH-5 Undo**: "Undo live changes": the game's HUD is back to what the pak baked (the last Apply), the indicator stays "Live in game". Edit again: live again.
+- [ ] **LH-6 No double application**: with live edits showing (say minimap at 140%), close the game, Apply, launch. The minimap is at 140% once, not scaled twice, and the indicator shows the new base id. Dragging to 100% brings it back to the stock size.
+- [ ] **LH-7 Stale pak**: Apply a new HUD edit while the game runs (queued), do not restart; the indicator keeps the old base. Close the game; Apply lands; launch from Steam without DeadTune, then open DeadTune: "Live in game" again with the new base. Now Apply another edit while that game runs: edits still go live against the running base; after the restart they match the pak.
+- [ ] **LH-8 Clean exit**: close the game: the indicator says live preview starts when the game runs; `tv_title`, `tv_name` and `iv_debugbone` are back to default at the next launch (`tv_title` prints `SourceTV`), and `cfg\deadtune_hud.cfg` is empty. Turn the toggle off, Apply: the pak has no `live_hud` entry (`addons verify` lists its files) and no hello lines come.
+
 ### 8. Benchmark
 - [ ] **P0-7**: capture 3 identical 60 s runs with PresentMon, import each in Advanced > Bench. Variance under 3%? Note which CSV columns your PresentMon version writes (`MsBetweenPresents` or `FrameTime`).
 

@@ -142,8 +142,42 @@ pub struct FailureMessage {
     pub advice: String,
 }
 
+/// The DeadTune HUD part behind a fatal line that names a game layout we rebuild, e.g.
+/// "Unable to load layout file 'file://{resources}/layout/hud_minimap.xml'".
+pub fn culprit(fatal: &str) -> Option<HudFeature> {
+    use crate::hud::{apples_tunnels, ingame, topbar};
+    [
+        (apples_tunnels::MINIMAP_LAYOUT, HudFeature::ApplesTunnels),
+        (topbar::TOP_BAR_LAYOUT, HudFeature::TopBar),
+        (ingame::SETTINGS_LAYOUT, HudFeature::IngameSettings),
+    ]
+    .into_iter()
+    .find(|(path, _)| {
+        let name = path
+            .trim_start_matches("panorama/")
+            .trim_end_matches(".vxml_c");
+        fatal.contains(&format!("{{resources}}/{name}.xml"))
+    })
+    .map(|(_, feature)| feature)
+}
+
 impl Failure {
     pub fn message(&self) -> FailureMessage {
+        let mut message = self.plain_message();
+        if self.ids.contains(&Pak::Hud)
+            && let Some(feature) = self.fatal.as_deref().and_then(culprit)
+        {
+            message.advice = format!(
+                "The game could not load a layout DeadTune rebuilds for {}; turn that off if \
+                 it happens again. {}",
+                feature.label(),
+                message.advice
+            );
+        }
+        message
+    }
+
+    fn plain_message(&self) -> FailureMessage {
         let restored = self
             .hud
             .as_ref()
@@ -1168,6 +1202,20 @@ mod tests {
         assert!(
             guard.is_verified(Pak::Hud, &sha256_hex(b"hud one")),
             "the restored pak is the verified one, so the next launch is not a trial"
+        );
+
+        let mut named = failure.clone();
+        named.fatal = Some("FATAL ERROR: Unable to load layout file 'file://{resources}/layout/hud_minimap.xml'.  This may indicate a problem".into());
+        assert!(
+            named.message().advice.starts_with(
+                "The game could not load a layout DeadTune rebuilds for apples and tunnels;"
+            ),
+            "{}",
+            named.message().advice
+        );
+        assert_eq!(
+            culprit("FATAL ERROR: Unable to read default keybinding configuration"),
+            None
         );
 
         let plan = |bytes: &[u8]| HudPlan {

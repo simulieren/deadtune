@@ -1404,6 +1404,24 @@ impl AppState {
 
     /// Safe mode removes every DeadTune pak (performance addons and the HUD) right away and
     /// keeps them out until it is turned off; the profile remembers what was on.
+    /// Turns "Start with Windows" on or off, and on starts the background check now too.
+    pub fn set_start_with_windows(&mut self, on: bool) -> Result<(), String> {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        dt_core::autostart::set(on.then_some(exe.as_path()))
+            .map_err(|e| format!("Windows did not take the change: {e}"))?;
+        self.settings.start_with_windows = on;
+        self.settings
+            .save(&self.data_dir)
+            .map_err(|e| format!("saving settings: {e}"))?;
+        if on {
+            std::process::Command::new(&exe)
+                .arg(dt_core::autostart::FLAG)
+                .spawn()
+                .map_err(|e| format!("starting the background check: {e}"))?;
+        }
+        Ok(())
+    }
+
     pub fn toggle_safe_mode(&mut self) -> Result<Applied, String> {
         let previous = self.settings.safe_mode;
         self.settings.safe_mode = !previous;

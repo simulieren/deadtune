@@ -123,6 +123,8 @@ How it works now: DeadTune writes `cfg\deadtune_boot.cfg` (binds F8, sets the pr
 ### 6. Game updates
 - [ ] After a Steam update or "Verify integrity of game files", DeadTune shows the "Deadlock updated" banner and Re-apply works.
 - [ ] **U-1 HUD rebuilt after an update**: with "Apple spots" on, let Steam update the game while DeadTune is closed. Open DeadTune before launching: the status line says it rebuilt your HUD changes from the new game files, and the game starts with the apple dots.
+- [ ] **U-3 Start with Windows**: Safety & setup > Updates, turn on "Start with Windows". Task Manager shows a second `deadtune.exe` with no window; Startup apps lists DeadTune. Sign out and in: it starts again. Turn it off: the background process exits within a minute and the Startup entry is gone.
+- [ ] **U-4 Update with DeadTune closed**: with U-3 on and DeadTune's window closed, let Steam update Deadlock, then launch from Steam. The game starts with your HUD changes.
 - [ ] **U-2 Guard after an update**: if the game fails to start after an update while DeadTune is open, DeadTune takes out its HUD pak (and any addon) and shows the banner, even though those paks had started fine on the old build.
 
 ### 7. HUD (`docs/plan-hud.md` phase H0)

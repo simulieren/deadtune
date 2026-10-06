@@ -3,6 +3,7 @@
 
 pub mod addons;
 pub mod apply;
+pub mod autostart;
 pub mod backup;
 pub mod bench;
 pub mod bridge;

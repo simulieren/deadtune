@@ -142,7 +142,10 @@ mod tests {
         let first = texture(&ctx).expect("decodes").id();
         let drawn = release(&ctx, before).expect("drawn after the cutoff, so kept");
         assert_eq!(texture(&ctx).expect("kept").id(), first);
-        assert_eq!(release(&ctx, Instant::now() + std::time::Duration::from_nanos(1)), None);
+        assert_eq!(
+            release(&ctx, Instant::now() + std::time::Duration::from_nanos(1)),
+            None
+        );
         assert_ne!(texture(&ctx).expect("decoded again").id(), first);
         assert!(drawn >= before);
     }

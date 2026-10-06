@@ -37,10 +37,7 @@ pub enum ImageSource {
     /// The game's pak01, only its `panorama/images/` entries.
     Game(VpkDir),
     /// A snapshot's `raw/` folder (or any folder holding `panorama/images/`).
-    Folder {
-        root: PathBuf,
-        label: String,
-    },
+    Folder { root: PathBuf, label: String },
     /// Decoded pictures under their game paths: a "Save all images" export or a snapshot's
     /// `text/`. `names` is the export manifest's game path -> files, when it has one.
     Decoded {

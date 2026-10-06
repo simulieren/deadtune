@@ -888,7 +888,10 @@ impl eframe::App for App {
         self.poll(&ctx);
         let (minimized, focused) = ctx.input(|i| {
             let viewport = i.viewport();
-            (viewport.minimized == Some(true), viewport.focused != Some(false))
+            (
+                viewport.minimized == Some(true),
+                viewport.focused != Some(false),
+            )
         });
         let mut reopen = None;
         match &mut self.screen {

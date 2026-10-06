@@ -549,7 +549,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("pak_dir.vpk");
         let mut files = sample();
-        files.insert("panorama/stylesheet.vcss_c".to_string(), b"near miss".to_vec());
+        files.insert(
+            "panorama/stylesheet.vcss_c".to_string(),
+            b"near miss".to_vec(),
+        );
         files.insert("panorama/root.txt".to_string(), b"in the parent".to_vec());
         std::fs::write(&p, write(&files)).unwrap();
         let vpk = VpkDir::open_under(&p, "panorama/styles/").unwrap();
@@ -557,7 +560,10 @@ mod tests {
             vpk.entries.keys().collect::<Vec<_>>(),
             ["panorama/styles/hud.vcss_c"]
         );
-        assert_eq!(vpk.read("panorama/styles/hud.vcss_c").unwrap(), b"style bytes");
+        assert_eq!(
+            vpk.read("panorama/styles/hud.vcss_c").unwrap(),
+            b"style bytes"
+        );
         let vpk = VpkDir::open_under(&p, "panorama/").unwrap();
         assert_eq!(vpk.entries.len(), 4);
         assert_eq!(vpk.read("panorama/root.txt").unwrap(), b"in the parent");

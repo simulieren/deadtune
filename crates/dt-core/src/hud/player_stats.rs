@@ -68,6 +68,46 @@ pub enum StatsPart {
     StatusEffects,
 }
 
+/// A number's typeface, from the families the game's own styles use.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatFont {
+    #[default]
+    Game,
+    Sans,
+    Mono,
+    Block,
+}
+
+impl StatFont {
+    pub const ALL: [StatFont; 4] = [
+        StatFont::Game,
+        StatFont::Sans,
+        StatFont::Mono,
+        StatFont::Block,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            StatFont::Game => "Game",
+            StatFont::Sans => "Sans",
+            StatFont::Mono => "Mono",
+            StatFont::Block => "Block",
+        }
+    }
+
+    fn family(self) -> Option<&'static str> {
+        match self {
+            StatFont::Game => None,
+            StatFont::Sans => Some("numericSans"),
+            StatFont::Mono => Some("sansMono"),
+            StatFont::Block => Some("numericBlock"),
+        }
+    }
+}
+
+pub const TILE_RADIUS_RANGE: RangeInclusive<u8> = 0..=16;
+
 /// How a part's size is set in game.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sizing {
@@ -229,11 +269,16 @@ pub struct PlayerStatsStyle {
     pub hide_bars: bool,
     /// The glow behind a number that spikes or maxes out.
     pub hide_glow: bool,
+    pub number_font: StatFont,
     /// Level jar.
     pub level_px: u8,
     pub level_color: Option<Color>,
     pub jar_color: Option<Color>,
+    pub level_font: StatFont,
+    /// The jar round the level, leaving the number.
+    pub hide_jar: bool,
     /// Souls.
+    pub souls_font: StatFont,
     pub souls_px: u8,
     pub souls_color: Option<Color>,
     pub hide_souls_icon: bool,
@@ -248,6 +293,10 @@ pub struct PlayerStatsStyle {
     pub hide_upgrades: bool,
     /// The locked flex slots beside the grid.
     pub hide_flex: bool,
+    /// Rounded item tiles, px.
+    pub tile_radius_px: u8,
+    /// Item pictures in black and white.
+    pub mono_items: bool,
 }
 
 impl Default for PlayerStatsStyle {
@@ -264,9 +313,13 @@ impl Default for PlayerStatsStyle {
             hide_deltas: false,
             hide_bars: false,
             hide_glow: false,
+            number_font: StatFont::Game,
             level_px: LEVEL_PX,
             level_color: None,
             jar_color: None,
+            level_font: StatFont::Game,
+            hide_jar: false,
+            souls_font: StatFont::Game,
             souls_px: SOULS_PX,
             souls_color: None,
             hide_souls_icon: false,
@@ -277,6 +330,8 @@ impl Default for PlayerStatsStyle {
             hide_tiers: false,
             hide_upgrades: false,
             hide_flex: false,
+            tile_radius_px: 0,
+            mono_items: false,
         }
     }
 }
@@ -530,6 +585,12 @@ impl PlayerStatsStyle {
                 self.hide_tiers,
                 self.hide_upgrades,
                 self.hide_flex,
+                self.number_font != d.number_font,
+                self.level_font != d.level_font,
+                self.hide_jar,
+                self.souls_font != d.souls_font,
+                self.tile_radius_px != d.tile_radius_px,
+                self.mono_items,
             ]
             .into_iter()
             .filter(|&b| b)
@@ -551,13 +612,17 @@ impl PlayerStatsStyle {
                 self.hide_deltas,
                 self.hide_bars,
                 self.hide_glow,
+                self.number_font != d.number_font,
             ],
             StatsPart::Level => vec![
                 self.level_px != d.level_px,
                 self.level_color.is_some(),
                 self.jar_color.is_some(),
+                self.level_font != d.level_font,
+                self.hide_jar,
             ],
             StatsPart::Souls => vec![
+                self.souls_font != d.souls_font,
                 self.souls_px != d.souls_px,
                 self.souls_color.is_some(),
                 self.hide_souls_icon,
@@ -570,6 +635,8 @@ impl PlayerStatsStyle {
                 self.hide_tiers,
                 self.hide_upgrades,
                 self.hide_flex,
+                self.tile_radius_px != d.tile_radius_px,
+                self.mono_items,
             ],
             StatsPart::Popups | StatsPart::Quickbuy | StatsPart::StatusEffects => vec![],
         };
@@ -592,13 +659,17 @@ impl PlayerStatsStyle {
                 self.hide_deltas = false;
                 self.hide_bars = false;
                 self.hide_glow = false;
+                self.number_font = d.number_font;
             }
             StatsPart::Level => {
                 self.level_px = d.level_px;
                 self.level_color = None;
                 self.jar_color = None;
+                self.level_font = d.level_font;
+                self.hide_jar = false;
             }
             StatsPart::Souls => {
+                self.souls_font = d.souls_font;
                 self.souls_px = d.souls_px;
                 self.souls_color = None;
                 self.hide_souls_icon = false;
@@ -611,6 +682,8 @@ impl PlayerStatsStyle {
                 self.hide_tiers = false;
                 self.hide_upgrades = false;
                 self.hide_flex = false;
+                self.tile_radius_px = d.tile_radius_px;
+                self.mono_items = false;
             }
             StatsPart::Popups | StatsPart::Quickbuy | StatsPart::StatusEffects => {}
         }
@@ -635,6 +708,12 @@ impl PlayerStatsStyle {
             ("level size", self.level_px, &NUMBER_PX_RANGE, "12..=64"),
             ("souls size", self.souls_px, &SOULS_PX_RANGE, "12..=72"),
             ("tile gap", self.tile_gap_px, &TILE_GAP_RANGE, "0..=12"),
+            (
+                "tile corners",
+                self.tile_radius_px,
+                &TILE_RADIUS_RANGE,
+                "0..=16",
+            ),
         ] {
             if !range.contains(&px) {
                 return Err(PlayerStatsError::Px(name, px, text));
@@ -681,6 +760,9 @@ impl PlayerStatsStyle {
         }
         if self.straight_numbers {
             number.push(("transform", "rotateZ(0deg)".into()));
+        }
+        if let Some(family) = self.number_font.family() {
+            number.push(("font-family", family.into()));
         }
         add(
             ACTIVE_STATS_STYLE,
@@ -735,12 +817,23 @@ impl PlayerStatsStyle {
         if let Some(c) = self.level_color {
             level.push(("color", c.to_string()));
         }
+        if let Some(family) = self.level_font.family() {
+            level.push(("font-family", family.into()));
+        }
         add(LEVEL_STYLE, "CitadelPlayerLevel #PlayerLevelNumber", &level);
         if let Some(c) = self.jar_color {
             add(
                 LEVEL_STYLE,
                 "CitadelPlayerLevel #SoulsFrame,CitadelPlayerLevel #SoulsFill",
                 &[("wash-color", c.to_string())],
+            );
+        }
+
+        if self.hide_jar {
+            add(
+                LEVEL_STYLE,
+                "CitadelPlayerLevel #SoulsFrame,CitadelPlayerLevel #SoulsFill",
+                &collapse(),
             );
         }
 
@@ -751,6 +844,9 @@ impl PlayerStatsStyle {
         }
         if let Some(c) = self.souls_color {
             count.push(("color", c.to_string()));
+        }
+        if let Some(family) = self.souls_font.family() {
+            count.push(("font-family", family.into()));
         }
         add(GOLD_STYLE, &format!("{souls} #hudCurGoldLabel"), &count);
         if let Some(c) = self.souls_color {
@@ -816,6 +912,18 @@ impl PlayerStatsStyle {
                 &collapse(),
             );
         }
+        let mut tile = Vec::new();
+        if self.tile_radius_px != d.tile_radius_px {
+            tile.push(("border-radius", format!("{}px", self.tile_radius_px)));
+        }
+        if self.mono_items {
+            tile.push(("saturation", "0".to_string()));
+        }
+        add(
+            MOD_ICON_STYLE,
+            "#ModsContainer .mod_icon_single_container",
+            &tile,
+        );
         if self.hide_flex {
             add(
                 HUD_STYLE,
@@ -888,6 +996,221 @@ fn number(value: f64) -> String {
     text.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
+/// A ready-made look for one part: what it sets over the part's game defaults. A look is
+/// on when resetting the part and applying it gives the style back.
+#[derive(Clone, Copy)]
+pub struct PartLook {
+    pub label: &'static str,
+    pub blurb: &'static str,
+    apply: fn(&mut PlayerStatsStyle),
+}
+
+impl PartLook {
+    /// `style` with `part` reset and this look applied.
+    pub fn applied(&self, style: &PlayerStatsStyle, part: StatsPart) -> PlayerStatsStyle {
+        let mut out = style.clone();
+        out.reset_part(part);
+        (self.apply)(&mut out);
+        out
+    }
+
+    pub fn is_on(&self, style: &PlayerStatsStyle, part: StatsPart) -> bool {
+        self.applied(style, part) == *style
+    }
+}
+
+fn place(s: &mut PlayerStatsStyle, part: StatsPart, scale_pct: u16, opacity: Option<u8>) {
+    s.set_part(
+        part,
+        PartEdit {
+            scale_pct,
+            opacity_pct: opacity,
+            ..PartEdit::default()
+        },
+    );
+}
+
+fn hide(s: &mut PlayerStatsStyle, part: StatsPart) {
+    s.set_part(
+        part,
+        PartEdit {
+            hidden: true,
+            ..PartEdit::default()
+        },
+    );
+}
+
+const fn look(
+    label: &'static str,
+    blurb: &'static str,
+    apply: fn(&mut PlayerStatsStyle),
+) -> PartLook {
+    PartLook {
+        label,
+        blurb,
+        apply,
+    }
+}
+
+const GAME: PartLook = look("Game", "The game's own.", |_| {});
+
+const NUMBER_LOOKS: [PartLook; 6] = [
+    GAME,
+    look(
+        "Clean",
+        "Straight numbers, no change numbers or glow.",
+        |s| {
+            s.straight_numbers = true;
+            s.hide_deltas = true;
+            s.hide_glow = true;
+        },
+    ),
+    look(
+        "Minimal",
+        "Straight numbers on faint icons, no bars, change numbers or glow.",
+        |s| {
+            s.straight_numbers = true;
+            s.hide_deltas = true;
+            s.hide_bars = true;
+            s.hide_glow = true;
+            s.icon_opacity_pct = 20;
+        },
+    ),
+    look("Small", "Smaller numbers, the whole part at 85%.", |s| {
+        s.number_px = 20;
+        place(s, StatsPart::Numbers, 85, None);
+    }),
+    look("Big", "Bigger numbers.", |s| s.number_px = 34),
+    look("Mono", "Straight monospaced numbers.", |s| {
+        s.number_font = StatFont::Mono;
+        s.straight_numbers = true;
+    }),
+];
+
+const POPUP_LOOKS: [PartLook; 4] = [
+    GAME,
+    look("Small", "The popups at 70%.", |s| {
+        place(s, StatsPart::Popups, 70, None)
+    }),
+    look("Faint", "Half see-through.", |s| {
+        place(s, StatsPart::Popups, 0, Some(50))
+    }),
+    look("Hidden", "No popups.", |s| hide(s, StatsPart::Popups)),
+];
+
+const LEVEL_LOOKS: [PartLook; 5] = [
+    GAME,
+    look("Number only", "The level without its jar.", |s| {
+        s.hide_jar = true
+    }),
+    look("Small", "The jar at 80% with a smaller number.", |s| {
+        s.level_px = 22;
+        place(s, StatsPart::Level, 80, None);
+    }),
+    look("Big", "A bigger level number.", |s| s.level_px = 36),
+    look("Sans", "The level in the plain number font.", |s| {
+        s.level_font = StatFont::Sans
+    }),
+];
+
+const SOULS_LOOKS: [PartLook; 6] = [
+    GAME,
+    look("Clean", "No SOULS label.", |s| s.hide_souls_label = true),
+    look("Number only", "No icon or label, just the number.", |s| {
+        s.hide_souls_icon = true;
+        s.hide_souls_label = true;
+    }),
+    look("Small", "A smaller number, no label.", |s| {
+        s.souls_px = 24;
+        s.hide_souls_label = true;
+    }),
+    look("Big", "A bigger number.", |s| s.souls_px = 42),
+    look("Mono", "A monospaced number, no label.", |s| {
+        s.souls_font = StatFont::Mono;
+        s.hide_souls_label = true;
+    }),
+];
+
+const ITEM_LOOKS: [PartLook; 6] = [
+    GAME,
+    look("Clean", "No tier corners or upgrade pips.", |s| {
+        s.hide_tiers = true;
+        s.hide_upgrades = true;
+    }),
+    look("Tight", "Tiles closer together, the grid at 90%.", |s| {
+        s.tile_gap_px = 1;
+        place(s, StatsPart::Items, 90, None);
+    }),
+    look(
+        "Rounded",
+        "Round-cornered tiles with a little more room.",
+        |s| {
+            s.tile_radius_px = 8;
+            s.tile_gap_px = 4;
+        },
+    ),
+    look(
+        "Ghost",
+        "Empty slots gone and a lighter cooldown cover.",
+        |s| {
+            s.empty_opacity_pct = 0;
+            s.cooldown_pct = 60;
+        },
+    ),
+    look(
+        "Monochrome",
+        "Item pictures in black and white, tiers kept.",
+        |s| {
+            s.mono_items = true;
+        },
+    ),
+];
+
+const QUICKBUY_LOOKS: [PartLook; 4] = [
+    GAME,
+    look(
+        "Always lit",
+        "Fully visible even before you can afford it.",
+        |s| {
+            place(s, StatsPart::Quickbuy, 0, Some(100));
+        },
+    ),
+    look("Small", "At 75%.", |s| {
+        place(s, StatsPart::Quickbuy, 75, None)
+    }),
+    look("Hidden", "No quickbuy slot.", |s| {
+        hide(s, StatsPart::Quickbuy)
+    }),
+];
+
+const STATUS_LOOKS: [PartLook; 4] = [
+    GAME,
+    look("Small", "At 75%.", |s| {
+        place(s, StatsPart::StatusEffects, 75, None)
+    }),
+    look("Faint", "At 60% opacity.", |s| {
+        place(s, StatsPart::StatusEffects, 0, Some(60));
+    }),
+    look("Hidden", "No buff and debuff icons here.", |s| {
+        hide(s, StatsPart::StatusEffects);
+    }),
+];
+
+impl StatsPart {
+    /// Ready-made looks for this part, the game's first.
+    pub fn looks(self) -> &'static [PartLook] {
+        match self {
+            StatsPart::Numbers => &NUMBER_LOOKS,
+            StatsPart::Popups => &POPUP_LOOKS,
+            StatsPart::Level => &LEVEL_LOOKS,
+            StatsPart::Souls => &SOULS_LOOKS,
+            StatsPart::Items => &ITEM_LOOKS,
+            StatsPart::Quickbuy => &QUICKBUY_LOOKS,
+            StatsPart::StatusEffects => &STATUS_LOOKS,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -898,6 +1221,62 @@ mod tests {
             .find(|(f, _)| *f == file)
             .map(|(_, css)| css.as_str())
             .unwrap_or("")
+    }
+
+    #[test]
+    fn every_part_look_compiles_is_found_again_and_leaves_other_parts() {
+        let mut base = StatsPreset::Clean.style();
+        base.tile_gap_px = 5;
+        for part in StatsPart::ALL {
+            let looks = part.looks();
+            assert_eq!(looks[0].label, "Game");
+            for look in looks {
+                let style = look.applied(&base, part);
+                assert!(style.compile().is_ok(), "{part:?} {}", look.label);
+                assert!(look.is_on(&style, part), "{part:?} {}", look.label);
+                let on: Vec<&str> = looks
+                    .iter()
+                    .filter(|l| l.is_on(&style, part))
+                    .map(|l| l.label)
+                    .collect();
+                assert_eq!(on, [look.label], "{part:?}: looks are distinct");
+                for other in StatsPart::ALL.iter().filter(|p| **p != part) {
+                    assert_eq!(
+                        style.part(*other),
+                        base.part(*other),
+                        "{part:?} touched {other:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn new_options_compile() {
+        let s = PlayerStatsStyle {
+            number_font: StatFont::Mono,
+            hide_jar: true,
+            souls_font: StatFont::Sans,
+            tile_radius_px: 6,
+            mono_items: true,
+            ..PlayerStatsStyle::default()
+        };
+        let all: String = s
+            .compile()
+            .unwrap()
+            .iter()
+            .map(|(_, t)| t.as_str())
+            .collect();
+        assert!(all.contains("font-family:sansMono"), "{all}");
+        assert!(all.contains(
+            "CitadelPlayerLevel #SoulsFrame,CitadelPlayerLevel #SoulsFill{visibility:collapse;}"
+        ));
+        assert!(all.contains("#hudCurGoldLabel{font-family:numericSans;}"));
+        assert!(all.contains(".mod_icon_single_container{border-radius:6px;saturation:0;}"));
+        assert_eq!(s.changed_count(), 5);
+        let mut big = s.clone();
+        big.tile_radius_px = 40;
+        assert!(big.compile().is_err());
     }
 
     #[test]

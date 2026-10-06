@@ -8,7 +8,7 @@ use dt_core::hud::elements::ElementId;
 use dt_core::hud::minimap_colors::Color;
 use dt_core::hud::player_stats::{
     NUMBER_PX_RANGE, OFFSET_RANGE, PartEdit, PlayerStatsStyle, SCALE_RANGE, SOULS_PX_RANGE, Sizing,
-    StatsPart, StatsPreset, TILE_GAP_RANGE,
+    StatFont, StatsPart, StatsPreset, TILE_GAP_RANGE, TILE_RADIUS_RANGE,
 };
 use eframe::egui::color_picker::{Alpha, color_edit_button_srgba};
 use eframe::egui::epaint::TextShape;
@@ -553,7 +553,26 @@ impl Pen<'_> {
 
     /// Text in game px with the game's offBlack outline, `align` at `at`, tilted `degrees`.
     fn text(&self, at: Pos2, align: Align2, text: &str, px: f32, color: Color32, degrees: f32) {
-        let font = FontId::new(self.len(px).max(1.0), theme::semibold());
+        self.text_in(StatFont::Game, at, align, text, px, color, degrees);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn text_in(
+        &self,
+        family: StatFont,
+        at: Pos2,
+        align: Align2,
+        text: &str,
+        px: f32,
+        color: Color32,
+        degrees: f32,
+    ) {
+        let size = self.len(px).max(1.0);
+        let font = match family {
+            StatFont::Game | StatFont::Block => FontId::new(size, theme::semibold()),
+            StatFont::Sans => FontId::proportional(size),
+            StatFont::Mono => FontId::monospace(size * 0.9),
+        };
         let galley = self.p.layout_no_wrap(text.to_owned(), font, color);
         let corner = align.anchor_size(self.pt(at), galley.size()).min;
         let angle = degrees.to_radians();
@@ -844,7 +863,8 @@ fn numbers(pen: &Pen, images: &mut Images, style: &PlayerStatsStyle) {
             let level = Rect::from_min_max(pos2(bar.left(), 201.0), bar.max);
             pen.fill(level, 1.0, category(style, i));
         }
-        pen.text(
+        pen.text_in(
+            style.number_font,
             cell.center() + vec2(-4.0, 6.0),
             Align2::CENTER_CENTER,
             value,
@@ -891,8 +911,9 @@ fn level(pen: &Pen, images: &mut Images, style: &PlayerStatsStyle) {
     let jar = Rect::from_min_size(pos2(20.0, 282.0), vec2(60.0, 60.0));
     let tint = style.jar_color.map_or(Color32::WHITE, to32);
     let fill = Rect::from_min_max(pos2(25.0, 289.0), pos2(77.0, 340.0));
-    let framed = pen.image(images, JAR_FILL, fill, tint.gamma_multiply(0.4))
-        & pen.image(images, JAR_FRAME, jar, tint);
+    let framed = style.hide_jar
+        || pen.image(images, JAR_FILL, fill, tint.gamma_multiply(0.4))
+            & pen.image(images, JAR_FRAME, jar, tint);
     if !framed {
         let ring = style.jar_color.map_or(SHARD, to32);
         pen.p.circle_stroke(
@@ -901,7 +922,8 @@ fn level(pen: &Pen, images: &mut Images, style: &PlayerStatsStyle) {
             Stroke::new(pen.len(4.0), pen.c(ring)),
         );
     }
-    pen.text(
+    pen.text_in(
+        style.level_font,
         jar.center() + vec2(2.5, 2.5),
         Align2::CENTER_CENTER,
         "30",
@@ -957,7 +979,8 @@ fn souls(pen: &Pen, images: &mut Images, style: &PlayerStatsStyle) {
     {
         pen.fill(icon.shrink2(vec2(4.0, 8.0)), 6.0, color);
     }
-    pen.text(
+    pen.text_in(
+        style.souls_font,
         layout.number,
         Align2::LEFT_CENTER,
         "4,748",
@@ -1033,9 +1056,18 @@ fn items(pen: &Pen, images: &mut Images, style: &PlayerStatsStyle) {
             );
             continue;
         };
-        pen.fill(r, 3.0 * u, Color32::from_black_alpha(48));
-        if !pen.image(images, item, r, Color32::WHITE) {
-            pen.fill(r.shrink(4.0), 2.0, CATEGORY[cat].gamma_multiply(0.5));
+        let round = f32::from(style.tile_radius_px).max(3.0) * u;
+        pen.fill(r, round, Color32::from_black_alpha(48));
+        let picture = r.shrink(f32::from(style.tile_radius_px) * 0.3 * u);
+        if !pen.image(images, item, picture, Color32::WHITE) {
+            pen.fill(picture.shrink(4.0), 2.0, CATEGORY[cat].gamma_multiply(0.5));
+        }
+        if style.mono_items {
+            pen.fill(
+                picture,
+                round,
+                Color32::from_rgba_unmultiplied(120, 120, 120, 165),
+            );
         }
         if slot == 6 {
             let cover = f32::from(style.cooldown_pct) / 100.0;
@@ -1242,7 +1274,22 @@ fn part_inspector(ui: &mut Ui, style: &mut PlayerStatsStyle, part: StatsPart) {
     widgets::caption(ui, "Part");
     ui.label(RichText::new(spec.label).size(17.0).strong().color(TEXT));
     widgets::hint(ui, spec.blurb);
-    ui.add_space(8.0);
+    ui.add_space(6.0);
+    caption(ui, "Look");
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(5.0, 5.0);
+        for look in part.looks() {
+            let on = look.is_on(style, part);
+            if widgets::chip(ui, look.label, ACCENT, Some(on))
+                .on_hover_text(look.blurb)
+                .clicked()
+                && !on
+            {
+                *style = look.applied(style, part);
+            }
+        }
+    });
+    ui.add_space(4.0);
     let mut edit = style.part(part);
     caption(ui, "Show");
     if let Some(i) = widgets::segmented(ui, &["Visible", "Hidden"], usize::from(edit.hidden)) {
@@ -1295,6 +1342,7 @@ fn details(ui: &mut Ui, style: &mut PlayerStatsStyle, part: StatsPart) {
                 NUMBER_PX_RANGE,
                 d.number_px,
             );
+            font_row(ui, &mut style.number_font);
             color_row(ui, "Colour", &mut style.number_color, OFF_WHITE);
             switch_row(
                 ui,
@@ -1343,12 +1391,20 @@ fn details(ui: &mut Ui, style: &mut PlayerStatsStyle, part: StatsPart) {
         StatsPart::Level => {
             caption(ui, "Level");
             px_row(ui, "Size", &mut style.level_px, NUMBER_PX_RANGE, d.level_px);
+            font_row(ui, &mut style.level_font);
             color_row(ui, "Colour", &mut style.level_color, OFF_WHITE);
             color_row(ui, "Jar", &mut style.jar_color, Color32::WHITE);
+            switch_row(
+                ui,
+                "Hide the jar",
+                &mut style.hide_jar,
+                "The soul jar round the level; the number stays.",
+            );
         }
         StatsPart::Souls => {
             caption(ui, "Souls");
             px_row(ui, "Size", &mut style.souls_px, SOULS_PX_RANGE, d.souls_px);
+            font_row(ui, &mut style.souls_font);
             color_row(ui, "Colour", &mut style.souls_color, SHARD);
             switch_row(
                 ui,
@@ -1371,6 +1427,19 @@ fn details(ui: &mut Ui, style: &mut PlayerStatsStyle, part: StatsPart) {
                 &mut style.tile_gap_px,
                 TILE_GAP_RANGE,
                 d.tile_gap_px,
+            );
+            px_row(
+                ui,
+                "Corners",
+                &mut style.tile_radius_px,
+                TILE_RADIUS_RANGE,
+                d.tile_radius_px,
+            );
+            switch_row(
+                ui,
+                "Black and white items",
+                &mut style.mono_items,
+                "Item pictures without colour; tier corners keep theirs.",
             );
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Empty slots").color(WEAK));
@@ -1436,6 +1505,24 @@ where
         );
     });
     *value != before
+}
+
+fn font_row(ui: &mut Ui, value: &mut StatFont) {
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            vec2(70.0, 20.0),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.set_min_width(70.0);
+                ui.label(RichText::new("Font").color(WEAK));
+            },
+        );
+        let labels: Vec<&str> = StatFont::ALL.iter().map(|f| f.label()).collect();
+        let current = StatFont::ALL.iter().position(|f| f == value).unwrap_or(0);
+        if let Some(i) = widgets::segmented(ui, &labels, current) {
+            *value = StatFont::ALL[i];
+        }
+    });
 }
 
 fn px_row(

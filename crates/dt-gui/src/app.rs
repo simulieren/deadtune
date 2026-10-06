@@ -189,6 +189,26 @@ impl App {
                                 .any(|w| w.starts_with(&name))
                         });
                 }
+                // `DEADTUNE_STATS_LOOK=items:rounded,souls:mono` applies part looks.
+                if let Ok(value) = std::env::var("DEADTUNE_STATS_LOOK") {
+                    let mut style = state.profile.hud.player_stats.clone();
+                    for (part, look) in value.split(',').filter_map(|kv| kv.split_once(':')) {
+                        let part = dt_core::hud::player_stats::StatsPart::ALL
+                            .into_iter()
+                            .find(|p| p.spec().label.to_lowercase().contains(part.trim()));
+                        let found = part.and_then(|part| {
+                            part.looks()
+                                .iter()
+                                .find(|l| l.label.to_lowercase().starts_with(look.trim()))
+                                .map(|l| l.applied(&style, part))
+                        });
+                        match found {
+                            Some(next) => style = next,
+                            None => eprintln!("DEADTUNE_STATS_LOOK: no look {part:?}:{look}"),
+                        }
+                    }
+                    state.set_player_stats_style(style);
+                }
                 // `DEADTUNE_HUD_BACKDROP=off` hides the layout preview's game screenshot,
                 // `=40` draws it at 40% opacity.
                 match std::env::var("DEADTUNE_HUD_BACKDROP").as_deref() {

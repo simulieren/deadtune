@@ -1,6 +1,5 @@
 //! Start/stop the game through Steam. Never touches the game process beyond kill.
 
-use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sysinfo::{Process, ProcessRefreshKind, ProcessesToUpdate, System};
@@ -110,29 +109,31 @@ fn open_url(url: &str) -> std::io::Result<()> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     // raw_arg keeps Rust's argv quoting away from cmd's own parser; the empty "" is start's window title.
-    Command::new("cmd")
+    std::process::Command::new("cmd")
         .raw_arg(format!("/C start \"\" \"{url}\""))
         .creation_flags(CREATE_NO_WINDOW)
         .status()
         .and_then(check_opener)
 }
 
+/// Deadlock has no macOS build; DeadTune runs here only as a preview, and opening the URL would
+/// start the developer's Steam client from screenshots and tests.
 #[cfg(target_os = "macos")]
-fn open_url(url: &str) -> std::io::Result<()> {
-    Command::new("open")
-        .arg(url)
-        .status()
-        .and_then(check_opener)
+fn open_url(_url: &str) -> std::io::Result<()> {
+    Err(std::io::Error::other(
+        "Deadlock doesn't run on macOS, so DeadTune doesn't start Steam here",
+    ))
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
 fn open_url(url: &str) -> std::io::Result<()> {
-    Command::new("xdg-open")
+    std::process::Command::new("xdg-open")
         .arg(url)
         .status()
         .and_then(check_opener)
 }
 
+#[cfg(not(target_os = "macos"))]
 fn check_opener(status: std::process::ExitStatus) -> std::io::Result<()> {
     if status.success() {
         Ok(())

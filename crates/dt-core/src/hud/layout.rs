@@ -193,6 +193,30 @@ impl HudLayout {
         self.features().is_empty()
     }
 
+    /// This layout without the parts that rebuild game layouts (the top bar extras, the
+    /// apple and tunnel dots, the settings rows), and which parts those were. A game update
+    /// can break a layout rebuild while plain CSS still applies.
+    pub fn without_layout_rebuilds(&self) -> (HudLayout, Vec<HudFeature>) {
+        let mut out = self.clone();
+        let mut dropped = Vec::new();
+        if out.top_bar.has_extras() {
+            out.top_bar.spawn_timers = false;
+            out.top_bar.urn_lead = false;
+            out.top_bar.purchases = false;
+            dropped.push(HudFeature::TopBar);
+        }
+        if out.apples_tunnels.apples.on || out.apples_tunnels.tunnels.on {
+            out.apples_tunnels.apples.on = false;
+            out.apples_tunnels.tunnels.on = false;
+            dropped.push(HudFeature::ApplesTunnels);
+        }
+        if !out.ingame.is_vanilla() {
+            out.ingame = Default::default();
+            dropped.push(HudFeature::IngameSettings);
+        }
+        (out, dropped)
+    }
+
     /// The parts this layout changes, in `HudFeature` order.
     pub fn features(&self) -> Vec<HudFeature> {
         [

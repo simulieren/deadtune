@@ -87,6 +87,30 @@ pub fn banner(ui: &mut Ui, state: &mut AppState) {
 /// The Updates card body. `plain` picks the simple view's controls over the advanced view's.
 pub fn settings(ui: &mut Ui, state: &mut AppState, plain: bool) {
     ui.label(RichText::new(format!("DeadTune {}", update::this_version())).strong());
+    ui.horizontal(|ui| {
+        let on = state.settings.start_with_windows;
+        let toggle = ui.add_enabled_ui(cfg!(windows), |ui| {
+            if plain {
+                simple::switch(ui, on)
+            } else {
+                widgets::switch(ui, on)
+            }
+        });
+        if toggle.inner.clicked()
+            && let Err(e) = state.set_start_with_windows(!on)
+        {
+            state.status = Some(Status::Error(e));
+        }
+        ui.label("Start with Windows");
+    });
+    ui.label(
+        RichText::new(
+            "Runs quietly without a window and rebuilds DeadTune's game changes right after \
+             Steam updates Deadlock, so a game update cannot leave them broken.",
+        )
+        .small()
+        .color(WEAK),
+    );
     if !update::AVAILABLE {
         ui.label(RichText::new(update::UNAVAILABLE).color(WEAK));
         return;

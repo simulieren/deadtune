@@ -33,6 +33,10 @@ pub struct Record {
     /// Keyed by [`AddonId::key`].
     #[serde(default)]
     pub installed: BTreeMap<String, Installed>,
+    /// The addon settings the paks were built from, as TOML, so a game update can rebuild
+    /// them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -62,6 +66,15 @@ pub enum Blocker {
     GameFiles(String),
     /// The pak was built but failed [`verify`] when read back; it stays out of the game.
     Invalid(String),
+}
+
+impl std::fmt::Display for Blocker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Blocker::NotDownloaded => f.write_str("not downloaded"),
+            Blocker::GameFiles(why) | Blocker::Invalid(why) => f.write_str(why),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,6 +116,8 @@ pub struct Conflict {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct AddonsPlan {
     pub addons: Vec<AddonPlan>,
+    /// The settings as TOML, recorded so a game update can rebuild the paks.
+    pub config: Option<String>,
     /// gameinfo.gi lacks `Game citadel/addons`; run `searchpaths::ensure_addons`.
     pub needs_search_path: bool,
     pub conflicts: Vec<Conflict>,
@@ -492,10 +507,97 @@ pub fn plan(
     };
     let conflicts = conflicts(&dir, &addons, &taken);
     Ok(AddonsPlan {
+        config: (!addons.is_empty())
+            .then(|| toml::to_string(config).ok())
+            .flatten(),
         addons,
         needs_search_path,
         conflicts,
     })
+}
+
+/// What `refresh_after_update` did.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Refreshed {
+    pub rebuilt: Vec<AddonId>,
+    /// Could not be rebuilt from the new game files, so they are out; with why.
+    pub removed: Vec<(AddonId, String)>,
+    /// Steam is still updating the game; nothing was checked.
+    pub steam_busy: bool,
+}
+
+/// Addons built from the game's files carry copies of the old build's files after a game
+/// update. Rebuilds every installed one whose game files or build changed, with the
+/// settings it was built from, and takes out any that no longer build. Leaves every other
+/// addon alone.
+pub fn refresh_after_update(paths: &GamePaths, state_dir: &Path) -> Result<Refreshed, AddonError> {
+    if locate::steam_busy(paths) {
+        return Ok(Refreshed {
+            steam_busy: true,
+            ..Refreshed::default()
+        });
+    }
+    let record = read_record(state_dir)?;
+    let dir = addons_dir(paths);
+    let mut ours = Vec::new();
+    for (key, rec) in &record.installed {
+        if let Some(id) = AddonId::parse(key)
+            && matches!(info(id).kind, Kind::Native(_))
+            && owned(&dir, Some(rec))?.is_some()
+        {
+            ours.push(id);
+        }
+    }
+    if ours.is_empty() {
+        return Ok(Refreshed::default());
+    }
+    let config = record
+        .config
+        .as_deref()
+        .and_then(|text| toml::from_str::<AddonsConfig>(text).ok());
+    let build = build_id(paths)?;
+    let mut out = Refreshed::default();
+    let mut todo = AddonsPlan::default();
+    let full = match &config {
+        Some(config) => plan(paths, config, state_dir)?,
+        None => AddonsPlan::default(),
+    };
+    for id in ours {
+        let rec = &record.installed[id.key()];
+        let planned = full.addons.iter().find(|a| a.id == id);
+        match (&config, planned.map(|a| &a.action)) {
+            (Some(_), Some(Action::Write(_) | Action::Remove)) => {
+                out.rebuilt.push(id);
+                todo.addons.extend(planned.cloned());
+            }
+            (Some(_), Some(Action::Unavailable(blocker))) => {
+                out.removed.push((id, blocker.to_string()));
+                todo.addons.push(removal(id, &dir, rec));
+            }
+            (None, _) if rec.build_id != build => {
+                out.removed.push((
+                    id,
+                    "an older DeadTune built it and did not record how".into(),
+                ));
+                todo.addons.push(removal(id, &dir, rec));
+            }
+            _ => {}
+        }
+    }
+    todo.config = record.config.clone();
+    execute(&todo, paths, state_dir)?;
+    Ok(out)
+}
+
+fn removal(id: AddonId, dir: &Path, rec: &Installed) -> AddonPlan {
+    AddonPlan {
+        id,
+        path: dir.join(&rec.file),
+        action: Action::Remove,
+        input: None,
+        from_game: false,
+        ships: Vec::new(),
+    }
 }
 
 /// Other addons that also ship a path we override. Unreadable archives are skipped:
@@ -591,6 +693,10 @@ pub fn execute(plan: &AddonsPlan, paths: &GamePaths, state_dir: &Path) -> Result
     let dir = addons_dir(paths);
     // Re-read: the addons dir and the record may have changed since `plan`.
     let mut record = read_record(state_dir)?;
+    if plan.config.is_some() && record.config != plan.config {
+        record.config = plan.config.clone();
+        write_record(state_dir, &record)?;
+    }
     let build = build_id(paths)?;
     let mut changed = false;
     for a in &plan.addons {
@@ -1254,6 +1360,56 @@ pub(crate) mod tests {
         ] {
             assert_eq!(action(&changed, id), &Action::Keep, "{id:?}");
         }
+    }
+
+    #[test]
+    fn a_game_update_rebuilds_the_native_addons_and_nothing_else() {
+        let (steam, paths) = fake_install("100");
+        let state = state_dir(&steam);
+        let config = enabled(&NATIVE);
+        execute(&plan(&paths, &config, &state).unwrap(), &paths, &state).unwrap();
+        assert_eq!(
+            refresh_after_update(&paths, &state).unwrap(),
+            Refreshed::default()
+        );
+
+        write_manifest(&steam.path().join("steamapps"), "101");
+        let mut done = refresh_after_update(&paths, &state).unwrap();
+        done.rebuilt.sort();
+        let mut want = NATIVE.to_vec();
+        want.sort();
+        assert_eq!(done.rebuilt, want);
+        assert!(done.removed.is_empty());
+        let states = installed_state(&paths, &state).unwrap();
+        for id in NATIVE {
+            assert!(matches!(states[&id], InstalledState::Current(_)), "{id:?}");
+        }
+        assert!(plan(&paths, &config, &state).unwrap().is_empty());
+        assert_eq!(
+            refresh_after_update(&paths, &state).unwrap(),
+            Refreshed::default()
+        );
+    }
+
+    #[test]
+    fn a_native_addon_from_an_older_deadtune_is_taken_out_after_an_update() {
+        let (steam, paths) = fake_install("100");
+        let state = state_dir(&steam);
+        execute(
+            &plan(&paths, &enabled(&[AddonId::BlurDisabler]), &state).unwrap(),
+            &paths,
+            &state,
+        )
+        .unwrap();
+        let mut record = read_record(&state).unwrap();
+        record.config = None;
+        write_record(&state, &record).unwrap();
+        let pak = addons_dir(&paths).join(&record.installed["blur_disabler"].file);
+
+        write_manifest(&steam.path().join("steamapps"), "101");
+        let done = refresh_after_update(&paths, &state).unwrap();
+        assert_eq!(done.removed.len(), 1);
+        assert!(!pak.exists());
     }
 
     #[test]

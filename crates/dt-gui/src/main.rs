@@ -4,6 +4,7 @@ mod addons_view;
 mod advanced;
 mod app;
 mod apples_view;
+mod background;
 mod bench;
 mod chart;
 mod checks_view;
@@ -58,10 +59,11 @@ pub struct Args {
     pub compact: bool,
     /// Initial window size, e.g. `1600x1000`.
     pub size: Option<[f32; 2]>,
+    /// No window: rebuild paks after game updates (`background`).
+    pub background: bool,
 }
 
-const USAGE: &str =
-    "usage: deadtune [--game-dir <.../Deadlock>] [--profile <file.toml>] [--compact] [--size WxH]";
+const USAGE: &str = "usage: deadtune [--game-dir <.../Deadlock>] [--profile <file.toml>] [--compact] [--size WxH] [--background]";
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut out = Args::default();
@@ -70,6 +72,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--game-dir" => out.game_dir = Some(args.next().ok_or(USAGE)?.into()),
             "--profile" => out.profile = Some(args.next().ok_or(USAGE)?.into()),
             "--compact" => out.compact = true,
+            "--background" => out.background = true,
             "--size" => {
                 let text = args.next().ok_or(USAGE)?;
                 let (w, h) = text.split_once('x').ok_or(USAGE)?;
@@ -101,6 +104,10 @@ fn main() -> anyhow::Result<()> {
         .or_else(|| env_path("DEADTUNE_GAME_DIR"))
     {
         settings.game_dir = Some(dir);
+    }
+    if args.background {
+        background::run(&data_dir, &settings);
+        return Ok(());
     }
     let screenshot = env_path("DEADTUNE_SCREENSHOT");
     let compact = args.compact;
@@ -152,8 +159,10 @@ mod tests {
                 profile: None,
                 compact: true,
                 size: None,
+                background: false,
             }
         );
+        assert!(args(&["--background"]).unwrap().background);
         assert!(args(&["--game-dir"]).is_err(), "missing value");
         assert_eq!(
             args(&["--size", "1600x1000"]).unwrap().size,

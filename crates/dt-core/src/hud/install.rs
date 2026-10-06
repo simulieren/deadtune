@@ -48,6 +48,8 @@ pub struct HudPlan {
     pub features: Vec<HudFeature>,
     /// The layout as TOML, recorded with the pak so a game update can rebuild it.
     pub layout: Option<String>,
+    /// The sha256 of every game stylesheet and layout the pak carries a copy of.
+    pub sources: BTreeMap<String, String>,
 }
 
 impl HudPlan {
@@ -70,6 +72,8 @@ pub struct InstallRecord {
     pub features: Vec<HudFeature>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sources: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,6 +138,7 @@ pub fn plan_patch(
     let record = read_record(state_dir)?;
     let installed = file_sha(&addon_path)?;
 
+    let mut sources = BTreeMap::new();
     let (bytes, icon_problems) = if patch.is_empty() {
         (None, Vec::new())
     } else {
@@ -143,6 +148,7 @@ pub fn plan_patch(
         }
         let game = VpkDir::open(&pak_path)?;
         let built = build_addon(&game, &patch, state_dir)?;
+        sources = copied_sources(&game, &patch)?;
         if built.files.is_empty() {
             (None, built.icon_problems)
         } else {
@@ -172,6 +178,7 @@ pub fn plan_patch(
             icon_problems,
             features: Vec::new(),
             layout: None,
+            sources: BTreeMap::new(),
         });
     };
     let built = sha256_hex(&bytes);
@@ -204,7 +211,32 @@ pub fn plan_patch(
         icon_problems,
         features: Vec::new(),
         layout: None,
+        sources,
     })
+}
+
+/// The game files the pak carries whole copies of, by sha256.
+fn copied_sources(game: &VpkDir, patch: &HudPatch) -> Result<BTreeMap<String, String>, HudError> {
+    patch
+        .styles
+        .iter()
+        .filter(|(_, css)| !css.is_empty())
+        .map(|(path, _)| path)
+        .chain(patch.layouts.keys())
+        .map(|path| Ok((path.clone(), sha256_hex(&game.read(path)?))))
+        .collect()
+}
+
+/// True when a game file the record's pak copied is gone or different now.
+fn sources_changed(paths: &GamePaths, record: &InstallRecord) -> Result<bool, HudError> {
+    if record.sources.is_empty() {
+        return Ok(false);
+    }
+    let game = VpkDir::open(&paths.citadel_dir.join(GAME_PAK))?;
+    Ok(record
+        .sources
+        .iter()
+        .any(|(path, sha)| game.read(path).map_or(true, |b| sha256_hex(&b) != *sha)))
 }
 
 /// Writes or removes the addon atomically and updates `state_dir/hud.toml`.
@@ -234,6 +266,7 @@ pub fn execute(plan: &HudPlan, paths: &GamePaths, state_dir: &Path) -> Result<()
                 patched: plan.shipped().map(str::to_string).collect(),
                 features: plan.features.clone(),
                 layout: plan.layout.clone(),
+                sources: plan.sources.clone(),
             };
             write_record(state_dir, &record)
         }
@@ -372,9 +405,16 @@ pub fn installed_state(paths: &GamePaths, state_dir: &Path) -> Result<InstalledS
 /// What `refresh_after_update` did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Refreshed {
-    /// Nothing of ours, or ours and built for the installed game.
+    /// Nothing of ours, or ours and built from the installed game's files.
     Current,
+    /// Steam is still updating the game; try again once it is done.
+    SteamBusy,
     Rebuilt,
+    /// Rebuilt without the parts that no longer build; why they did not.
+    Partial {
+        dropped: Vec<HudFeature>,
+        why: String,
+    },
     /// Could not be rebuilt for the new game, so our pak is out; why.
     Removed(String),
 }
@@ -382,27 +422,51 @@ pub enum Refreshed {
 /// After a game update our pak still carries the old build's copies of the files it
 /// changes, and an old layout can stop the game from starting (build 25738777 dropped a
 /// panel the old `hud_minimap` still named). Rebuilds the pak from the new game files with
-/// the layout it was built from, or takes it out when that fails.
+/// the layout it was built from. When that fails, the parts that rebuild game layouts are
+/// dropped and the rest rebuilt; when even that fails, the pak is taken out.
 pub fn refresh_after_update(paths: &GamePaths, state_dir: &Path) -> Result<Refreshed, HudError> {
-    let InstalledState::Stale(record) = installed_state(paths, state_dir)? else {
-        return Ok(Refreshed::Current);
-    };
-    let rebuilt = match &record.layout {
-        Some(text) => toml::from_str::<HudLayout>(text)
-            .map_err(|e| HudError::Toml(e.to_string()))
-            .and_then(|layout| plan(paths, &layout, state_dir))
-            .and_then(|plan| execute(&plan, paths, state_dir))
-            .map_err(|e| e.to_string()),
-        None => Err("an older DeadTune built it and did not record how".to_string()),
-    };
-    match rebuilt {
-        Ok(()) => Ok(Refreshed::Rebuilt),
-        Err(why) => {
-            remove_if_present(&addons_dir(paths).join(ADDON_FILE))?;
-            remove_if_present(&state_dir.join(RECORD_FILE))?;
-            Ok(Refreshed::Removed(why))
-        }
+    if locate::steam_busy(paths) {
+        return Ok(Refreshed::SteamBusy);
     }
+    let record = match installed_state(paths, state_dir)? {
+        InstalledState::Stale(record) => record,
+        InstalledState::Current(record) if sources_changed(paths, &record)? => record,
+        _ => return Ok(Refreshed::Current),
+    };
+    let rebuild = |layout: &HudLayout| {
+        plan(paths, layout, state_dir)
+            .and_then(|plan| execute(&plan, paths, state_dir))
+            .map_err(|e| e.to_string())
+    };
+    let layout = match record.layout.as_deref().map(toml::from_str::<HudLayout>) {
+        Some(Ok(layout)) => layout,
+        Some(Err(e)) => return take_out(paths, state_dir, e.to_string()),
+        None => {
+            return take_out(
+                paths,
+                state_dir,
+                "an older DeadTune built it and did not record how".into(),
+            );
+        }
+    };
+    let why = match rebuild(&layout) {
+        Ok(()) => return Ok(Refreshed::Rebuilt),
+        Err(why) => why,
+    };
+    let (smaller, dropped) = layout.without_layout_rebuilds();
+    if dropped.is_empty() {
+        return take_out(paths, state_dir, why);
+    }
+    match rebuild(&smaller) {
+        Ok(()) => Ok(Refreshed::Partial { dropped, why }),
+        Err(_) => take_out(paths, state_dir, why),
+    }
+}
+
+fn take_out(paths: &GamePaths, state_dir: &Path, why: String) -> Result<Refreshed, HudError> {
+    remove_if_present(&addons_dir(paths).join(ADDON_FILE))?;
+    remove_if_present(&state_dir.join(RECORD_FILE))?;
+    Ok(Refreshed::Removed(why))
 }
 
 /// The addon's files, from the game pak and a patch.

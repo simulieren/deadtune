@@ -99,6 +99,8 @@ pub struct Settings {
     /// A folder of decoded game images ("Save all images") the HUD previews draw from,
     /// ahead of the game's own files. `DEADTUNE_PREVIEW_IMAGES` sets it for one run.
     pub preview_images: Option<PathBuf>,
+    /// Windows starts `deadtune --background` at sign-in to rebuild paks after game updates.
+    pub start_with_windows: bool,
 }
 
 impl Default for Settings {
@@ -122,6 +124,7 @@ impl Default for Settings {
             update: UpdateSettings::default(),
             snapshots: SnapshotSettings::default(),
             preview_images: None,
+            start_with_windows: false,
         }
     }
 }

@@ -279,6 +279,48 @@ fn a_game_update_rebuilds_the_hud_from_the_new_game_files() {
 }
 
 #[test]
+fn a_changed_game_file_rebuilds_the_hud_even_on_the_same_build() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    hud.apples_tunnels.apples.on = true;
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+
+    fake.update_game_file(MINIMAP_LAYOUT, minimap_layout_25738777());
+    assert_eq!(
+        install::refresh_after_update(&fake.paths, &fake.state).unwrap(),
+        Refreshed::Rebuilt
+    );
+    assert!(!minimap_text(&fake).contains("HudMinimapEffects"));
+    assert_eq!(
+        install::refresh_after_update(&fake.paths, &fake.state).unwrap(),
+        Refreshed::Current
+    );
+}
+
+#[test]
+fn a_part_that_no_longer_builds_is_dropped_and_the_rest_kept() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    hud.apples_tunnels.apples.on = true;
+    hud.minimap.map_opacity_pct = 60;
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+
+    fake.update_game_file(MINIMAP_LAYOUT, b"not a layout".to_vec());
+    write_manifest(fake.paths.appmanifest.as_ref().unwrap(), "25738777");
+    match install::refresh_after_update(&fake.paths, &fake.state).unwrap() {
+        Refreshed::Partial { dropped, .. } => {
+            assert_eq!(dropped, [dt_core::hud::HudFeature::ApplesTunnels])
+        }
+        other => panic!("expected Partial, got {other:?}"),
+    }
+    let addon = VpkDir::open(&fake.addon()).unwrap();
+    assert!(!addon.contains(MINIMAP_LAYOUT));
+    assert!(addon.contains(MINIMAP), "the minimap opacity stays");
+}
+
+#[test]
 fn a_game_update_takes_out_a_hud_it_cannot_rebuild() {
     let fake = Fake::new();
     fake.install(patch(CSS));

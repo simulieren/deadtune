@@ -44,6 +44,31 @@ pub struct ApplyContext {
     /// Player says they are in hideout/sandbox, where cheat convars are settable.
     pub in_sandbox: bool,
     pub game_running: bool,
+    pub waiting_paks: WaitingPaks,
+}
+
+/// Pak changes an earlier Apply left for when the game closes ([`PendingPaks`]), compared
+/// with the paks this plan asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum WaitingPaks {
+    #[default]
+    None,
+    /// The same paks wait, so they are not a change to apply again.
+    Same,
+    /// Different paks wait; applying replaces or drops them.
+    Different,
+}
+
+/// When Apply can write the HUD and addon paks. The running game holds them open, so
+/// Windows refuses to replace or delete them until it closes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PakTiming {
+    #[default]
+    Now,
+    /// The game is running: Apply writes everything else and reports the paks as deferred.
+    AfterExit,
+    /// The game is running and these paks already wait for it to close.
+    Queued,
 }
 
 /// Base preset texts a profile resolves to (pinned, fetched, or `file:`).
@@ -91,6 +116,9 @@ pub struct ApplyPlan {
     pub hud: Option<HudPlan>,
     pub addons: Option<AddonsPlan>,
     pub practice_record: Option<practice::Record>,
+    pub paks: PakTiming,
+    /// Pak changes waiting for the game are no longer wanted, which Apply records.
+    pub replaces_waiting_paks: bool,
 }
 
 impl ApplyPlan {
@@ -98,15 +126,23 @@ impl ApplyPlan {
         self.gameinfo.is_none()
             && self.video.is_none()
             && self.live.is_empty()
-            && self
-                .hud
-                .as_ref()
-                .is_none_or(|h| h.action == HudAction::Nothing)
-            && self.addons.as_ref().is_none_or(AddonsPlan::is_empty)
+            && (self.paks == PakTiming::Queued || !self.changes_paks())
+            && !self.replaces_waiting_paks
     }
 
-    /// Addon paks written or removed on Apply.
+    /// The HUD or an addon pak is written or removed, now or once the game closes.
+    pub fn changes_paks(&self) -> bool {
+        self.hud
+            .as_ref()
+            .is_some_and(|h| h.action != HudAction::Nothing)
+            || self.addons.as_ref().is_some_and(|a| !a.is_empty())
+    }
+
+    /// Addon paks written or removed on Apply; none when they already wait for the game.
     pub fn addon_changes(&self) -> usize {
+        if self.paks == PakTiming::Queued {
+            return 0;
+        }
         self.addons.as_ref().map_or(0, |a| {
             a.addons
                 .iter()
@@ -136,6 +172,97 @@ pub struct ApplyReport {
     pub hud_changed: bool,
     /// A performance addon pak was written or removed.
     pub addons_changed: bool,
+    /// HUD or addon pak changes were left for when the game closes: it was running, or it
+    /// held a pak open.
+    pub paks_deferred: bool,
+}
+
+/// What [`write_paks`] did.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PaksWritten {
+    pub hud_changed: bool,
+    pub addons_changed: bool,
+    /// The game held a pak open, so the rest waits for it to close.
+    pub locked: bool,
+}
+
+/// What the HUD and addon paks are built from: the profile's layout and addons, or the
+/// empty ones in ranked-safe and safe mode.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PakTarget {
+    pub hud: HudLayout,
+    pub addons: AddonsConfig,
+}
+
+/// Which paks wait, for the words the player reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PakKinds {
+    Hud,
+    Addons,
+    Both,
+}
+
+impl PakKinds {
+    pub fn of(plan: &ApplyPlan) -> Option<PakKinds> {
+        let hud = plan
+            .hud
+            .as_ref()
+            .is_some_and(|h| h.action != HudAction::Nothing);
+        let addons = plan.addons.as_ref().is_some_and(|a| !a.is_empty());
+        match (hud, addons) {
+            (true, true) => Some(PakKinds::Both),
+            (true, false) => Some(PakKinds::Hud),
+            (false, true) => Some(PakKinds::Addons),
+            (false, false) => None,
+        }
+    }
+
+    /// "HUD", "addon" or "HUD and addon", to go before "changes".
+    pub fn label(self) -> &'static str {
+        match self {
+            PakKinds::Hud => "HUD",
+            PakKinds::Addons => "addon",
+            PakKinds::Both => "HUD and addon",
+        }
+    }
+}
+
+/// HUD and addon pak changes an Apply left for when the game closes, kept in the records
+/// dir so they still go in if DeadTune is closed first.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PendingPaks {
+    pub target: PakTarget,
+    /// The layout and addons the profile had before, for throwing the change away.
+    pub discard_to: PakTarget,
+    pub kinds: PakKinds,
+}
+
+impl PendingPaks {
+    pub const FILE: &'static str = "pending-paks.toml";
+
+    pub fn load(root: &Path) -> std::io::Result<Option<PendingPaks>> {
+        match fs::read_to_string(root.join(Self::FILE)) {
+            Ok(text) => toml::from_str(&text)
+                .map(Some)
+                .map_err(std::io::Error::other),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn save(&self, root: &Path) -> std::io::Result<()> {
+        fs::create_dir_all(root)?;
+        let text = toml::to_string(self).map_err(std::io::Error::other)?;
+        atomic_write(&root.join(Self::FILE), text.as_bytes())
+    }
+
+    pub fn clear(root: &Path) -> std::io::Result<()> {
+        match fs::remove_file(root.join(Self::FILE)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -311,6 +438,12 @@ pub fn plan(
         hud: target.hud.clone(),
         addons: target.addons.clone(),
         practice_record: target.practice_record.clone(),
+        paks: match (ctx.game_running, ctx.waiting_paks) {
+            (false, _) => PakTiming::Now,
+            (true, WaitingPaks::Same) => PakTiming::Queued,
+            (true, _) => PakTiming::AfterExit,
+        },
+        replaces_waiting_paks: ctx.waiting_paks == WaitingPaks::Different,
         ..ApplyPlan::default()
     };
 
@@ -390,7 +523,8 @@ pub fn ranked_safe_target(
 }
 
 /// Checks every write against disk, snapshots originals, backs up, writes atomically, installs
-/// or removes the HUD addon, then pushes `live` through the bridge.
+/// or removes the HUD and addon paks unless the game holds them ([`PakTiming`]), then pushes
+/// `live` through the bridge.
 ///
 /// Anything failing before or during the file and addon writes is an `Err`. A bridge failure
 /// after them is not: the report says what was written and carries the error in `bridge_error`.
@@ -425,31 +559,27 @@ pub fn execute(
         store.backup(*kind, &write.path)?;
         atomic_write(&write.path, write.after.as_bytes())?;
     }
-    let mut hud_changed = false;
-    if let Some(hud) = &plan.hud {
-        hud_install::execute(hud, paths, &store.root)?;
-        hud_changed = hud.action != HudAction::Nothing;
-    }
-    let mut addons_changed = false;
-    if let Some(addons) = &plan.addons {
-        addons_changed = addons_install::execute(addons, paths, &store.root)?;
+    let paks = match plan.paks {
+        PakTiming::Now => write_paks(paths, plan.hud.as_ref(), plan.addons.as_ref(), store)?,
+        PakTiming::AfterExit => PaksWritten {
+            locked: plan.changes_paks(),
+            ..PaksWritten::default()
+        },
+        PakTiming::Queued => PaksWritten::default(),
+    };
+    if plan.paks != PakTiming::Now && (plan.hud.is_some() || plan.addons.is_some()) {
+        keep_addons_dir(paths)?;
     }
     if let Some(record) = &plan.practice_record {
         record.save(&store.root)?;
-    }
-    // A mounted search path whose directory is missing is a state we cannot vouch for in
-    // game, so the addons dir outlives our addons.
-    if (plan.hud.is_some() || plan.addons.is_some())
-        && searchpaths::has_addons(&fs::read_to_string(&paths.gameinfo)?).unwrap_or(false)
-    {
-        fs::create_dir_all(hud_install::addons_dir(paths))?;
     }
 
     let mut report = ApplyReport {
         wrote_gameinfo: plan.gameinfo.is_some(),
         wrote_video: plan.video.is_some(),
-        hud_changed,
-        addons_changed,
+        hud_changed: paks.hud_changed,
+        addons_changed: paks.addons_changed,
+        paks_deferred: paks.locked,
         ..ApplyReport::default()
     };
     if let (Some(bridge), false) = (bridge, plan.live.is_empty()) {
@@ -469,4 +599,42 @@ pub fn execute(
         || report.addons_changed
         || report.pushed_live < plan.live.len();
     Ok(report)
+}
+
+/// Installs or removes the HUD and addon paks. A pak the game holds open is not an error:
+/// the result says so and the pak waits, along with any not yet reached.
+pub fn write_paks(
+    paths: &GamePaths,
+    hud: Option<&HudPlan>,
+    addons: Option<&AddonsPlan>,
+    store: &BackupStore,
+) -> Result<PaksWritten, ApplyError> {
+    let mut written = PaksWritten::default();
+    if let Some(hud) = hud {
+        match hud_install::execute(hud, paths, &store.root) {
+            Ok(()) => written.hud_changed = hud.action != HudAction::Nothing,
+            Err(HudError::Locked(_)) => written.locked = true,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    if let Some(addons) = addons.filter(|_| !written.locked) {
+        match addons_install::execute(addons, paths, &store.root) {
+            Ok(changed) => written.addons_changed = changed,
+            Err(AddonError::Locked(_)) => written.locked = true,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    if hud.is_some() || addons.is_some() {
+        keep_addons_dir(paths)?;
+    }
+    Ok(written)
+}
+
+/// A mounted search path whose directory is missing is a state we cannot vouch for in
+/// game, so the addons dir outlives our addons and exists before they do.
+fn keep_addons_dir(paths: &GamePaths) -> Result<(), ApplyError> {
+    if searchpaths::has_addons(&fs::read_to_string(&paths.gameinfo)?).unwrap_or(false) {
+        fs::create_dir_all(hud_install::addons_dir(paths))?;
+    }
+    Ok(())
 }

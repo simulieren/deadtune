@@ -126,6 +126,11 @@ fn print_report(report: &ApplyReport, running: bool) {
     if report.pushed_live > 0 {
         println!("Pushed {} live command(s).", report.pushed_live);
     }
+    if report.paks_deferred {
+        println!(
+            "The HUD and addon files were not changed: Deadlock holds them while it runs. Close it and run this again."
+        );
+    }
     if report.needs_restart {
         let when = if running {
             "Restart the game"

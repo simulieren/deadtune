@@ -227,6 +227,14 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     result
 }
 
+/// The error Windows gives for replacing or deleting a file another process holds open, as
+/// Deadlock does with its addon paks while it runs: access denied (5), sharing violation
+/// (32) or lock violation (33). Elsewhere only permission denied comes close.
+pub fn is_locked(e: &io::Error) -> bool {
+    e.kind() == io::ErrorKind::PermissionDenied
+        || (cfg!(windows) && matches!(e.raw_os_error(), Some(32 | 33)))
+}
+
 /// Where the backup store and the addon, HUD, guard and practice records live inside the
 /// data dir. The GUI and the CLI must agree on it or each misses what the other wrote.
 pub fn records_dir(data_dir: &Path) -> PathBuf {
@@ -254,6 +262,16 @@ pub fn data_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_held_file_reads_as_locked_and_other_errors_do_not() {
+        assert!(is_locked(&io::Error::from(io::ErrorKind::PermissionDenied)));
+        assert!(!is_locked(&io::Error::from(io::ErrorKind::NotFound)));
+        #[cfg(windows)]
+        for code in [5, 32, 33] {
+            assert!(is_locked(&io::Error::from_raw_os_error(code)), "{code}");
+        }
+    }
 
     const CRLF_GAMEINFO: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),

@@ -185,6 +185,7 @@ pub fn profile_plan(
     let ctx = ApplyContext {
         in_sandbox,
         game_running: dt_core::launch::is_game_running(),
+        waiting_paks: apply::WaitingPaks::None,
     };
     Ok(apply::plan(
         paths,

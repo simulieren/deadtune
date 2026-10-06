@@ -529,15 +529,14 @@ fn footer(ui: &mut Ui, state: &mut AppState) {
     let ready = pending != Pending::Nothing;
     let instant = instant_count(state);
     let key = state.settings.bind_key.clone();
-    let title = RichText::new(headline(&pending, instant))
-        .size(14.0)
-        .strong();
-    ui.label(if ready {
-        title.color(ACCENT)
-    } else {
-        title.color(WEAK)
-    });
+    let waiting = state.paks_waiting().filter(|_| !ready);
+    let title = match waiting {
+        Some(_) => RichText::new("Waiting for Deadlock to close").color(WARN),
+        None => RichText::new(headline(&pending, instant)).color(if ready { ACCENT } else { WEAK }),
+    };
+    ui.label(title.size(14.0).strong());
     let when = match state.timing() {
+        Timing::Nothing if let Some(kinds) = waiting => simple::paks_waiting_line(kinds),
         Timing::Nothing => match &state.pending_restart {
             Some(p) => format!("Restart Deadlock to load {} saved changes.", p.names.len()),
             None => "Change a setting above, then Apply.".into(),

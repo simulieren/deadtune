@@ -290,12 +290,21 @@ fn compare(ui: &mut Ui, style: &mut HealthStyle, images: &mut Images) {
             }
         });
     });
-    ui.add_space(10.0);
-    crate::game_shot::in_game(
-        ui,
-        dt_core::hud::elements::ElementId::HealthAndAmmo,
-        vec2(ui.available_width().min(320.0), 150.0),
-    );
+    ui.add_space(6.0);
+    egui::CollapsingHeader::new(
+        RichText::new("Compare with a screenshot from the game")
+            .size(12.0)
+            .color(WEAK),
+    )
+    .id_salt("health_game_shot")
+    .default_open(false)
+    .show(ui, |ui| {
+        crate::game_shot::in_game(
+            ui,
+            dt_core::hud::elements::ElementId::HealthAndAmmo,
+            vec2(ui.available_width().min(320.0), 150.0),
+        );
+    });
 }
 
 fn part_name(part: Part) -> &'static str {

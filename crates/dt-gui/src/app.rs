@@ -360,6 +360,11 @@ impl App {
                 if fake_running() {
                     state.observe_game(true, None);
                 }
+                // `DEADTUNE_FAKE_LIVE_HUD=off|not_installed|closed|waiting|stale|live|error`
+                // puts the HUD pages' live preview line in that state.
+                if let Ok(kind) = std::env::var("DEADTUNE_FAKE_LIVE_HUD") {
+                    fake_live_hud(&mut state, &kind);
+                }
                 // `DEADTUNE_FAKE_STATUS=error:<raw>`, `warn:<raw>` or `info:<text>`.
                 if let Some((kind, text)) =
                     std::env::var("DEADTUNE_FAKE_STATUS").ok().and_then(|v| {
@@ -525,6 +530,9 @@ impl App {
         }
         if state.live_push.is_pending() {
             ctx.request_repaint_after(crate::live::DEBOUNCE);
+        }
+        if state.live_hud.busy() {
+            ctx.request_repaint_after(Duration::from_millis(50));
         }
         state.poll_conlog(Instant::now());
         if state.ack.is_waiting() {
@@ -795,6 +803,32 @@ fn fake_running() -> bool {
         || std::env::var("DEADTUNE_FAKE_TRIAL").is_ok_and(|v| v.starts_with("testing"))
 }
 
+fn fake_live_hud(state: &mut AppState, kind: &str) {
+    use crate::live_hud::LiveHud;
+    let now = Instant::now();
+    let fake = match kind {
+        "off" => LiveHud::Off,
+        "not_installed" => LiveHud::NotInstalled,
+        "closed" => LiveHud::GameClosed,
+        "waiting" => LiveHud::Waiting {
+            since: now - Duration::from_secs(30),
+        },
+        "stale" => LiveHud::Stale {
+            base: "0badf00d".into(),
+        },
+        "live" => LiveHud::Live {
+            base: "1a2b3c4d".into(),
+            seq: Some(7),
+            acked: Some(now - Duration::from_secs(2)),
+            undone: false,
+        },
+        "error" => LiveHud::Error(r"Couldn't write cfg\deadtune_hud.cfg: Access is denied".into()),
+        _ => return,
+    };
+    state.set_live_preview(fake != LiveHud::Off);
+    state.live_hud.inject(fake);
+}
+
 fn fake_push(state: &mut AppState, kind: &str) {
     use dt_core::bridge::ack::{Outcome, PushStatus};
     let results = |items: &[(&str, Outcome)]| {
@@ -890,5 +924,11 @@ impl eframe::App for App {
         }
         self.rest(&ctx, frame_start, minimized, focused);
         self.screenshot(&ctx);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Screen::Main(state) = &mut self.screen {
+            state.on_exit();
+        }
     }
 }

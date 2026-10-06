@@ -22,7 +22,7 @@ pub fn clock(at: SystemTime) -> String {
         .to_string()
 }
 
-fn dot(ui: &mut Ui, color: egui::Color32) -> egui::Response {
+pub(crate) fn dot(ui: &mut Ui, color: egui::Color32) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(vec2(10.0, 16.0), Sense::hover());
     ui.painter().circle_filled(rect.center(), 4.0, color);
     response

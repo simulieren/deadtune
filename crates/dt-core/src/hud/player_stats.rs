@@ -76,8 +76,10 @@ pub enum Sizing {
     /// `ui-scale` times the game's own `base` percent. The panel keeps its margins and
     /// grows from its bottom-left corner.
     UiScale { base: u32 },
-    /// Not resizable (the popups' panel is far larger than what shows).
-    Fixed,
+    /// `pre-transform-scale2d` about the panel's bottom-left corner: the popups' panel is
+    /// far taller than what shows and they stack up from its bottom, so they stay put
+    /// above the numbers as they grow.
+    BottomLeft,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -118,7 +120,7 @@ impl StatsPart {
                 blurb: "The green +18 boxes that pop up when a stat goes up.",
                 selector: "#hudActivePlayerStats #StatList",
                 file: ACTIVE_STATS_STYLE,
-                sizing: Sizing::Fixed,
+                sizing: Sizing::BottomLeft,
                 vanilla_opacity: 100,
             },
             StatsPart::Level => PartSpec {
@@ -865,7 +867,10 @@ fn placement(spec: PartSpec, edit: PartEdit) -> Vec<(&'static str, String)> {
                 let pct = (base * u32::from(scale) + 50) / 100;
                 decls.push(("ui-scale", format!("{pct}%")));
             }
-            Sizing::Fixed => {}
+            Sizing::BottomLeft => {
+                decls.push(("pre-transform-scale2d", number(f64::from(scale) / 100.0)));
+                decls.push(("transform-origin", "0% 100%".to_string()));
+            }
         }
     }
     if let Some(o) = edit.opacity_pct.filter(|&o| o != spec.vanilla_opacity) {
@@ -893,6 +898,24 @@ mod tests {
             .find(|(f, _)| *f == file)
             .map(|(_, css)| css.as_str())
             .unwrap_or("")
+    }
+
+    #[test]
+    fn popups_grow_from_their_bottom_left() {
+        let mut s = PlayerStatsStyle::default();
+        s.set_part(
+            StatsPart::Popups,
+            PartEdit {
+                scale_pct: 80,
+                ..PartEdit::default()
+            },
+        );
+        let css = &s.compile().unwrap();
+        let all: String = css.iter().map(|(_, text)| text.as_str()).collect();
+        assert!(
+            all.contains("#hudActivePlayerStats #StatList{pre-transform-scale2d:0.8;transform-origin:0% 100%;}"),
+            "{all}"
+        );
     }
 
     #[test]

@@ -372,7 +372,7 @@ fn thumbnail(ui: &Ui, window: Rect, style: &PlayerStatsStyle, images: &mut Image
             p: &painter,
             stage,
             k,
-            xf: Xf::new(part, edit, pivot),
+            xf: Xf::new(edit, pivot),
             alpha: f32::from(edit.opacity_pct.unwrap_or(spec.vanilla_opacity)) / 100.0,
         };
         paint_part(&pen, images, style, part);
@@ -484,7 +484,8 @@ fn natural(p: &Painter, style: &PlayerStatsStyle, part: StatsPart) -> (Rect, Pos
     };
     let pivot = match part.spec().sizing {
         Sizing::UiScale { .. } => pos2(22.0, STAGE.y - 16.0),
-        Sizing::Middle | Sizing::Fixed => bounds.center(),
+        Sizing::Middle => bounds.center(),
+        Sizing::BottomLeft => bounds.left_bottom(),
     };
     (bounds, pivot)
 }
@@ -498,11 +499,8 @@ struct Xf {
 }
 
 impl Xf {
-    fn new(part: StatsPart, edit: PartEdit, pivot: Pos2) -> Xf {
-        let s = match part.spec().sizing {
-            Sizing::Fixed => 1.0,
-            _ => f32::from(edit.scale()) / 100.0,
-        };
+    fn new(edit: PartEdit, pivot: Pos2) -> Xf {
+        let s = f32::from(edit.scale()) / 100.0;
         Xf {
             pivot,
             s,
@@ -625,7 +623,7 @@ fn stage_view(
             p: &painter,
             stage,
             k,
-            xf: Xf::new(part, edit, pivot),
+            xf: Xf::new(edit, pivot),
             alpha: f32::from(edit.opacity_pct.unwrap_or(spec.vanilla_opacity)) / 100.0,
         };
         if !edit.hidden {
@@ -684,8 +682,7 @@ fn stage_view(
             next.offset_y = clamp_offset(i32::from(start.edit.offset_y) + delta.y.round() as i32);
             edits.push((part, next));
         }
-        let resizable = spec.sizing != Sizing::Fixed;
-        if resizable && response.hovered() {
+        if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll != 0.0 {
                 ui.input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
@@ -695,7 +692,7 @@ fn stage_view(
                 edits.push((part, next));
             }
         }
-        if is_selected && resizable && !edit.hidden {
+        if is_selected && !edit.hidden {
             handles(ui, &painter, rect, part, edit, drag_key, &mut edits);
         }
     }
@@ -1252,12 +1249,10 @@ fn part_inspector(ui: &mut Ui, style: &mut PlayerStatsStyle, part: StatsPart) {
         edit.hidden = i == 1;
     }
     ui.add_enabled_ui(!edit.hidden, |ui| {
-        if spec.sizing != Sizing::Fixed {
-            caption(ui, "Size");
-            let mut scale = edit.scale();
-            if slider(ui, &mut scale, SCALE_RANGE, "%", 100) {
-                edit.scale_pct = scale;
-            }
+        caption(ui, "Size");
+        let mut scale = edit.scale();
+        if slider(ui, &mut scale, SCALE_RANGE, "%", 100) {
+            edit.scale_pct = scale;
         }
         caption(ui, "Opacity");
         let mut opacity = edit.opacity_pct.unwrap_or(spec.vanilla_opacity);

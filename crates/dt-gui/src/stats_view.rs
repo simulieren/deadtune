@@ -228,9 +228,9 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::show_layout_note(ui, state, ElementId::PlayerStats);
     let mut style = state.profile.hud.player_stats.clone();
     let mut selected = state.ui.stats_selected;
-    presets(ui, &mut style, &mut selected);
     let ctx = ui.ctx().clone();
     crate::hud_art::with(&ctx, state, |_, images| {
+        presets(ui, &mut style, &mut selected, images);
         let width = ui.available_width();
         if width >= SIDE_BY_SIDE {
             ui.horizontal_top(|ui| {
@@ -258,47 +258,123 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     }
 }
 
-fn presets(ui: &mut Ui, style: &mut PlayerStatsStyle, selected: &mut Option<StatsPart>) {
-    widgets::card(ui, |ui| {
-        ui.horizontal(|ui| {
-            widgets::caption(ui, "Style");
-            widgets::badge(ui, "Experimental, untested in game", WARN);
-        });
-        widgets::hint(
-            ui,
-            "Goes into the HUD addon on Apply. Moving the whole cluster is on the HUD page.",
+fn presets(
+    ui: &mut Ui,
+    style: &mut PlayerStatsStyle,
+    selected: &mut Option<StatsPart>,
+    images: &mut Images,
+) {
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new("Player stats style")
+                .size(15.0)
+                .family(theme::semibold())
+                .color(TEXT),
         );
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            let current = style.preset();
-            for preset in StatsPreset::ALL {
-                if ui
-                    .selectable_label(current == Some(preset), preset.label())
-                    .on_hover_text(preset.blurb())
-                    .clicked()
-                {
-                    *style = preset.style();
-                }
-            }
-            ui.add_space(6.0);
+        widgets::badge(ui, "Experimental, untested in game", WARN);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let n = style.changed_count();
-            ui.label(
-                RichText::new(format!("Changed: {n}"))
-                    .small()
-                    .color(if n > 0 { ACCENT } else { WEAK }),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui
-                    .add_enabled(n > 0, egui::Button::new("Reset player stats"))
+            if n > 0
+                && widgets::reset_pill(ui)
                     .on_hover_text("Back to the game's own player stats")
                     .clicked()
-                {
-                    *style = PlayerStatsStyle::default();
-                    *selected = None;
-                }
-            });
+            {
+                *style = PlayerStatsStyle::default();
+                *selected = None;
+            }
+            let text = match style.preset() {
+                Some(p) => p.label().to_string(),
+                None => format!("Custom · {n} {}", if n == 1 { "change" } else { "changes" }),
+            };
+            ui.label(
+                RichText::new(text)
+                    .size(12.5)
+                    .color(if n > 0 { ACCENT } else { WEAK }),
+            );
         });
     });
+    widgets::hint(
+        ui,
+        "Goes into the HUD addon on Apply. Moving the whole cluster is on the HUD page.",
+    );
+    ui.add_space(8.0);
+    let current = style.preset();
+    let gap = 10.0;
+    let count = StatsPreset::ALL.len() as f32;
+    let width = ((ui.available_width() - gap * (count - 1.0)) / count).min(220.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(gap, gap);
+        for preset in StatsPreset::ALL {
+            let on = current == Some(preset);
+            let stage_w = width - 12.0;
+            let stage_h = (stage_w * 0.62).round();
+            let (rect, response) =
+                ui.allocate_exact_size(vec2(width, stage_h + 34.0), Sense::click());
+            ui.painter().rect(
+                rect,
+                CornerRadius::same(10),
+                if response.hovered() { CARD_HOVER } else { CARD },
+                Stroke::new(if on { 2.0 } else { 1.0 }, if on { ACCENT } else { BORDER }),
+                StrokeKind::Inside,
+            );
+            let window = Rect::from_min_size(rect.min + vec2(6.0, 6.0), vec2(stage_w, stage_h));
+            thumbnail(ui, window, &preset.style(), images);
+            let painter = ui.painter();
+            painter.text(
+                pos2(rect.left() + 11.0, window.bottom() + 14.0),
+                Align2::LEFT_CENTER,
+                preset.label(),
+                FontId::new(12.5, theme::semibold()),
+                if on { ACCENT } else { TEXT },
+            );
+            if on {
+                let c = pos2(rect.right() - 17.0, rect.top() + 17.0);
+                painter.circle_filled(c, 8.0, ACCENT);
+                crate::icons::paint(
+                    painter,
+                    Rect::from_center_size(c, vec2(11.0, 11.0)),
+                    crate::icons::Icon::Check,
+                    theme::ON_ACCENT,
+                );
+            }
+            if response
+                .on_hover_text(preset.blurb())
+                .on_hover_cursor(CursorIcon::PointingHand)
+                .clicked()
+            {
+                *style = preset.style();
+                *selected = None;
+            }
+        }
+    });
+    ui.add_space(6.0);
+}
+
+/// The lower part of the stage (numbers, level, souls, items) for `style`, filling
+/// `window`, over a patch of the game.
+fn thumbnail(ui: &Ui, window: Rect, style: &PlayerStatsStyle, images: &mut Images) {
+    crate::game_shot::backdrop(ui, window);
+    let shown = Rect::from_min_max(pos2(10.0, 165.0), pos2(480.0, 470.0));
+    let k = window.width() / shown.width();
+    let k = k.max(window.height() / shown.height());
+    let stage = Rect::from_min_size(window.center() - shown.center().to_vec2() * k, STAGE * k);
+    let painter = ui.painter().with_clip_rect(window);
+    for part in STACK {
+        let spec = part.spec();
+        let edit = style.part(part);
+        if edit.hidden {
+            continue;
+        }
+        let (_, pivot) = natural(&painter, style, part);
+        let pen = Pen {
+            p: &painter,
+            stage,
+            k,
+            xf: Xf::new(part, edit, pivot),
+            alpha: f32::from(edit.opacity_pct.unwrap_or(spec.vanilla_opacity)) / 100.0,
+        };
+        paint_part(&pen, images, style, part);
+    }
 }
 
 fn stage_card(
@@ -317,16 +393,20 @@ fn stage_card(
             ui.horizontal(|ui| {
                 widgets::caption(ui, "Preview");
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let labels = ["Your settings", "Game default"];
+                    let labels = ["Yours", "Game's"];
                     if let Some(i) = widgets::segmented(ui, &labels, view as usize) {
                         view = [View::Yours, View::Game][i];
                     }
                     if view == View::Yours {
                         ui.add_space(8.0);
-                        ui.checkbox(&mut ghost, "Game's HUD underneath")
+                        if widgets::chip(ui, "Game's HUD underneath", ACCENT, Some(ghost))
                             .on_hover_text(
                                 "The game's own lower left, faint, to line parts up with.",
-                            );
+                            )
+                            .clicked()
+                        {
+                            ghost = !ghost;
+                        }
                     }
                 });
             });

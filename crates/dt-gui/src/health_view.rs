@@ -18,7 +18,7 @@ use crate::health_art::{Drawn, Part, draw_health};
 use crate::hud_art::Images;
 use crate::icons::{self, Icon};
 use crate::state::AppState;
-use crate::theme::{self, ACCENT, BORDER, CARD, CARD_HOVER, ON_ACCENT, RAIL, TEXT, WARN, WEAK};
+use crate::theme::{self, ACCENT, BORDER, CARD, CARD_HOVER, ON_ACCENT, TEXT, WARN, WEAK};
 use crate::widgets;
 
 const INSPECTOR: f32 = 360.0;
@@ -162,7 +162,7 @@ fn style_card(
         StrokeKind::Inside,
     );
     let stage = Rect::from_min_size(rect.min + vec2(7.0, 7.0), vec2(rect.width() - 14.0, 112.0));
-    backdrop(ui, stage);
+    crate::game_shot::backdrop(ui, stage);
     let painter = ui.painter();
     draw_health(painter, images, &preset.style(), stage.shrink(6.0), 0.55);
     painter.text(
@@ -185,20 +185,6 @@ fn style_card(
     response
         .on_hover_text(preset.blurb())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-}
-
-/// A dimmed patch of the in-game screenshot (the wooden door right of the crosshair, clear of
-/// any HUD) behind a preview, so dark outlines read the way they do over the game.
-fn backdrop(ui: &Ui, rect: Rect) {
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, CornerRadius::same(8), RAIL);
-    let Some(texture) = crate::game_shot::texture(ui.ctx()) else {
-        return;
-    };
-    let h = 0.38;
-    let w = (rect.aspect_ratio() * h * 720.0 / 1280.0).min(0.3);
-    let crop = [0.70 - w / 2.0, 0.22, w, h];
-    crate::game_shot::paint(&painter, &texture, crop, rect, Color32::from_gray(105));
 }
 
 /// The game's bar and yours at one health level, with the level to scrub. Yours is an
@@ -227,7 +213,7 @@ fn compare(ui: &mut Ui, style: &mut HealthStyle, images: &mut Images) {
                             .color(if yours { ACCENT } else { WEAK }),
                     );
                     let (rect, _) = ui.allocate_exact_size(vec2(w, height), Sense::hover());
-                    backdrop(ui, rect);
+                    crate::game_shot::backdrop(ui, rect);
                     let painter = ui.painter_at(rect);
                     if yours {
                         let drawn = draw_health(&painter, images, style, rect.shrink(20.0), fill);

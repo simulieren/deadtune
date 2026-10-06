@@ -46,6 +46,26 @@ pub fn paint(p: &Painter, texture: &TextureHandle, crop: [f32; 4], rect: Rect, t
     p.image(texture.id(), rect, uv, tint);
 }
 
+/// A dimmed patch of the screenshot (the wooden door right of the crosshair, clear of any
+/// HUD) behind a preview, so dark outlines read the way they do over the game.
+pub fn backdrop(ui: &Ui, rect: Rect) {
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, CornerRadius::same(8), theme::RAIL);
+    let Some(texture) = texture(ui.ctx()) else {
+        return;
+    };
+    let h = 0.38;
+    let w = (rect.aspect_ratio() * h * 720.0 / 1280.0).min(0.3);
+    let h = h.min(w * 1280.0 / 720.0 / rect.aspect_ratio());
+    paint(
+        &painter,
+        &texture,
+        [0.70 - w / 2.0, 0.22, w, h],
+        rect,
+        Color32::from_gray(105),
+    );
+}
+
 /// `id` cut out of the screenshot at most `max` big, under a caption, so a preview can be
 /// compared with the game at default settings. Nothing for elements the screenshot lacks.
 pub fn in_game(ui: &mut Ui, id: ElementId, max: Vec2) {

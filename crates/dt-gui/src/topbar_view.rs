@@ -16,7 +16,7 @@ use eframe::egui::{
 
 use crate::hud_art::Images;
 use crate::state::{AppState, TopBarPreview};
-use crate::theme::{self, ACCENT, RAIL, TEXT, WARN, WEAK};
+use crate::theme::{self, ACCENT, BORDER, CARD, CARD_HOVER, RAIL, TEXT, WARN, WEAK};
 use crate::widgets;
 
 /// The mock is laid out in bar units (1080p px): `#TeamsContainer` is 1260 wide, six 88 px
@@ -72,15 +72,17 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     crate::hud_view::hud_error(ui, state);
     crate::hud_view::show_layout_note(ui, state, dt_core::hud::elements::ElementId::TopBar);
     let mut actions = Vec::new();
-    toolbar(ui, state, &mut actions);
-    ui.add_space(6.0);
+    header(ui, state, &mut actions);
+    ui.add_space(8.0);
     let ctx = ui.ctx().clone();
     crate::hud_art::with(&ctx, state, |state, images| {
-        mock_card(ui, state, images, &mut actions);
+        gallery(ui, state, images, &mut actions);
+        ui.add_space(14.0);
+        compare(ui, state, images, &mut actions);
     });
-    ui.add_space(6.0);
+    ui.add_space(14.0);
     controls(ui, state, &mut actions);
-    ui.add_space(4.0);
+    ui.add_space(10.0);
     widgets::hint(
         ui,
         "Out-of-vision dimming: idea by NA-45 (GameBanana 619963). Spawn timers and urn soul \
@@ -97,87 +99,211 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     }
 }
 
-fn toolbar(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
-    ui.horizontal_wrapped(|ui| {
-        let current = state.top_bar_preset();
-        for preset in TopBarPreset::ALL {
-            if ui
-                .selectable_label(current == Some(preset), preset.label())
-                .on_hover_text(preset.blurb())
-                .clicked()
-            {
-                actions.push(Action::Preset(preset));
-            }
-        }
-        ui.add_space(6.0);
-        let n = state.top_bar_changed_count();
+fn header(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
+    ui.horizontal(|ui| {
         ui.label(
-            RichText::new(format!("Changed: {n}"))
-                .small()
-                .color(if n > 0 { ACCENT } else { WEAK }),
+            RichText::new("Top bar style")
+                .size(15.0)
+                .family(theme::semibold())
+                .color(TEXT),
         );
+        widgets::badge(ui, "Experimental, untested in game", WARN);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui
-                .add_enabled(n > 0, egui::Button::new("Reset top bar"))
-                .on_hover_text("Back to the game's own top bar")
-                .clicked()
+            let n = state.top_bar_changed_count();
+            if n > 0
+                && widgets::reset_pill(ui)
+                    .on_hover_text("Back to the game's own top bar")
+                    .clicked()
             {
                 actions.push(Action::Reset);
             }
+            let text = match state.top_bar_preset() {
+                Some(p) => p.label().to_string(),
+                None => format!("Custom · {n} {}", if n == 1 { "change" } else { "changes" }),
+            };
+            ui.label(
+                RichText::new(text)
+                    .size(12.5)
+                    .color(if n > 0 { ACCENT } else { WEAK }),
+            );
         });
     });
 }
 
-fn mock_card(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
+/// The bar's middle, where most options show: the last three allies (one of them dead),
+/// the centre and the first three enemies (one out of vision, one buying).
+const CROP: (f32, f32) = (300.0, 960.0);
+
+/// Draws the middle of the bar for `style` across `stage`, over the game.
+fn bar_crop(
+    ui: &Ui,
+    stage: Rect,
+    style: &TopBarStyle,
+    preview: TopBarPreview,
+    images: &mut Images,
+) -> bool {
+    crate::game_shot::backdrop(ui, stage);
+    let span = extent(style).x;
+    let width = CROP.1 - CROP.0 + span - BAR_WIDTH;
+    let k = stage.width() / width;
+    let size = extent(style) * k;
+    let rect = Rect::from_min_size(
+        pos2(stage.left() - CROP.0 * k, stage.center().y - size.y / 2.0),
+        size,
+    );
+    bar(&ui.painter_at(stage), rect, style, preview, images)
+}
+
+fn gallery(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
+    let current = state.top_bar_preset();
+    let gap = 10.0;
+    let columns = if ui.available_width() > 1100.0 { 3 } else { 2 };
+    let width = (ui.available_width() - gap * (columns - 1) as f32) / columns as f32;
+    let preview = TopBarPreview {
+        missing_enemy: true,
+        dead_hero: true,
+    };
+    for row in TopBarPreset::ALL.chunks(columns) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for preset in row {
+                let selected = current == Some(*preset);
+                let stage_height = (width - 14.0) / (CROP.1 - CROP.0) * BAR_HEIGHT + 6.0;
+                let (rect, response) =
+                    ui.allocate_exact_size(vec2(width, stage_height + 50.0), Sense::click());
+                ui.painter().rect(
+                    rect,
+                    CornerRadius::same(10),
+                    if response.hovered() { CARD_HOVER } else { CARD },
+                    Stroke::new(
+                        if selected { 2.0 } else { 1.0 },
+                        if selected { ACCENT } else { BORDER },
+                    ),
+                    StrokeKind::Inside,
+                );
+                let stage = Rect::from_min_size(
+                    rect.min + vec2(7.0, 7.0),
+                    vec2(rect.width() - 14.0, stage_height),
+                );
+                bar_crop(ui, stage, &preset.style(), preview, images);
+                let painter = ui.painter();
+                painter.text(
+                    pos2(rect.left() + 12.0, stage.bottom() + 9.0),
+                    Align2::LEFT_TOP,
+                    preset.label(),
+                    FontId::new(12.5, theme::semibold()),
+                    if selected { ACCENT } else { TEXT },
+                );
+                let mut job = egui::text::LayoutJob::simple_singleline(
+                    preset.blurb().to_string(),
+                    FontId::proportional(11.0),
+                    WEAK,
+                );
+                job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 24.0);
+                painter.galley(
+                    pos2(rect.left() + 12.0, stage.bottom() + 25.0),
+                    painter.layout_job(job),
+                    WEAK,
+                );
+                if selected {
+                    let c = pos2(rect.right() - 18.0, rect.top() + 18.0);
+                    painter.circle_filled(c, 8.0, ACCENT);
+                    crate::icons::paint(
+                        painter,
+                        Rect::from_center_size(c, vec2(11.0, 11.0)),
+                        crate::icons::Icon::Check,
+                        theme::ON_ACCENT,
+                    );
+                }
+                if response
+                    .on_hover_text(preset.blurb())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    actions.push(Action::Preset(*preset));
+                }
+            }
+        });
+        ui.add_space(gap);
+    }
+}
+
+/// The game's bar and yours, whole and stacked, with the states the options act on.
+fn compare(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
     let style = &state.profile.hud.top_bar;
     let preview = state.ui.top_bar_preview;
     widgets::card(ui, |ui| {
         ui.horizontal(|ui| {
-            widgets::caption(ui, "Preview");
-            widgets::badge(ui, "Experimental, untested in game", WARN);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let mut p = preview;
-                ui.label(marked("Dead hero", false));
-                if widgets::switch(ui, p.dead_hero).clicked() {
-                    p.dead_hero = !p.dead_hero;
-                }
-                ui.add_space(10.0);
-                ui.label(marked("Enemy out of vision", false));
-                if widgets::switch(ui, p.missing_enemy).clicked() {
-                    p.missing_enemy = !p.missing_enemy;
-                }
-                if p != preview {
-                    actions.push(Action::Preview(p));
-                }
-            });
+            ui.label(RichText::new("Show").size(12.0).color(WEAK));
+            let mut p = preview;
+            if widgets::chip(ui, "An enemy out of vision", ACCENT, Some(p.missing_enemy)).clicked()
+            {
+                p.missing_enemy = !p.missing_enemy;
+            }
+            if widgets::chip(ui, "A dead ally", ACCENT, Some(p.dead_hero)).clicked() {
+                p.dead_hero = !p.dead_hero;
+            }
+            if p != preview {
+                actions.push(Action::Preview(p));
+            }
         });
-        ui.add_space(4.0);
+        ui.add_space(8.0);
         let width = ui.available_width();
-        let size = extent(style);
-        let height = (width / size.x * size.y).max(60.0);
-        let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
-        let real = bar(
-            &ui.painter().with_clip_rect(rect),
-            rect,
-            style,
-            preview,
-            images,
-        );
-        ui.add_space(2.0);
+        let mut real = false;
+        for (label, look, yours) in [
+            ("Game's", TopBarStyle::default(), false),
+            ("Yours", style.clone(), true),
+        ] {
+            ui.label(
+                RichText::new(label)
+                    .size(12.0)
+                    .family(theme::semibold())
+                    .color(if yours { ACCENT } else { WEAK }),
+            );
+            let size = extent(&look);
+            let height = (width / size.x * size.y).max(60.0) + 16.0;
+            let (stage, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+            crate::game_shot::backdrop(ui, stage);
+            let inner = stage.shrink2(vec2(0.0, 8.0));
+            real |= bar(&ui.painter_at(stage), inner, &look, preview, images);
+            ui.painter().rect_stroke(
+                stage,
+                CornerRadius::same(8),
+                Stroke::new(
+                    1.0,
+                    if yours {
+                        ACCENT.gamma_multiply(0.5)
+                    } else {
+                        BORDER
+                    },
+                ),
+                StrokeKind::Inside,
+            );
+            ui.add_space(8.0);
+        }
         widgets::hint(
             ui,
             if real {
-                "Your game's portraits and icons with the options above; the heroes and numbers \
-                 are examples."
+                "Your game's portraits and icons; the heroes and numbers are examples."
             } else {
                 "A mock-up with stand-in heroes. The game draws the real portraits, names and numbers."
             },
         );
-        ui.add_space(6.0);
+    });
+    ui.add_space(6.0);
+    egui::CollapsingHeader::new(
+        RichText::new("Compare with a screenshot from the game")
+            .size(12.0)
+            .color(WEAK),
+    )
+    .id_salt("top_bar_game_shot")
+    .default_open(false)
+    .show(ui, |ui| {
+        let width = ui.available_width();
         crate::game_shot::in_game(
             ui,
             dt_core::hud::elements::ElementId::TopBar,
-            vec2(width, height * 0.6),
+            vec2(width, width * 0.12),
         );
     });
 }
@@ -187,34 +313,34 @@ fn controls(ui: &mut Ui, state: &AppState, actions: &mut Vec<Action>) {
     let mut s = current.clone();
     if ui.available_width() >= 760.0 {
         ui.columns(2, |cols| {
-            missing_card(&mut cols[0], &mut s);
-            cols[0].add_space(6.0);
-            portraits_card(&mut cols[0], &mut s);
-            centre_card(&mut cols[1], &mut s);
-            cols[1].add_space(6.0);
-            colours_card(&mut cols[1], &mut s);
-            cols[1].add_space(6.0);
-            extras_card(&mut cols[1], &mut s);
+            inspector_left(&mut cols[0], &mut s);
+            inspector_right(&mut cols[1], &mut s);
         });
     } else {
-        missing_card(ui, &mut s);
-        ui.add_space(6.0);
-        portraits_card(ui, &mut s);
-        ui.add_space(6.0);
-        colours_card(ui, &mut s);
-        ui.add_space(6.0);
-        centre_card(ui, &mut s);
-        ui.add_space(6.0);
-        extras_card(ui, &mut s);
+        inspector_left(ui, &mut s);
+        ui.add_space(10.0);
+        inspector_right(ui, &mut s);
     }
     if s != *current {
         actions.push(Action::Set(s));
     }
 }
 
-fn missing_card(ui: &mut Ui, s: &mut TopBarStyle) {
+fn section(ui: &mut Ui, title: &str, note: Option<&str>) {
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        widgets::caption(ui, title);
+        if let Some(note) = note {
+            widgets::badge(ui, note, WEAK);
+        }
+    });
+    ui.add_space(2.0);
+}
+
+fn inspector_left(ui: &mut Ui, s: &mut TopBarStyle) {
     let d = TopBarStyle::default();
-    card(ui, "Enemies out of vision", Some("Idea by NA-45"), |ui| {
+    widgets::card(ui, |ui| {
+        section(ui, "Enemies out of vision", Some("Idea by NA-45"));
         widgets::hint(
             ui,
             "The game only drops the health bar when an enemy leaves your team's vision. \
@@ -237,12 +363,7 @@ fn missing_card(ui: &mut Ui, s: &mut TopBarStyle) {
             d.missing_desaturate,
         );
         switch_row(ui, "Darken", &mut s.missing_darken, d.missing_darken);
-    });
-}
-
-fn portraits_card(ui: &mut Ui, s: &mut TopBarStyle) {
-    let d = TopBarStyle::default();
-    card(ui, "Portraits", None, |ui| {
+        section(ui, "Portraits", None);
         slider_row(
             ui,
             "Size",
@@ -284,24 +405,12 @@ fn portraits_card(ui: &mut Ui, s: &mut TopBarStyle) {
     });
 }
 
-fn colours_card(ui: &mut Ui, s: &mut TopBarStyle) {
-    card(ui, "Team colours", None, |ui| {
-        widgets::hint(
-            ui,
-            "Health bars and souls tags of each side. With the game's own enemy colour \
-             (Minimap page) turned on, it may win for enemies; untested.",
-        );
-        ui.add_space(4.0);
-        color_row(ui, "Allies", &mut s.ally_color, ALLY_HEALTH);
-        color_row(ui, "Enemies", &mut s.enemy_color, ENEMY_HEALTH);
-    });
-}
-
-fn centre_card(ui: &mut Ui, s: &mut TopBarStyle) {
+fn inspector_right(ui: &mut Ui, s: &mut TopBarStyle) {
     let d = TopBarStyle::default();
     let labels = ["Game's", "Compact", "Hidden"];
     let values = [Treatment::Vanilla, Treatment::Compact, Treatment::Hidden];
-    card(ui, "Clock and scores", None, |ui| {
+    widgets::card(ui, |ui| {
+        section(ui, "Clock and scores", None);
         choice_row(ui, "Game clock", &labels, &values, &mut s.clock, d.clock);
         choice_row(
             ui,
@@ -325,49 +434,35 @@ fn centre_card(ui: &mut Ui, s: &mut TopBarStyle) {
             &mut s.hide_kill_counts,
             d.hide_kill_counts,
         );
-    });
-}
-
-fn extras_card(ui: &mut Ui, s: &mut TopBarStyle) {
-    let d = TopBarStyle::default();
-    card(
-        ui,
-        "Extras",
-        Some("Adds a small script to the top bar"),
-        |ui| {
-            widgets::hint(
-                ui,
-                "Each one reads what the bar already shows: the game clock, the team souls and \
+        section(ui, "Team colours", None);
+        widgets::hint(
+            ui,
+            "Health bars and souls tags of each side. With the game's own enemy colour \
+             (Minimap page) turned on, it may win for enemies; untested.",
+        );
+        ui.add_space(4.0);
+        color_row(ui, "Allies", &mut s.ally_color, ALLY_HEALTH);
+        color_row(ui, "Enemies", &mut s.enemy_color, ENEMY_HEALTH);
+        section(ui, "Extras", Some("Adds a small script to the top bar"));
+        widgets::hint(
+            ui,
+            "Each one reads what the bar already shows: the game clock, the team souls and \
              the shop's recent purchases.",
-            );
-            ui.add_space(4.0);
-            switch_row(
-                ui,
-                "Spawn timers (powerups and rejuvenator)",
-                &mut s.spawn_timers,
-                d.spawn_timers,
-            );
-            switch_row(ui, "Urn soul lead", &mut s.urn_lead, d.urn_lead);
-            switch_row(
-                ui,
-                "Purchase popups under portraits",
-                &mut s.purchases,
-                d.purchases,
-            );
-        },
-    );
-}
-
-fn card(ui: &mut Ui, title: &str, badge: Option<&str>, add: impl FnOnce(&mut Ui)) {
-    widgets::card(ui, |ui| {
-        ui.horizontal(|ui| {
-            widgets::caption(ui, title);
-            if let Some(text) = badge {
-                widgets::badge(ui, text, WEAK);
-            }
-        });
-        ui.add_space(2.0);
-        add(ui);
+        );
+        ui.add_space(4.0);
+        switch_row(
+            ui,
+            "Spawn timers (powerups and rejuvenator)",
+            &mut s.spawn_timers,
+            d.spawn_timers,
+        );
+        switch_row(ui, "Urn soul lead", &mut s.urn_lead, d.urn_lead);
+        switch_row(
+            ui,
+            "Purchase popups under portraits",
+            &mut s.purchases,
+            d.purchases,
+        );
     });
 }
 
@@ -611,7 +706,6 @@ fn bar(
     let span = extent(style).x;
     let k = rect.width() / span;
     let at = |x: f32, y: f32| pos2(rect.left() + x * k, rect.top() + y * k);
-    p.rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(28, 30, 34));
     centre_block(p, images, at, k, span / 2.0, style);
 
     let mut real = false;

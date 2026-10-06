@@ -140,16 +140,15 @@ impl AppState {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     use dt_core::hud::elements::ElementId;
-    use dt_core::hud::install::{ADDON_FILE, GAME_PAK, addons_dir};
+    use dt_core::hud::install::{ADDON_FILE, addons_dir};
     use dt_core::hud::layout::ElementEdit;
 
     use super::*;
     use crate::state::Pending;
-    use crate::state::testutil::state;
+    use crate::state::testutil::{state, with_game_hud};
 
     fn hud_pak(state: &AppState) -> PathBuf {
         addons_dir(&state.paths).join(ADDON_FILE)
@@ -157,20 +156,6 @@ mod tests {
 
     fn record(state: &AppState) -> PathBuf {
         state.store.root.join(PendingPaks::FILE)
-    }
-
-    fn with_game_hud(state: &AppState) {
-        let vanilla = std::fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../dt-core/tests/fixtures/hud/hud_vanilla.vcss_c"
-        ))
-        .unwrap();
-        let files = BTreeMap::from([(dt_core::hud::elements::HUD_STYLE.to_string(), vanilla)]);
-        std::fs::write(
-            state.paths.citadel_dir.join(GAME_PAK),
-            dt_core::hud::vpk::write(&files),
-        )
-        .unwrap();
     }
 
     fn bigger_minimap(state: &mut AppState) {

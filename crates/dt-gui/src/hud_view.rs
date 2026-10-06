@@ -20,7 +20,7 @@ use eframe::egui::{
 
 use crate::game_shot;
 use crate::hud_art::Images;
-use crate::live_hud::{HELLO_WAIT, LiveHud};
+use crate::live_hud::{LiveHud, Tone};
 use crate::state::{AppState, Backdrop, HudPage, HudPreset};
 use crate::theme::{self, ACCENT, BAD, BORDER, CARD, CARD_HOVER, GOOD, RAIL, TEXT, WARN, WEAK};
 
@@ -37,7 +37,8 @@ pub const SIZE_RANGE: RangeInclusive<u16> = 50..=200;
 const HINT: &str =
     "Drag to move. Corner handles or scroll to resize. Arrow keys nudge, Shift for 10 px.";
 const LIVE_HINT: &str = "A small DeadTune script in the HUD pak restyles the running game as you \
-     edit. Off in Vanilla. Needs one Apply and restart to install.";
+     edit. On for every changed HUD; Vanilla and Ranked-safe have no HUD pak, so it is off there. \
+     Needs one Apply and a restart to install. In game, the live key (F8) sends your edits.";
 
 enum Action {
     Select(Option<ElementId>),
@@ -103,82 +104,56 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
 
 /// One line on what the live HUD preview is doing, at the top of every HUD page.
 pub fn live_indicator(ui: &mut Ui, state: &mut AppState) {
+    let Some(status) = state.live_hud_status() else {
+        return;
+    };
+    let color = match status.tone {
+        Tone::Weak => WEAK,
+        Tone::Warn => WARN,
+        Tone::Good => GOOD,
+        Tone::Bad => BAD,
+    };
+    let text = RichText::new(&status.text).small().color(color);
+    let hover = |r: egui::Response| match &status.hover {
+        Some(h) => r.on_hover_text(h),
+        None => r,
+    };
+    let LiveHud::Live { undone, .. } = state.live_hud.state() else {
+        hover(ui.label(text));
+        return;
+    };
+    let undone = *undone;
     let mut undo = false;
-    let line = |text: &str, color: Color32| RichText::new(text).small().color(color);
-    match state.live_hud.state() {
-        LiveHud::Off => return,
-        LiveHud::NotInstalled => {
-            ui.label(line(
-                "Turn on Live HUD preview, Apply, and restart the game once",
-                WEAK,
-            ));
-        }
-        LiveHud::GameClosed => {
-            ui.label(line("Live preview starts when the game runs", WEAK));
-        }
-        LiveHud::Waiting { since } => {
-            let text = if since.elapsed() < HELLO_WAIT {
-                "Looking for the live script in game\u{2026}"
-            } else {
-                "Looking for the live script in game\u{2026} If it doesn't show up, launch the \
-                 game through DeadTune so -condebug is on."
-            };
-            ui.label(line(text, WEAK));
-        }
-        LiveHud::Stale { .. } => {
-            ui.label(line(
-                "The game is running an older HUD; restart it to preview live",
-                WARN,
-            ));
-        }
-        LiveHud::Live {
-            base,
-            acked,
-            undone,
-            ..
-        } => {
-            let answer = match acked {
-                Some(at) => format!(
-                    "Last answer from the game {} s ago.",
-                    at.elapsed().as_secs()
-                ),
-                None => "No answer from the game yet.".to_string(),
-            };
-            let hover = format!("HUD {base} is running. {answer}");
-            ui.horizontal(|ui| {
-                crate::live_status::dot(ui, GOOD).on_hover_text(&hover);
-                ui.label(line("Live in game", GOOD)).on_hover_text(&hover);
-                let tip = if *undone {
-                    "The game shows what Apply installed until your next edit"
-                } else {
-                    "Show what Apply installed, without your edits since"
-                };
-                undo = ui
-                    .add_enabled(
-                        !*undone,
-                        egui::Button::new(RichText::new("Undo live changes").small()).small(),
-                    )
-                    .on_hover_text(tip)
-                    .on_disabled_hover_text(tip)
-                    .clicked();
-            });
-            let missing = state.live_hud.not_live();
-            if !missing.is_empty() {
-                let labels: Vec<&str> = missing.iter().map(|(label, _)| *label).collect();
-                let why: Vec<String> = missing
-                    .iter()
-                    .map(|(label, why)| format!("{label}: {why}"))
-                    .collect();
-                ui.label(line(
-                    &format!("Needs Apply and a restart: {}", labels.join(", ")),
-                    WEAK,
-                ))
-                .on_hover_text(why.join("\n"));
-            }
-        }
-        LiveHud::Error(message) => {
-            ui.label(line(message, BAD));
-        }
+    ui.horizontal(|ui| {
+        hover(crate::live_status::dot(ui, GOOD));
+        hover(ui.label(text));
+        let tip = if undone {
+            "The game shows what Apply installed until your next edit"
+        } else {
+            "Show what Apply installed, without your edits since"
+        };
+        undo = ui
+            .add_enabled(
+                !undone,
+                egui::Button::new(RichText::new("Undo live changes").small()).small(),
+            )
+            .on_hover_text(tip)
+            .on_disabled_hover_text(tip)
+            .clicked();
+    });
+    let missing = state.live_hud.not_live();
+    if !missing.is_empty() {
+        let labels: Vec<&str> = missing.iter().map(|(label, _)| *label).collect();
+        let why: Vec<String> = missing
+            .iter()
+            .map(|(label, why)| format!("{label}: {why}"))
+            .collect();
+        ui.label(
+            RichText::new(format!("Needs Apply and a restart: {}", labels.join(", ")))
+                .small()
+                .color(WEAK),
+        )
+        .on_hover_text(why.join("\n"));
     }
     if undo {
         state.undo_live_hud();

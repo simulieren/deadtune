@@ -120,8 +120,27 @@ pub fn addons_dir(paths: &GamePaths) -> PathBuf {
     paths.citadel_dir.join("addons")
 }
 
-/// Pure planning plus reads: game pak, our record, other addons' trees, gameinfo.
+/// Pure planning plus reads: game pak, our record, other addons' trees, gameinfo. The live
+/// preview is on by default, so a game update that keeps its script out of the HUD root
+/// layout costs only the preview: the rest plans without it, and the record says so.
 pub fn plan(paths: &GamePaths, layout: &HudLayout, state_dir: &Path) -> Result<HudPlan, HudError> {
+    match plan_exact(paths, layout, state_dir) {
+        Err(e) if layout.features().contains(&HudFeature::LivePreview) => {
+            let without = HudLayout {
+                live: false,
+                ..layout.clone()
+            };
+            plan_exact(paths, &without, state_dir).map_err(|_| e)
+        }
+        planned => planned,
+    }
+}
+
+fn plan_exact(
+    paths: &GamePaths,
+    layout: &HudLayout,
+    state_dir: &Path,
+) -> Result<HudPlan, HudError> {
     let mut plan = plan_patch(paths, layout::compile(layout)?, state_dir)?;
     plan.features = layout.features();
     plan.layout = Some(toml::to_string(layout).map_err(|e| HudError::Toml(e.to_string()))?);

@@ -795,6 +795,10 @@ pub mod tests {
             (ITEM.to_string(), texture(8, 8, [0, 255, 0, 255])),
             (BROKEN.to_string(), b"not a texture".to_vec()),
             ("panorama/styles/hud.vcss_c".to_string(), b"x".to_vec()),
+            (
+                dt_core::hud::live::HUD_LAYOUT.to_string(),
+                dt_core::hud::inject::compiled_layout(&dt_core::hud::live::stand_in_layout()),
+            ),
         ]);
         std::fs::write(state.paths.citadel_dir.join(GAME_PAK), vpk::write(&files)).unwrap();
     }

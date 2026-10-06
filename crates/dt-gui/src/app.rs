@@ -360,8 +360,9 @@ impl App {
                 if fake_running() {
                     state.observe_game(true, None);
                 }
-                // `DEADTUNE_FAKE_LIVE_HUD=off|not_installed|closed|waiting|stale|live|error`
-                // puts the HUD pages' live preview line in that state.
+                // `DEADTUNE_FAKE_LIVE_HUD=off|not_installed|closed|waiting|waiting_long|
+                // waiting_key|stale|stale_base|live|live_key|error` puts the HUD pages' live
+                // preview line in that state.
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_LIVE_HUD") {
                     fake_live_hud(&mut state, &kind);
                 }
@@ -806,27 +807,41 @@ fn fake_running() -> bool {
 fn fake_live_hud(state: &mut AppState, kind: &str) {
     use crate::live_hud::LiveHud;
     let now = Instant::now();
-    let fake = match kind {
-        "off" => LiveHud::Off,
-        "not_installed" => LiveHud::NotInstalled,
-        "closed" => LiveHud::GameClosed,
-        "waiting" => LiveHud::Waiting {
-            since: now - Duration::from_secs(30),
-        },
-        "stale" => LiveHud::Stale {
-            base: "0badf00d".into(),
-        },
-        "live" => LiveHud::Live {
-            base: "1a2b3c4d".into(),
-            seq: Some(7),
-            acked: Some(now - Duration::from_secs(2)),
-            undone: false,
-        },
-        "error" => LiveHud::Error(r"Couldn't write cfg\deadtune_hud.cfg: Access is denied".into()),
+    let live = LiveHud::Live {
+        base: "1a2b3c4d".into(),
+        seq: Some(7),
+        acked: Some(now - Duration::from_secs(2)),
+        undone: false,
+    };
+    let (fake, key) = match kind {
+        "off" => (LiveHud::Off, false),
+        "not_installed" => (LiveHud::NotInstalled, false),
+        "closed" => (LiveHud::GameClosed, false),
+        "waiting" => (LiveHud::Waiting { since: now }, false),
+        "waiting_long" => (
+            LiveHud::Waiting {
+                since: now - Duration::from_secs(30),
+            },
+            false,
+        ),
+        "waiting_key" => (LiveHud::Waiting { since: now }, true),
+        "stale" => (LiveHud::Stale { base: None }, false),
+        "stale_base" => (
+            LiveHud::Stale {
+                base: Some("0badf00d".into()),
+            },
+            false,
+        ),
+        "live" => (live, false),
+        "live_key" => (live, true),
+        "error" => (
+            LiveHud::Error(r"Couldn't write cfg\deadtune_hud.cfg: Access is denied".into()),
+            false,
+        ),
         _ => return,
     };
     state.set_live_preview(fake != LiveHud::Off);
-    state.live_hud.inject(fake);
+    state.live_hud.inject(fake, key);
 }
 
 fn fake_push(state: &mut AppState, kind: &str) {

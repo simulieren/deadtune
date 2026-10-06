@@ -56,7 +56,7 @@ pub const OFFSET_LIMIT: i32 = 1920;
 pub const SCALE_RANGE: std::ops::RangeInclusive<u16> = 25..=300;
 
 /// Stored next to a profile (`[hud]` in profile TOML, or `hud.toml`).
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct HudLayout {
     pub elements: BTreeMap<ElementId, ElementEdit>,
@@ -87,10 +87,33 @@ pub struct HudLayout {
     /// The player's own images in place of the game's, by game path (`hud::icons`).
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub icons: BTreeMap<String, IconOverride>,
-    /// Experimental, untested in game: a script in the pak that restyles the running HUD
-    /// from DeadTune's edits without a restart (`hud::live`).
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    /// A script in the pak that restyles the running HUD from DeadTune's edits without a
+    /// restart (`hud::live`). On unless the player turned it off; it ships only with a pak,
+    /// so Vanilla stays stock.
+    #[serde(default = "yes", skip_serializing_if = "Clone::clone")]
     pub live: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for HudLayout {
+    fn default() -> Self {
+        HudLayout {
+            elements: BTreeMap::new(),
+            minimap_colors: BTreeMap::new(),
+            minimap: MinimapStyle::default(),
+            top_bar: TopBarStyle::default(),
+            health: HealthStyle::default(),
+            player_stats: PlayerStatsStyle::default(),
+            apples_tunnels: ApplesTunnels::default(),
+            ingame: IngameSettings::default(),
+            extra_css: BTreeMap::new(),
+            icons: BTreeMap::new(),
+            live: true,
+        }
+    }
 }
 
 /// Everything the addon changes, keyed by path inside the game VPK.
@@ -214,12 +237,17 @@ impl HudLayout {
             out.ingame = Default::default();
             dropped.push(HudFeature::IngameSettings);
         }
+        if out.live && !out.features().is_empty() {
+            out.live = false;
+            dropped.push(HudFeature::LivePreview);
+        }
         (out, dropped)
     }
 
-    /// The parts this layout changes, in `HudFeature` order.
+    /// The parts this layout changes, in `HudFeature` order. The live preview counts only
+    /// when something else gives the layout a pak to ride in.
     pub fn features(&self) -> Vec<HudFeature> {
-        [
+        let mut out: Vec<HudFeature> = [
             (
                 HudFeature::Layout,
                 self.elements.values().any(|e| *e != ElementEdit::default()),
@@ -236,11 +264,14 @@ impl HudLayout {
                 self.extra_css.values().any(|c| !c.trim().is_empty()),
             ),
             (HudFeature::Images, !self.icons.is_empty()),
-            (HudFeature::LivePreview, self.live),
         ]
         .into_iter()
         .filter_map(|(feature, on)| on.then_some(feature))
-        .collect()
+        .collect();
+        if self.live && !out.is_empty() {
+            out.push(HudFeature::LivePreview);
+        }
+        out
     }
 }
 
@@ -327,7 +358,7 @@ pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
         own_files,
         icons: layout.icons.clone(),
     };
-    if layout.live {
+    if layout.live && !patch.is_empty() {
         super::live::add_to(&mut patch);
     }
     Ok(patch)
@@ -523,7 +554,8 @@ mod tests {
             [
                 HudFeature::Layout,
                 HudFeature::MinimapColors,
-                HudFeature::CustomCss
+                HudFeature::CustomCss,
+                HudFeature::LivePreview
             ]
         );
         assert!(!l.is_vanilla());
@@ -533,18 +565,43 @@ mod tests {
     }
 
     #[test]
-    fn live_preview_is_a_feature_and_stays_out_of_vanilla_toml() {
-        let l = HudLayout {
-            live: true,
-            ..HudLayout::default()
-        };
-        assert_eq!(l.features(), [HudFeature::LivePreview]);
+    fn live_preview_is_on_by_default_and_rides_only_with_a_pak() {
+        assert!(HudLayout::default().live);
+        assert!(
+            HudLayout::default().features().is_empty(),
+            "Vanilla has no pak, so nothing to preview"
+        );
+        assert!(compile(&HudLayout::default()).unwrap().is_empty());
+        let edited = layout(&[(
+            ElementId::Minimap,
+            ElementEdit {
+                opacity_pct: 50,
+                ..edit()
+            },
+        )]);
+        assert_eq!(
+            edited.features(),
+            [HudFeature::Layout, HudFeature::LivePreview]
+        );
         assert_eq!(HudFeature::LivePreview.label(), "live HUD preview");
-        let text = toml::to_string(&l).expect("serialize");
-        assert!(text.contains("live = true"), "{text}");
-        assert_eq!(toml::from_str::<HudLayout>(&text).expect("parse"), l);
-        let vanilla = toml::to_string(&HudLayout::default()).expect("serialize");
-        assert!(!vanilla.contains("live"), "{vanilla}");
+        let off = HudLayout {
+            live: false,
+            ..edited.clone()
+        };
+        assert_eq!(off.features(), [HudFeature::Layout]);
+        let text = toml::to_string(&off).expect("serialize");
+        assert!(text.contains("live = false"), "{text}");
+        assert_eq!(toml::from_str::<HudLayout>(&text).expect("parse"), off);
+        let on = toml::to_string(&edited).expect("serialize");
+        assert!(!on.contains("live"), "{on}");
+        assert_eq!(toml::from_str::<HudLayout>(&on).expect("parse"), edited);
+        assert!(
+            toml::from_str::<HudLayout>("live = true\n")
+                .expect("parse")
+                .live,
+            "profiles from before the default flipped still parse"
+        );
+        assert!(toml::from_str::<HudLayout>("").expect("parse").live);
     }
 
     #[test]
@@ -1048,7 +1105,10 @@ mod tests {
 
     #[test]
     fn apples_and_tunnels_join_the_patch_next_to_the_top_bar() {
-        let mut l = HudLayout::default();
+        let mut l = HudLayout {
+            live: false,
+            ..HudLayout::default()
+        };
         l.apples_tunnels.apples.on = true;
         l.apples_tunnels.clear_switching = true;
         l.top_bar.spawn_timers = true;
@@ -1080,7 +1140,10 @@ mod tests {
 
     #[test]
     fn ingame_rows_join_the_patch_and_stay_out_of_vanilla_toml() {
-        let mut l = HudLayout::default();
+        let mut l = HudLayout {
+            live: false,
+            ..HudLayout::default()
+        };
         l.ingame.wide_fov = true;
         assert!(!l.is_vanilla());
         let patch = compile(&l).expect("valid");

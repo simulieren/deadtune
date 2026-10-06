@@ -740,7 +740,13 @@ fn with_game_pak(install: &FakeInstall) {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hud/hud_vanilla.vcss_c"),
     )
     .unwrap();
-    let files = BTreeMap::from([("panorama/styles/hud.vcss_c".to_string(), hud)]);
+    let files = BTreeMap::from([
+        ("panorama/styles/hud.vcss_c".to_string(), hud),
+        (
+            dt_core::hud::live::HUD_LAYOUT.to_string(),
+            dt_core::hud::inject::compiled_layout(&dt_core::hud::live::stand_in_layout()),
+        ),
+    ]);
     fs::write(
         install.paths.citadel_dir.join(GAME_PAK),
         dt_core::hud::vpk::write(&files),

@@ -798,7 +798,10 @@ pub(crate) mod tests {
     #[test]
     fn the_hud_layout_carries_icons_only_when_set() {
         use crate::hud::HudLayout;
-        let mut hud = HudLayout::default();
+        let mut hud = HudLayout {
+            live: false,
+            ..HudLayout::default()
+        };
         assert!(!toml::to_string(&hud).unwrap().contains("icons"));
         hud.icons
             .insert(RASTER.to_string(), png_source("ab", Fit::Original));

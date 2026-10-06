@@ -184,7 +184,10 @@ fn vanilla_minimap_layout() -> Vec<u8> {
 #[test]
 fn apples_and_tunnels_rebuild_the_minimap_layout_beside_the_top_bar() {
     let fake = Fake::new();
-    let mut hud = HudLayout::default();
+    let mut hud = HudLayout {
+        live: false,
+        ..HudLayout::default()
+    };
     hud.apples_tunnels.apples.on = true;
     hud.apples_tunnels.tunnels.on = true;
     hud.apples_tunnels.clear_switching = true;
@@ -315,9 +318,14 @@ fn a_part_that_no_longer_builds_is_dropped_and_the_rest_kept() {
     fake.update_game_file(MINIMAP_LAYOUT, b"not a layout".to_vec());
     write_manifest(fake.paths.appmanifest.as_ref().unwrap(), "25738777");
     match install::refresh_after_update(&fake.paths, &fake.state).unwrap() {
-        Refreshed::Partial { dropped, .. } => {
-            assert_eq!(dropped, [dt_core::hud::HudFeature::ApplesTunnels])
-        }
+        Refreshed::Partial { dropped, .. } => assert_eq!(
+            dropped,
+            [
+                dt_core::hud::HudFeature::ApplesTunnels,
+                dt_core::hud::HudFeature::LivePreview
+            ],
+            "every layout rebuild goes, the live script's too"
+        ),
         other => panic!("expected Partial, got {other:?}"),
     }
     let addon = VpkDir::open(&fake.addon()).unwrap();
@@ -359,6 +367,7 @@ fn top_bar_extras_rebuild_the_layout_and_add_our_files() {
             urn_lead: true,
             ..TopBarStyle::default()
         },
+        live: false,
         ..HudLayout::default()
     };
     let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
@@ -664,6 +673,7 @@ fn ingame_rows() -> HudLayout {
                 .map(String::from)
                 .into(),
         },
+        live: false,
         ..HudLayout::default()
     }
 }
@@ -871,7 +881,10 @@ fn icon_override_ships_in_the_hud_pak_and_passes_verify() {
 #[test]
 fn a_broken_icon_is_reported_and_the_rest_still_ships() {
     let fake = Fake::new();
-    let mut hud = HudLayout::default();
+    let mut hud = HudLayout {
+        live: false,
+        ..HudLayout::default()
+    };
     let gone = "panorama/images/hud/removed_by_update_psd.vtex_c";
     icons::set(
         &mut hud.icons,
@@ -1102,7 +1115,13 @@ fn the_record_names_the_features_the_pak_carries() {
     let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
     install::execute(&plan, &fake.paths, &fake.state).unwrap();
     let record = install::read_record(&fake.state).unwrap().unwrap();
-    assert_eq!(record.features, [dt_core::hud::HudFeature::Layout]);
+    assert_eq!(
+        record.features,
+        [
+            dt_core::hud::HudFeature::Layout,
+            dt_core::hud::HudFeature::LivePreview
+        ]
+    );
 }
 
 #[test]
@@ -1141,4 +1160,27 @@ fn live_preview_ships_its_script_in_the_hud_layout() {
     let expect = verify::expect_for_hud(&fake.game(), &addon);
     let verified = verify::verify(&addon, &expect);
     assert!(verified.is_ok(), "{verified}");
+}
+
+#[test]
+fn a_hud_root_layout_the_live_script_cannot_join_leaves_only_the_script_out() {
+    let fake = Fake::new();
+    fake.update_game_file(live::HUD_LAYOUT, b"not a layout".to_vec());
+    let mut hud = HudLayout::default();
+    hud.elements.insert(
+        dt_core::hud::ElementId::Minimap,
+        ElementEdit {
+            opacity_pct: 50,
+            ..ElementEdit::default()
+        },
+    );
+    assert!(hud.live);
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    assert_eq!(plan.features, [dt_core::hud::HudFeature::Layout]);
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    let record = install::read_record(&fake.state).unwrap().unwrap();
+    assert_eq!(record.features, [dt_core::hud::HudFeature::Layout]);
+    let addon = VpkDir::open(&fake.addon()).unwrap();
+    assert!(addon.read(live::OWN_SCRIPT).is_err());
+    assert!(addon.read(HUD).is_ok(), "the layout edit ships");
 }

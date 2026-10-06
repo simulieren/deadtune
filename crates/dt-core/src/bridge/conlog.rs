@@ -8,6 +8,7 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use super::ack::LOG_NAME;
 use crate::locate::GamePaths;
@@ -33,6 +34,26 @@ struct TailFile {
     path: PathBuf,
     offset: Option<u64>,
     partial: Vec<u8>,
+    state: TailState,
+}
+
+/// What the last poll found at one candidate path, for the HUD pages to say why the game's
+/// answers are not coming.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TailState {
+    Missing,
+    Unreadable(String),
+    Read {
+        bytes: u64,
+        /// When a complete line last arrived.
+        last_line: Option<Instant>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TailReport {
+    pub path: PathBuf,
+    pub state: TailState,
 }
 
 impl TailFile {
@@ -41,11 +62,23 @@ impl TailFile {
     fn poll(&mut self) -> Vec<String> {
         // std opens with FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE on Windows,
         // so the game's own handle on the log does not block this read.
-        let Ok(mut file) = File::open(&self.path) else {
-            return Vec::new();
+        let mut file = match File::open(&self.path) {
+            Ok(file) => file,
+            Err(e) => {
+                self.state = if e.kind() == std::io::ErrorKind::NotFound {
+                    TailState::Missing
+                } else {
+                    TailState::Unreadable(e.to_string())
+                };
+                return Vec::new();
+            }
         };
-        let Ok(len) = file.metadata().map(|m| m.len()) else {
-            return Vec::new();
+        let len = match file.metadata().map(|m| m.len()) {
+            Ok(len) => len,
+            Err(e) => {
+                self.state = TailState::Unreadable(e.to_string());
+                return Vec::new();
+            }
         };
         let offset = match self.offset {
             Some(offset) if offset <= len => offset,
@@ -53,7 +86,11 @@ impl TailFile {
             None => len.saturating_sub(BACKLOG),
         };
         let mut buf = Vec::new();
-        if file.seek(SeekFrom::Start(offset)).is_err() || file.read_to_end(&mut buf).is_err() {
+        if let Err(e) = file
+            .seek(SeekFrom::Start(offset))
+            .and_then(|_| file.read_to_end(&mut buf))
+        {
+            self.state = TailState::Unreadable(e.to_string());
             return Vec::new();
         }
         self.offset = Some(offset + buf.len() as u64);
@@ -64,6 +101,15 @@ impl TailFile {
             let text = String::from_utf8_lossy(&line[..nl]);
             lines.push(text.trim_end_matches('\r').to_string());
         }
+        let last_line = match (&self.state, lines.is_empty()) {
+            (_, false) => Some(Instant::now()),
+            (TailState::Read { last_line, .. }, true) => *last_line,
+            _ => None,
+        };
+        self.state = TailState::Read {
+            bytes: len,
+            last_line,
+        };
         lines
     }
 }
@@ -81,6 +127,7 @@ impl LogTail {
                     path,
                     offset: None,
                     partial: Vec::new(),
+                    state: TailState::Missing,
                 })
                 .collect(),
         }
@@ -97,6 +144,17 @@ impl LogTail {
 
     pub fn paths(&self) -> impl Iterator<Item = &Path> {
         self.files.iter().map(|f| f.path.as_path())
+    }
+
+    /// Every candidate and what the last poll found there.
+    pub fn report(&self) -> Vec<TailReport> {
+        self.files
+            .iter()
+            .map(|f| TailReport {
+                path: f.path.clone(),
+                state: f.state.clone(),
+            })
+            .collect()
     }
 }
 
@@ -148,11 +206,30 @@ mod tests {
         let b = dir.path().join("b.log");
         let mut tail = LogTail::new([a.clone(), b.clone()]);
         assert!(tail.poll().is_empty());
+        assert!(tail.report().iter().all(|r| r.state == TailState::Missing));
         append(&b, "hello\n");
         assert_eq!(tail.poll(), ["hello"]);
+        assert!(matches!(
+            tail.report()[1].state,
+            TailState::Read {
+                bytes: 6,
+                last_line: Some(_)
+            }
+        ));
         append(&a, "late\n");
         append(&b, "more\n");
         assert_eq!(tail.poll(), ["late", "more"]);
+        tail.poll();
+        assert!(
+            matches!(
+                tail.report()[0].state,
+                TailState::Read {
+                    last_line: Some(_),
+                    ..
+                }
+            ),
+            "a quiet poll keeps the last line's time"
+        );
     }
 
     #[test]

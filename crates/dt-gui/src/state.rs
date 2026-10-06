@@ -28,7 +28,7 @@ use dt_core::hud::elements::ElementId;
 use dt_core::hud::health_style::HealthStyle;
 use dt_core::hud::ingame::{self, IngameSettings};
 use dt_core::hud::install::{HudAction, HudPlan, Refreshed};
-use dt_core::hud::layout::{ElementEdit, HudLayout};
+use dt_core::hud::layout::{ElementEdit, HudFeature, HudLayout};
 use dt_core::hud::minimap_colors::{self, Color, IconId};
 use dt_core::hud::minimap_style::{
     MAP_OPACITY_RANGE, MARKER_SCALE_RANGE, MarkerGroup, MinimapStyle,
@@ -46,7 +46,7 @@ use dt_core::watch::{self, Change, Watcher};
 
 use crate::bench::{self, BenchState};
 use crate::live::{BridgeKind, BridgeTarget, LivePush, PushOutcome};
-use crate::live_hud::LivePreview;
+use crate::live_hud::{Delivery, LivePreview};
 use crate::profiles;
 use crate::relaunch::Relaunch;
 use crate::settings::{Settings, TargetSource};
@@ -1040,9 +1040,11 @@ impl AppState {
     pub fn refresh_preview(&mut self) {
         // Every HUD setter ends here, so this is where the live preview hears of edits.
         self.live_hud.edit(&self.profile.hud, Instant::now());
-        self.live_hud.toggle(self.profile.hud.live);
         // Ranked-safe also takes our HUD addon out: stock means stock.
         let paks = self.pak_target();
+        // Vanilla has no pak for the script to ride in, ranked-safe takes the pak out.
+        self.live_hud
+            .toggle(paks.hud.features().contains(&HudFeature::LivePreview));
         let ctx = ApplyContext {
             waiting_paks: self.waiting_paks(&paks),
             ..self.ctx
@@ -1054,11 +1056,14 @@ impl AppState {
                 let plan =
                     apply::hud_plan(&self.paths, layout, &self.store).map_err(|e| e.to_string());
                 self.hud_cache = Some((layout.clone(), plan.clone()));
+                let pak = dt_core::hud::install::addons_dir(&self.paths)
+                    .join(dt_core::hud::install::ADDON_FILE);
                 self.live_hud.record(
                     dt_core::hud::install::read_record(&self.store.root)
                         .ok()
                         .flatten()
                         .as_ref(),
+                    std::fs::metadata(pak).and_then(|m| m.modified()).ok(),
                 );
                 plan
             }
@@ -1465,7 +1470,7 @@ impl AppState {
 
     /// Polled game state; a game started after the last restart-class apply has loaded it.
     pub fn observe_game(&mut self, running: bool, started_at: Option<SystemTime>) {
-        self.live_hud.game(running, Instant::now());
+        self.live_hud.game(running, started_at, Instant::now());
         if self
             .pending_restart
             .as_ref()
@@ -2409,18 +2414,28 @@ impl AppState {
 
     /// Sends what is due from slider drags and the live HUD preview.
     pub fn tick_live(&mut self, now: Instant) -> Option<Result<PushOutcome, String>> {
-        if let Some(cmds) = self.live_hud.tick(now) {
-            self.deliver_live_hud(&cmds);
+        let pull = self.settings.bridge != BridgeKind::Netcon;
+        if let Some(delivery) = self.live_hud.tick(now, pull) {
+            self.deliver_live_hud(delivery);
         }
         let cmds = self.live_push.take_due(now)?;
         Some(self.send(&cmds))
     }
 
-    /// The live HUD script execs the cfg itself; netcon only makes it quicker. The
-    /// script's own `DEADTUNE_LIVE` lines are the answer, so there is no ack trailer.
-    fn deliver_live_hud(&mut self, cmds: &[ConsoleCmd]) {
-        if let Err(e) = live_hud_cfg(&self.paths, cmds) {
+    /// Everything goes into `deadtune_hud.cfg`, which the bound key and the script's own
+    /// pulls run; netcon, when on, sets the slots directly. The script's `DEADTUNE_LIVE`
+    /// lines are the answer, so there is no ack trailer.
+    fn deliver_live_hud(&mut self, delivery: Delivery) {
+        let cmds = match delivery {
+            Delivery::Chunk(batch) => batch.cmds,
+            Delivery::Restore(cmds) => cmds,
+            Delivery::Blank => Vec::new(),
+        };
+        if let Err(e) = live_hud_cfg(&self.paths, &cmds) {
             self.live_hud.fail(e);
+            return;
+        }
+        if cmds.is_empty() {
             return;
         }
         if self.settings.bridge == BridgeKind::Netcon
@@ -2438,6 +2453,15 @@ impl AppState {
     pub fn set_live_preview(&mut self, on: bool) {
         self.profile.hud.live = on;
         self.refresh_preview();
+    }
+
+    /// The live HUD preview's line for the HUD pages.
+    pub fn live_hud_status(&self) -> Option<crate::live_hud::StatusLine> {
+        self.live_hud.status(
+            &self.settings.bind_key,
+            &self.conlog.report(),
+            Instant::now(),
+        )
     }
 
     pub fn undo_live_hud(&mut self) {
@@ -2519,6 +2543,7 @@ impl AppState {
             bind_key: self.settings.bind_key.clone(),
             live,
             version: env!("CARGO_PKG_VERSION").into(),
+            live_hud: self.live_hud.script_installed() && !self.without_addons(),
         }
     }
 
@@ -2829,6 +2854,31 @@ pub mod testutil {
         (dir, state)
     }
 
+    /// A game pak holding the real vanilla HUD stylesheet and a stand-in HUD root layout,
+    /// so layout edits and the live script build.
+    pub fn with_game_hud(state: &AppState) {
+        let vanilla = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../dt-core/tests/fixtures/hud/hud_vanilla.vcss_c"
+        ))
+        .unwrap();
+        let files = BTreeMap::from([
+            (dt_core::hud::elements::HUD_STYLE.to_string(), vanilla),
+            (
+                dt_core::hud::live::HUD_LAYOUT.to_string(),
+                dt_core::hud::inject::compiled_layout(&dt_core::hud::live::stand_in_layout()),
+            ),
+        ]);
+        std::fs::write(
+            state
+                .paths
+                .citadel_dir
+                .join(dt_core::hud::install::GAME_PAK),
+            dt_core::hud::vpk::write(&files),
+        )
+        .unwrap();
+    }
+
     pub fn first_run() -> (tempfile::TempDir, AppState) {
         let (dir, paths) = fake_install();
         let data = dir.path().join("data");
@@ -2841,7 +2891,7 @@ pub mod testutil {
 mod tests {
     use std::time::Duration;
 
-    use super::testutil::state;
+    use super::testutil::{state, with_game_hud};
     use super::*;
     use dt_core::bridge::ack::Outcome;
 
@@ -3130,21 +3180,51 @@ mod tests {
     }
 
     #[test]
-    fn a_live_hud_edit_writes_the_three_slots_to_the_cfg() {
+    fn the_live_preview_is_on_for_an_edited_hud_and_off_in_vanilla_and_ranked_safe() {
+        use crate::live_hud::LiveHud;
+        let (_dir, mut state) = state();
+        with_game_hud(&state);
+        state.refresh_preview();
+        assert_eq!(state.live_hud.state(), &LiveHud::Off, "Vanilla");
+        state.set_hud_element(
+            ElementId::Minimap,
+            ElementEdit {
+                opacity_pct: 60,
+                ..ElementEdit::default()
+            },
+        );
+        assert_eq!(state.live_hud.state(), &LiveHud::NotInstalled);
+        state.apply().unwrap();
+        assert_eq!(state.live_hud.state(), &LiveHud::GameClosed);
+        state.toggle_ranked_safe().unwrap();
+        assert_eq!(state.live_hud.state(), &LiveHud::Off, "ranked-safe");
+        state.toggle_ranked_safe().unwrap();
+        state.set_live_preview(false);
+        assert_eq!(state.live_hud.state(), &LiveHud::Off, "turned off by hand");
+        assert!(state.profile.to_toml().unwrap().contains("live = false"));
+    }
+
+    #[test]
+    fn simons_console_log_makes_the_preview_live_and_edits_reach_the_cfg() {
         use crate::live_hud::LiveHud;
         use dt_core::hud::install::{InstallRecord, RECORD_FILE};
         use dt_core::hud::live;
+        use std::io::Write;
 
         let (_dir, mut state) = state();
-        let baked = HudLayout {
-            live: true,
-            ..HudLayout::default()
-        };
+        state.set_hud_element(
+            ElementId::Chat,
+            ElementEdit {
+                opacity_pct: 50,
+                ..ElementEdit::default()
+            },
+        );
+        let baked = state.profile.hud.clone();
         let record = InstallRecord {
             sha256: "00".into(),
             build_id: None,
             patched: Vec::new(),
-            features: baked.features(),
+            features: vec![HudFeature::Layout, HudFeature::LivePreview],
             layout: Some(toml::to_string(&baked).unwrap()),
             sources: Default::default(),
         };
@@ -3153,27 +3233,68 @@ mod tests {
             toml::to_string(&record).unwrap(),
         )
         .unwrap();
-        state.set_live_preview(true);
-        assert_eq!(state.live_hud.state(), &LiveHud::GameClosed);
+        state.hud_cache = None;
+        state.refresh_preview();
+        assert_eq!(
+            state.live_hud.state(),
+            &LiveHud::GameClosed,
+            "on by default with a HUD edit"
+        );
         state.observe_game(true, None);
         let base = live::base_id(&baked).unwrap();
+        let log = state.paths.citadel_dir.join("console.log");
+        let append = |text: &str| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log)
+                .unwrap()
+                .write_all(text.as_bytes())
+                .unwrap();
+        };
+        let exec_error =
+            "[InputService] exec: couldn't exec '{}cfg/deadtune_hud.cfg', unable to read file\r\n";
+        append(&format!(
+            "{exec_error}[Console] DEADTUNE_LIVE hello {base}\r\n{exec_error}[Console] DEADTUNE_LIVE hello {base}\r\n"
+        ));
         let t0 = Instant::now();
-        state
-            .live_hud
-            .line(&format!("DEADTUNE_LIVE hello {base}"), t0);
-        assert!(matches!(state.live_hud.state(), LiveHud::Live { .. }));
-        state.tick_live(t0);
+        state.poll_conlog(t0);
+        assert!(
+            matches!(state.live_hud.state(), LiveHud::Live { .. }),
+            "{:?}",
+            state.live_hud.state()
+        );
+        assert!(state.write_boot_cfg().is_ok());
+        let boot = std::fs::read_to_string(state.paths.cfg_dir.join("deadtune_boot.cfg")).unwrap();
+        assert!(
+            boot.contains("exec deadtune_live; exec deadtune_hud"),
+            "{boot}"
+        );
+
         let cfg = state.paths.cfg_dir.join(live::CFG_NAME);
-        assert!(cfg.exists(), "entering live sends the layout");
-        let first_seq = std::fs::read_to_string(&cfg).unwrap()[live::SLOTS[0].len() + 2..]
-            .split(' ')
-            .nth(1)
-            .unwrap()
-            .parse::<u32>()
-            .unwrap();
-        state
-            .live_hud
-            .line(&format!("DEADTUNE_LIVE {first_seq} ok {base}"), t0);
+        state.tick_live(t0);
+        assert_eq!(
+            std::fs::read_to_string(&cfg).unwrap(),
+            "",
+            "the cfg exists as soon as the game runs, so the key never fails"
+        );
+        state.tick_live(t0);
+        let seq_of = |text: &str| -> u32 {
+            let first = text.lines().next().unwrap();
+            let value = first
+                .strip_prefix(&format!("{} \"", live::CTL.convar))
+                .and_then(|v| v.strip_suffix('"'))
+                .unwrap_or_else(|| panic!("{text}"));
+            value.parse::<u32>().unwrap() >> 10
+        };
+        let first = seq_of(&std::fs::read_to_string(&cfg).unwrap());
+        append(&format!("[Console] DEADTUNE_LIVE {first} ok {base}\r\n"));
+        let t1 = t0 + Duration::from_secs(1);
+        state.poll_conlog(t1);
+        assert!(matches!(
+            state.live_hud.state(),
+            LiveHud::Live { seq: Some(s), .. } if *s == first
+        ));
 
         state.set_hud_element(
             ElementId::Minimap,
@@ -3182,28 +3303,36 @@ mod tests {
                 ..ElementEdit::default()
             },
         );
-        state.tick_live(Instant::now() + Duration::from_millis(200));
+        state.tick_live(t1 + Duration::from_millis(200));
         let text = std::fs::read_to_string(&cfg).unwrap();
         let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines.len(), 3, "{text}");
-        for (line, slot) in lines.iter().zip(live::SLOTS) {
-            let value = line
-                .strip_prefix(&format!("{slot} \""))
-                .and_then(|v| v.strip_suffix('"'))
-                .unwrap_or_else(|| panic!("{line}"));
-            let cmd = ConsoleCmd {
-                name: slot.into(),
-                value: value.into(),
-            };
-            assert_eq!(cmd.to_line().unwrap(), *line);
-        }
-        assert!(lines[0].contains("translateX(40px)"), "{}", lines[0]);
+        assert_eq!(lines.len(), 1 + live::DATA.len(), "{text}");
+        let words: Vec<u32> = lines[1..]
+            .iter()
+            .zip(live::DATA)
+            .map(|(line, slot)| {
+                line.strip_prefix(&format!("{} \"", slot.convar))
+                    .and_then(|v| v.strip_suffix('"'))
+                    .unwrap_or_else(|| panic!("{line}"))
+                    .parse()
+                    .unwrap()
+            })
+            .collect();
+        let message = live::decode(&[words], &live::dictionary(&baked).unwrap()).unwrap();
+        assert!(
+            message
+                .rules
+                .iter()
+                .any(|r| r.value == "translateX(40px) translateY(0px)"),
+            "{message:?}"
+        );
+        assert!(message.pull, "no netcon: the script pulls the rest itself");
 
         state.observe_game(false, None);
         state.tick_live(Instant::now());
         let restored = std::fs::read_to_string(&cfg).unwrap();
         assert!(
-            restored.starts_with(&format!("{} \"\"", live::SLOTS[0])),
+            restored.starts_with(&format!("{} \"{}\"", live::CTL.convar, live::CTL.default)),
             "{restored}"
         );
     }
@@ -4475,25 +4604,6 @@ mod tests {
         dt_core::hud::install::addons_dir(&state.paths).join(dt_core::hud::install::ADDON_FILE)
     }
 
-    /// A game pak holding the real vanilla HUD stylesheet, so layout edits build.
-    fn with_game_hud(state: &AppState) {
-        use dt_core::hud::vpk;
-        let vanilla = std::fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../dt-core/tests/fixtures/hud/hud_vanilla.vcss_c"
-        ))
-        .unwrap();
-        let files = BTreeMap::from([(dt_core::hud::elements::HUD_STYLE.to_string(), vanilla)]);
-        std::fs::write(
-            state
-                .paths
-                .citadel_dir
-                .join(dt_core::hud::install::GAME_PAK),
-            vpk::write(&files),
-        )
-        .unwrap();
-    }
-
     fn apply_minimap_opacity(state: &mut AppState, pct: u8) -> Vec<u8> {
         state.set_hud_element(
             ElementId::Minimap,
@@ -4575,7 +4685,11 @@ mod tests {
         assert_eq!(failure.ids, [Pak::Hud]);
         assert_eq!(
             failure.hud.as_ref().map(|h| h.features.clone()),
-            Some(vec![dt_core::hud::HudFeature::Layout])
+            Some(vec![
+                dt_core::hud::HudFeature::Layout,
+                dt_core::hud::HudFeature::LivePreview
+            ]),
+            "the live script is on by default, so it is a suspect too"
         );
         assert!(
             matches!(state.status, Some(Status::Error(ref m)) if m.contains("put back the last HUD that worked")),

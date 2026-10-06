@@ -37,7 +37,7 @@ The script is opt-in ("Live HUD preview", off in Vanilla). It ships in the HUD p
 
 ### 3.2 Reading a ConVar from Panorama JS
 
-The game's own scripts and the mod scripts in `research/` call `GameInterfaceAPI.GetSettingString(name)` (and `GetSettingValue` for numbers) and `GameInterfaceAPI.SetSettingValue(name, value)`; console commands run through `$.DispatchEvent("CitadelConCommand", line)` (the ingame settings script already uses it) or `GameInterfaceAPI.ConsoleCommand`. Whether `GetSettingString` sees a ConVar the console just changed, and whether a dev-only read is refused, is probe LH-P1. If the read API is missing, the hidden-slider fallback (b) keeps the same mailbox format with numbers only.
+The game's own scripts never read a ConVar from JS: retail ships only six compiled post-game scripts, `hud.xml` has no `<scripts>` block, commands go through `$.DispatchEvent("CitadelConCommand", line)` (77 sites), and Mixboat's Wide FOV mod reads values from a slider's DOM, never from a ConVar API. `GameInterfaceAPI.GetSettingString(name)` is the Source 2 Panorama name known from Dota 2; the script calls it in one `readSlot` function and the hello line prints what it returned, so LH-P1 answers it in one launch. If it is missing, the fallback is option (b): hidden `CitadelSettingsSlider`s (section 3.1).
 
 ### 3.3 The mailbox ConVars
 

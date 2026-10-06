@@ -49,6 +49,21 @@ pub struct App {
     saved_settings: Settings,
     game_poll: Option<Receiver<(bool, Option<SystemTime>)>>,
     screenshot: Option<Screenshot>,
+    away: Away,
+}
+
+/// How long the window can sit unfocused (behind the game) before DeadTune gives memory
+/// back as if it were minimized.
+const AWAY_AFTER: Duration = Duration::from_secs(60);
+
+/// Whether the window is out of sight, for giving memory back once per absence.
+#[derive(Default)]
+struct Away {
+    unfocused_since: Option<Instant>,
+    /// Pictures were released this absence; the trim waits a frame so the freed textures
+    /// are gone first.
+    released: bool,
+    trimmed: bool,
 }
 
 fn resolve_paths(game_dir: Option<&Path>) -> Result<GamePaths, String> {
@@ -98,6 +113,7 @@ impl App {
             args,
             saved_settings,
             game_poll: None,
+            away: Away::default(),
             screenshot: screenshot.map(|path| Screenshot {
                 path,
                 frames: 0,
@@ -527,6 +543,39 @@ impl App {
         }
     }
 
+    /// Frees pictures no page drew lately; when the window is minimized, or unfocused for
+    /// [`AWAY_AFTER`], frees them all and trims the working set, once per absence.
+    fn rest(&mut self, ctx: &egui::Context, frame_start: Instant, minimized: bool, focused: bool) {
+        let away = &mut self.away;
+        away.unfocused_since = if focused {
+            None
+        } else {
+            away.unfocused_since.or(Some(frame_start))
+        };
+        let unfocused_for = away
+            .unfocused_since
+            .map(|since| frame_start.saturating_duration_since(since));
+        let gone = minimized || unfocused_for.is_some_and(|d| d >= AWAY_AFTER);
+        if !gone {
+            away.released = false;
+            away.trimmed = false;
+            if let Some(d) = unfocused_for {
+                ctx.request_repaint_after(AWAY_AFTER.saturating_sub(d));
+            }
+        }
+        let release_all = gone && !away.released;
+        if let Screen::Main(state) = &mut self.screen {
+            state.release_pictures(ctx, frame_start, release_all);
+        }
+        if release_all {
+            away.released = true;
+            ctx.request_repaint();
+        } else if gone && !away.trimmed {
+            away.trimmed = true;
+            dt_core::memory::trim_working_set();
+        }
+    }
+
     fn screenshot(&mut self, ctx: &egui::Context) {
         let Some(job) = &mut self.screenshot else {
             return;
@@ -801,9 +850,15 @@ pub fn report_push(ctx: &egui::Context, state: &mut AppState, result: Result<Pus
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        let frame_start = Instant::now();
         self.poll(&ctx);
+        let (minimized, focused) = ctx.input(|i| {
+            let viewport = i.viewport();
+            (viewport.minimized == Some(true), viewport.focused != Some(false))
+        });
         let mut reopen = None;
         match &mut self.screen {
+            Screen::Main(_) if minimized => {}
             Screen::FindGame {
                 input,
                 error,
@@ -833,6 +888,7 @@ impl eframe::App for App {
         if let Some(settings) = reopen {
             self.open_game(settings);
         }
+        self.rest(&ctx, frame_start, minimized, focused);
         self.screenshot(&ctx);
     }
 }

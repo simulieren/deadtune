@@ -33,7 +33,7 @@ png = "0.18"
 resvg = { version = "0.48.1", default-features = false, optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Power", "Win32_Foundation", "Win32_System_Registry", "Win32_Graphics_Gdi", "Win32_Devices_DeviceAndDriverInstallation"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Power", "Win32_Foundation", "Win32_System_Registry", "Win32_Graphics_Gdi", "Win32_Devices_DeviceAndDriverInstallation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 
 [dev-dependencies]
 tempfile.workspace = true

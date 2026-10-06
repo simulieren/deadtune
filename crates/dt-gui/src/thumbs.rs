@@ -7,14 +7,16 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::Instant;
 
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 
 use crate::images::{Facts, ImageSource, Picture, render};
 
 const WORKERS: usize = 3;
-/// Texture memory the cache may hold, in RGBA bytes.
-const BUDGET: usize = 96 << 20;
+/// Texture memory the cache may hold, in RGBA bytes. A page of previews or a screen of
+/// image tiles fits in a few MB; the rest only kept pictures the player had scrolled past.
+const BUDGET: usize = 32 << 20;
 
 /// A cache that keeps the most recently used values within a total weight.
 pub struct Lru<K, V> {
@@ -120,6 +122,8 @@ pub struct Thumbs {
     cache: Lru<Picture, Slot>,
     wanted: Vec<Picture>,
     pub checker: TextureHandle,
+    /// When a page last drew with these pictures (`AppState::release_pictures`).
+    pub drawn: Instant,
 }
 
 impl Thumbs {
@@ -152,6 +156,7 @@ impl Thumbs {
             cache: Lru::new(BUDGET),
             wanted: Vec::new(),
             checker,
+            drawn: Instant::now(),
         }
     }
 
@@ -177,6 +182,7 @@ impl Thumbs {
 
     /// Hands this frame's wishes to the workers, in the order they were asked for.
     pub fn end_frame(&mut self) {
+        self.drawn = Instant::now();
         let wanted = std::mem::take(&mut self.wanted);
         let (lock, wake) = &*self.shared;
         let mut queue = lock.lock().expect("queue lock");

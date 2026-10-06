@@ -148,7 +148,9 @@ pub fn plan_patch(
         if !pak_path.is_file() {
             return Err(HudError::MissingGamePak(pak_path));
         }
-        let game = VpkDir::open(&pak_path)?;
+        // Every file the addon rebuilds or replaces lives under `panorama/`; this runs on
+        // each HUD edit, so the rest of pak01's 140k entries are never parsed.
+        let game = VpkDir::open_under(&pak_path, "panorama/")?;
         let built = build_addon(&game, &patch, state_dir)?;
         sources = copied_sources(&game, &patch)?;
         if built.files.is_empty() {

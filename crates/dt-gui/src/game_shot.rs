@@ -2,6 +2,8 @@
 //! the HUD layout preview and the "In game" crops beside the minimap, top bar and health bar
 //! previews. Element positions in it are `dt_core::hud::layout::reference_crop`.
 
+use std::time::Instant;
+
 use dt_core::hud::elements::ElementId;
 use dt_core::hud::layout;
 use eframe::egui::{
@@ -26,17 +28,51 @@ fn decode(bytes: &[u8]) -> Result<ColorImage, String> {
     Ok(ColorImage::from_rgba_unmultiplied([w, h], &pixels))
 }
 
-/// The screenshot as a texture, decoded on first use and kept for the session.
+#[derive(Clone)]
+struct Shot {
+    texture: Option<TextureHandle>,
+    drawn: Instant,
+}
+
+fn shot_id() -> Id {
+    Id::new("game_shot")
+}
+
+/// The screenshot as a texture, decoded on first use and kept until [`release`].
 pub fn texture(ctx: &Context) -> Option<TextureHandle> {
-    let id = Id::new("game_shot");
-    if let Some(texture) = ctx.data(|d| d.get_temp::<Option<TextureHandle>>(id)) {
+    let now = Instant::now();
+    let kept = ctx.data_mut(|d| {
+        let shot = d.get_temp_mut_or_insert_with(shot_id(), || None::<Shot>);
+        shot.as_mut().map(|shot| {
+            shot.drawn = now;
+            shot.texture.clone()
+        })
+    });
+    if let Some(texture) = kept {
         return texture;
     }
     let texture = decode(SHOT)
         .ok()
         .map(|image| ctx.load_texture("game_shot", image, egui::TextureOptions::LINEAR));
-    ctx.data_mut(|d| d.insert_temp(id, texture.clone()));
+    let shot = Shot {
+        texture: texture.clone(),
+        drawn: now,
+    };
+    ctx.data_mut(|d| d.insert_temp(shot_id(), Some(shot)));
     texture
+}
+
+/// Frees the decoded screenshot (1280x720, 3.5 MB) when it was last drawn before `cutoff`;
+/// otherwise says when it was last drawn.
+pub fn release(ctx: &Context, cutoff: Instant) -> Option<Instant> {
+    ctx.data_mut(|d| {
+        let drawn = d.get_temp::<Option<Shot>>(shot_id()).flatten()?.drawn;
+        if drawn < cutoff {
+            d.remove::<Option<Shot>>(shot_id());
+            return None;
+        }
+        Some(drawn)
+    })
 }
 
 /// Paints the part of the screenshot at `crop` (x, y, width, height fractions) into `rect`.
@@ -97,5 +133,17 @@ mod tests {
     fn the_shipped_screenshot_decodes_at_16_by_9() {
         let image = decode(SHOT).expect("decodes");
         assert_eq!(image.size, [1280, 720]);
+    }
+
+    #[test]
+    fn release_frees_only_a_screenshot_drawn_before_the_cutoff() {
+        let ctx = Context::default();
+        let before = Instant::now();
+        let first = texture(&ctx).expect("decodes").id();
+        let drawn = release(&ctx, before).expect("drawn after the cutoff, so kept");
+        assert_eq!(texture(&ctx).expect("kept").id(), first);
+        assert_eq!(release(&ctx, Instant::now() + std::time::Duration::from_nanos(1)), None);
+        assert_ne!(texture(&ctx).expect("decoded again").id(), first);
+        assert!(drawn >= before);
     }
 }

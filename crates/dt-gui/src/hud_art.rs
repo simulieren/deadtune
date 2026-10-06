@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use dt_core::hud::art::Art;
 use dt_core::snapshot::store::TEXT;
@@ -34,7 +35,44 @@ impl HudArtState {
     }
 }
 
+/// How long decoded pictures outlive the last frame that drew them.
+const KEEP_PICTURES: Duration = Duration::from_secs(10);
+
 impl AppState {
+    /// Frees the HUD previews' pictures, the UI images page's and the game screenshot once
+    /// no page drew them for [`KEEP_PICTURES`], or all of them with `all` (the window is
+    /// minimized). A page that draws them again decodes them again. `frame_start` is when
+    /// this frame began: what was drawn since is in use.
+    pub fn release_pictures(&mut self, ctx: &egui::Context, frame_start: Instant, all: bool) {
+        let now = Instant::now();
+        let cutoff = if all {
+            Some(now + Duration::from_nanos(1))
+        } else {
+            now.checked_sub(KEEP_PICTURES)
+        };
+        let mut idle_since: Option<Instant> = None;
+        let mut kept = |drawn: Instant| {
+            if drawn < frame_start {
+                idle_since = Some(idle_since.map_or(drawn, |t| t.min(drawn)));
+            }
+        };
+        for thumbs in [&mut self.hud_art.thumbs, &mut self.images.thumbs] {
+            if let Some(drawn) = thumbs.as_ref().map(|t| t.drawn) {
+                if cutoff.is_some_and(|c| drawn < c) {
+                    *thumbs = None;
+                } else {
+                    kept(drawn);
+                }
+            }
+        }
+        if let Some(drawn) = cutoff.and_then(|c| crate::game_shot::release(ctx, c)) {
+            kept(drawn);
+        }
+        if let Some(drawn) = idle_since {
+            ctx.request_repaint_after((drawn + KEEP_PICTURES).saturating_duration_since(now));
+        }
+    }
+
     /// Where the previews read game images, asked in this order: a decoded-image folder the
     /// player chose (it is there on purpose, to compare against), the game's pak01, then the
     /// snapshot the UI images page previews (`DEADTUNE_IMAGES_FROM`).

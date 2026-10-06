@@ -92,6 +92,13 @@ fn u16_at(b: &[u8], at: usize) -> u16 {
 
 impl VpkDir {
     pub fn open(dir_path: &Path) -> Result<VpkDir, VpkError> {
+        VpkDir::open_under(dir_path, "")
+    }
+
+    /// Like [`VpkDir::open`], keeping only the entries whose path starts with `prefix`
+    /// (`panorama/images/`). The game's pak01 lists about 140k files, some 20 MB once
+    /// parsed; a reader that only wants one folder holds a small part of that.
+    pub fn open_under(dir_path: &Path, prefix: &str) -> Result<VpkDir, VpkError> {
         // The tree is small; the data section is not read here.
         let mut file = File::open(dir_path)?;
         let mut head = [0u8; HEADER_V2];
@@ -109,12 +116,16 @@ impl VpkDir {
         let mut bytes = vec![0u8; total];
         file.read_exact(&mut bytes)
             .map_err(|_| VpkError::BadTree("file shorter than header + tree".into()))?;
-        VpkDir::parse(dir_path, &bytes)
+        VpkDir::parse_under(dir_path, &bytes, prefix)
     }
 
     /// Parses a dir file already in memory. `dir_path` is only used to find sibling
     /// `_NNN.vpk` archives on `read`.
     pub fn parse(dir_path: &Path, bytes: &[u8]) -> Result<VpkDir, VpkError> {
+        VpkDir::parse_under(dir_path, bytes, "")
+    }
+
+    fn parse_under(dir_path: &Path, bytes: &[u8], prefix: &str) -> Result<VpkDir, VpkError> {
         let (hdr, tree_size) = parse_header(bytes)?;
         let tree_end = hdr
             .checked_add(tree_size)
@@ -135,6 +146,7 @@ impl VpkDir {
                 if dir.is_empty() {
                     break;
                 }
+                let wanted = under(dir, prefix);
                 loop {
                     let name = cur.cstr()?;
                     if name.is_empty() {
@@ -145,7 +157,10 @@ impl VpkDir {
                         return Err(VpkError::BadTree(format!("bad terminator for {name}")));
                     }
                     let preload_len = u16_at(rec, 4) as usize;
-                    let preload = cur.take(preload_len)?.to_vec();
+                    let preload = cur.take(preload_len)?;
+                    if !wanted {
+                        continue;
+                    }
                     let mut path = String::new();
                     if dir != BLANK {
                         path.push_str(dir);
@@ -158,11 +173,14 @@ impl VpkDir {
                         path.push('.');
                         path.push_str(ext);
                     }
+                    if !path.starts_with(prefix) {
+                        continue;
+                    }
                     entries.insert(
                         path,
                         VpkEntry {
                             crc: u32_at(rec, 0),
-                            preload,
+                            preload: preload.to_vec(),
                             archive_index: u16_at(rec, 6),
                             offset: u32_at(rec, 8),
                             length: u32_at(rec, 12),
@@ -235,6 +253,18 @@ impl VpkDir {
             .dir_path
             .with_file_name(format!("{name}_{index:03}.vpk")))
     }
+}
+
+/// Whether files in tree folder `dir` (`panorama/images/minimap`, or a blank for the
+/// root) can have paths starting with `prefix`.
+fn under(dir: &str, prefix: &str) -> bool {
+    let dir = if dir == BLANK { "" } else { dir };
+    let mut folder = String::with_capacity(dir.len() + 1);
+    folder.push_str(dir);
+    if !dir.is_empty() {
+        folder.push('/');
+    }
+    folder.starts_with(prefix) || prefix.starts_with(&folder)
 }
 
 /// Returns (header size, tree size).
@@ -512,6 +542,25 @@ mod tests {
         for (path, data) in &files {
             assert_eq!(&pak.read(path).unwrap(), data, "{path}");
         }
+    }
+
+    #[test]
+    fn open_under_keeps_one_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("pak_dir.vpk");
+        let mut files = sample();
+        files.insert("panorama/stylesheet.vcss_c".to_string(), b"near miss".to_vec());
+        files.insert("panorama/root.txt".to_string(), b"in the parent".to_vec());
+        std::fs::write(&p, write(&files)).unwrap();
+        let vpk = VpkDir::open_under(&p, "panorama/styles/").unwrap();
+        assert_eq!(
+            vpk.entries.keys().collect::<Vec<_>>(),
+            ["panorama/styles/hud.vcss_c"]
+        );
+        assert_eq!(vpk.read("panorama/styles/hud.vcss_c").unwrap(), b"style bytes");
+        let vpk = VpkDir::open_under(&p, "panorama/").unwrap();
+        assert_eq!(vpk.entries.len(), 4);
+        assert_eq!(vpk.read("panorama/root.txt").unwrap(), b"in the parent");
     }
 
     #[test]

@@ -34,6 +34,7 @@ pub const VECTOR_PNG_MIN_SIDE: u32 = 256;
 
 /// Where the game's images are read from.
 pub enum ImageSource {
+    /// The game's pak01, only its `panorama/images/` entries.
     Game(VpkDir),
     /// A snapshot's `raw/` folder (or any folder holding `panorama/images/`).
     Folder {
@@ -113,7 +114,7 @@ impl ImageSource {
         if !pak.is_file() {
             return Err(SnapshotError::MissingGamePak(pak));
         }
-        Ok(ImageSource::Game(VpkDir::open(&pak)?))
+        Ok(ImageSource::Game(VpkDir::open_under(&pak, IMAGES_ROOT)?))
     }
 
     /// `dir` by what it holds: a "Save all images" export (its `manifest.json`) is read

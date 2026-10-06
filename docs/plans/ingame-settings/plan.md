@@ -1,6 +1,6 @@
 # In-game settings rows (live dev-only ConVars)
 
-Status: Phases 2 and 3 built on the Mac (2026-10-05), untested in game; Phase 0 and the G-1 to G-7 checks in `docs/testing-windows.md` decide whether the settings control writes dev-only ConVars live. Last update 2026-10-05.
+Status: Phases 2 and 3 built (2026-10-05). Phase 0 confirmed by Simon on Windows (2026-10-06): DeadTune's Wide FOV row shows under Camera Settings and dragging it changes the view live, so the game's settings control does write a dev-only ConVar at runtime. The other G-checks (DeadTune group, persistence) are still open. Last update 2026-10-06.
 
 ## Goal
 
@@ -40,9 +40,9 @@ Retest steps: rename to `pak50_dir.vpk`, put it in `game\citadel\addons`, make s
 
 ### Phase 0: prove the loophole (Windows, 10 minutes)
 
-- [ ] Retest the mod as above. Record: does the row show; does dragging change the view live; does the value survive a restart (via its boot trick).
+- [x] Row shows and dragging changes the view live (DeadTune's own rebuilt row, v0.11.0 or later, 2026-10-06). Restart persistence not yet reported.
 - [ ] With the mod working, run `r_aspectratio` in the console (no value) and note what it prints after dragging.
-- [ ] Decide: if the settings control does not write dev-only ConVars live, stop here; Wide view via `gameinfo.gi` (already in DeadTune) stays the only route.
+- [x] Decided: live writes work, so Phases 2 and 3 stay. This is also the channel a live HUD preview would use (a DeadTune script reading settings and restyling the HUD at runtime).
 
 ### Phase 1: read the settings layout
 

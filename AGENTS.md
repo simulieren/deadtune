@@ -104,6 +104,7 @@ These cost real debugging. Don't relearn them.
 - **Particle stub.** Laund's particle disabler stub is the game's own `particles/empty.vpcf_c` (CRC `0xf3db7131`, 1189 bytes).
 - **Line endings.** Fixtures are byte-exact golden files. The root `.gitattributes` disables conversion; a nested upstream `.gitattributes` once re-enabled CRLF on Windows checkouts. Don't add new ones under `research/`.
 - **Console feedback.** Live pushes end with `echo DEADTUNE_ACK <nonce>` and convar queries; DeadTune reads them back from `console.log`, which the game writes when launched with `-condebug`.
+- **Running game locks addon paks.** While Deadlock runs, writing `game/citadel/addons/pakNN_dir.vpk` fails with "Access is denied (os error 5)", even as administrator (Simon, 2026-10-06). Pak changes can only land while the game is closed, and the game has no Panorama reload command (`research/hud/panorama-runtime.md`), so live HUD changes must come from a script restyling panels, not from rewriting the pak.
 - **Records folder.** The backup store and every addon, HUD, guard and practice record live in `backup::records_dir(data_dir)` (`<data>/backups`); presets, profiles, snapshots and bench history live in the data dir itself. The CLI once read records from the data dir and saw nothing the GUI wrote.
 - **eframe features** are minimal on purpose: `glow`, `links` (hyperlinks don't open without it), `x11`, `wayland`.
 - **Licensing.** The repo is public, GPL-3.0. Don't add code under non-free licences (DL-FOV-Fixer, PolyForm Noncommercial, was removed for this reason).

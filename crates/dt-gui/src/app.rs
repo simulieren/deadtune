@@ -551,6 +551,14 @@ impl App {
                 state.inject_trial_started(fake_paks(list));
             }
         }
+        // `DEADTUNE_FAKE_CLOSE=1` closes the faked game after the Apply, so pak changes left
+        // for when it closes go in (with `DEADTUNE_FAKE_RUNNING=1`).
+        if job.frames == 7
+            && std::env::var_os("DEADTUNE_FAKE_CLOSE").is_some_and(|v| v == "1")
+            && let Screen::Main(state) = &mut self.screen
+        {
+            state.observe_game(false, None);
+        }
         // Hold the capture while the UI images page or a HUD preview is still decoding.
         let decoding = matches!(&self.screen, Screen::Main(state)
             if state.images.thumbs.as_ref().is_some_and(|t| t.busy()) || state.hud_art.busy());

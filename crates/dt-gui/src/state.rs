@@ -12,7 +12,7 @@ use dt_core::addons::textures::Progress;
 use dt_core::addons::{self, AddonId, AddonsConfig};
 use dt_core::addons::{TextureDownscale, TextureStats};
 use dt_core::apply::{
-    self, ApplyContext, ApplyError, ApplyPlan, ApplyReport, BaseTexts, FileWrite,
+    self, ApplyContext, ApplyError, ApplyPlan, ApplyReport, BaseTexts, FileWrite, PendingPaks,
 };
 use dt_core::backup::{BackupEntry, BackupStore, FileKind, sha256_hex};
 use dt_core::bridge::ConsoleCmd;
@@ -51,6 +51,8 @@ use crate::relaunch::Relaunch;
 use crate::settings::{Settings, TargetSource};
 use crate::update::{self, Release, Updater};
 use dt_core::doctor::Check;
+
+mod pending_paks;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LiveFiles {
@@ -713,6 +715,10 @@ pub struct AppState {
     /// Cache state of every remote preset (SideLock), refreshed after each fetch, import,
     /// accept or discard rather than hashed every frame.
     pub remote_presets: BTreeMap<PresetId, RemoteView>,
+    /// HUD and addon pak changes waiting for the game to close (`pending_paks`).
+    pub pending_paks: Option<PendingPaks>,
+    /// Put waiting paks in the next time the game is not running: at start and when it closes.
+    pending_paks_check: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -801,7 +807,10 @@ impl AppState {
             Some(p) => (p.clone(), Some(p)),
             None => (default_profile(), Some(default_profile())),
         };
+        let pending_paks = PendingPaks::load(&store.root).unwrap_or(None);
         let mut state = AppState {
+            pending_paks,
+            pending_paks_check: true,
             known_gameinfo_sha: sha256_hex(live.gameinfo.as_bytes()),
             base: Base::resolve(&profile, &presets_dir),
             conlog: LogTail::for_game(&paths),
@@ -1022,11 +1031,12 @@ impl AppState {
 
     pub fn refresh_preview(&mut self) {
         // Ranked-safe also takes our HUD addon out: stock means stock.
-        let layout = if self.without_addons() {
-            &HudLayout::default()
-        } else {
-            &self.profile.hud
+        let paks = self.pak_target();
+        let ctx = ApplyContext {
+            waiting_paks: self.waiting_paks(&paks),
+            ..self.ctx
         };
+        let layout = &paks.hud;
         let hud = match &self.hud_cache {
             Some((cached, plan)) if cached == layout => plan.clone(),
             _ => {
@@ -1045,11 +1055,7 @@ impl AppState {
             }
             plan
         });
-        let config = if self.without_addons() {
-            &AddonsConfig::default()
-        } else {
-            &self.profile.addons
-        };
+        let config = &paks.addons;
         let addons = match &self.addons_cache {
             Some((cached, plan)) if cached == config => plan.clone(),
             _ => {
@@ -1092,7 +1098,7 @@ impl AppState {
                     self.live.video.as_deref(),
                     &t,
                     self.catalog,
-                    self.ctx,
+                    ctx,
                 )
             })
             .map_err(|e| e.to_string());
@@ -1206,6 +1212,7 @@ impl AppState {
         self.images.crop_draft = None;
         self.profile = self.saved.clone().unwrap_or_else(default_profile);
         self.base = Base::resolve(&self.profile, &self.presets_dir());
+        self.discard_pending_paks();
         self.refresh_preview();
     }
 
@@ -1433,12 +1440,16 @@ impl AppState {
         if self.ctx.game_running != running {
             self.ctx.game_running = running;
             self.hud_update_check |= !running;
+            self.pending_paks_check |= !running;
             self.refresh_preview();
         }
         if !running && std::mem::take(&mut self.hud_update_check) {
             self.refresh_hud_after_update();
         }
         self.guard_tick(running, started_at, SystemTime::now());
+        if !running && std::mem::take(&mut self.pending_paks_check) {
+            self.put_pending_paks_in();
+        }
     }
 
     /// A HUD pak from before a game update carries the old game files and can stop the
@@ -2282,6 +2293,7 @@ impl AppState {
             }
             Err(e) => return Err(e.to_string()),
         };
+        self.note_paks(&plan, &applied.report);
         if let Some(e) = &applied.report.bridge_error {
             applied.warning = Some(format!("files saved, but the live push failed: {e}"));
         }
@@ -2413,6 +2425,9 @@ impl AppState {
 
     /// Writes the boot cfg and starts the game through Steam with `+exec deadtune_boot`.
     pub fn launch_game(&mut self) -> Result<(), String> {
+        if !self.ctx.game_running {
+            self.put_pending_paks_in();
+        }
         self.write_boot_cfg()?;
         launch::launch(&self.launch_args()).map_err(|e| e.to_string())
     }
@@ -4411,6 +4426,8 @@ mod tests {
             state.guard.candidate(),
             Some(Pak::Addon(AddonId::SoulContainer))
         );
+        assert!(!addon.exists(), "the game still holds the paks");
+        state.observe_game(false, None);
         assert!(addon.exists(), "first suspect back for its test");
         assert!(!hud_pak(&state).exists(), "the HUD waits its turn");
     }

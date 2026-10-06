@@ -86,6 +86,8 @@ pub enum InstalledState {
 pub enum HudError {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error("{0} is held open by the running game")]
+    Locked(PathBuf),
     #[error(transparent)]
     Vpk(#[from] super::vpk::VpkError),
     #[error(transparent)]
@@ -227,7 +229,7 @@ pub fn execute(plan: &HudPlan, paths: &GamePaths, state_dir: &Path) -> Result<()
             if let Some(dir) = plan.addon_path.parent() {
                 std::fs::create_dir_all(dir)?;
             }
-            atomic_write(&plan.addon_path, bytes)?;
+            atomic_write(&plan.addon_path, bytes).map_err(|e| pak_error(&plan.addon_path, e))?;
             let record = InstallRecord {
                 sha256,
                 build_id: build_id(paths)?,
@@ -244,7 +246,12 @@ pub fn execute(plan: &HudPlan, paths: &GamePaths, state_dir: &Path) -> Result<()
                 record.as_ref(),
                 None,
             )?;
-            remove_if_present(&plan.addon_path)?;
+            match std::fs::remove_file(&plan.addon_path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(pak_error(&plan.addon_path, e));
+                }
+                _ => {}
+            }
             remove_if_present(&record_path)?;
             Ok(())
         }
@@ -529,6 +536,14 @@ fn build_id(paths: &GamePaths) -> Result<Option<String>, HudError> {
     match &paths.appmanifest {
         Some(acf) => Ok(locate::parse_buildid(&std::fs::read_to_string(acf)?)),
         None => Ok(None),
+    }
+}
+
+fn pak_error(path: &Path, e: std::io::Error) -> HudError {
+    if crate::backup::is_locked(&e) {
+        HudError::Locked(path.to_path_buf())
+    } else {
+        e.into()
     }
 }
 

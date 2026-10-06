@@ -610,7 +610,7 @@ pub fn execute(plan: &AddonsPlan, paths: &GamePaths, state_dir: &Path) -> Result
                 let sha256 = sha256_hex(&bytes);
                 ensure_writable(&a.path, record.installed.get(key), Some(&sha256))?;
                 std::fs::create_dir_all(&dir)?;
-                atomic_write(&a.path, &bytes)?;
+                atomic_write(&a.path, &bytes).map_err(|e| pak_error(&a.path, e))?;
                 let input = a.input.clone().unwrap_or_default();
                 let mut installed = stamp(&a.path, file, sha256, input, build.clone())?;
                 installed.from_game = a.from_game;
@@ -626,8 +626,11 @@ pub fn execute(plan: &AddonsPlan, paths: &GamePaths, state_dir: &Path) -> Result
                     .map(|r| r.chunks.clone())
                     .unwrap_or_default();
                 for file in std::iter::once(&file).chain(&chunks) {
-                    match std::fs::remove_file(dir.join(file)) {
-                        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+                    let path = dir.join(file);
+                    match std::fs::remove_file(&path) {
+                        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                            return Err(pak_error(&path, e));
+                        }
                         _ => {}
                     }
                 }
@@ -645,6 +648,14 @@ pub fn execute(plan: &AddonsPlan, paths: &GamePaths, state_dir: &Path) -> Result
         write_record(state_dir, &record)?;
     }
     Ok(changed)
+}
+
+fn pak_error(path: &Path, e: std::io::Error) -> AddonError {
+    if crate::backup::is_locked(&e) {
+        AddonError::Locked(path.to_path_buf())
+    } else {
+        e.into()
+    }
 }
 
 /// The game archives textures are read from: every `pakNN_dir.vpk` beside gameinfo.gi.

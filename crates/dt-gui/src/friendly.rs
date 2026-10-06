@@ -864,6 +864,11 @@ pub fn explain(raw: &str) -> Problem {
             "The game's config file looks damaged",
             "Click Restore original game files on Safety & setup, then try again.",
         )
+    } else if has(&["held open by the running game"]) {
+        Problem::new(
+            "Deadlock is using that file",
+            "Close Deadlock, then try again.",
+        )
     } else if has(&["used by another process", "os error 32", "resource busy"]) {
         Problem::new(
             "A game file is in use by another program",
@@ -1213,6 +1218,11 @@ mod tests {
             human_error("gameinfo.gi: unbalanced braces near line 3").contains("Restore original")
         );
         assert!(human_error("io: Access is denied. (os error 5)").contains("Close Deadlock"));
+        let locked = explain(
+            "addons: C:\\Deadlock\\game\\citadel\\addons\\pak75_dir.vpk is held open by the running game",
+        );
+        assert_eq!(locked.title, "Deadlock is using that file");
+        assert!(!locked.line().contains("Verify"), "{}", locked.line());
         assert_eq!(
             explain("launch: steam.exe not found").title,
             "Couldn't start Deadlock"

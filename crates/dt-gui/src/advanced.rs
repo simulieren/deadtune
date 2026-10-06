@@ -301,6 +301,10 @@ fn tab_row(ui: &mut Ui, state: &mut AppState) {
             if let Relaunch::Failed(e) = &state.relaunch {
                 widgets::chip(ui, "Relaunch failed", BAD, None).on_hover_text(e);
             }
+            if let Some(kinds) = state.paks_waiting() {
+                widgets::chip(ui, "Waits for Deadlock to close", WARN, None)
+                    .on_hover_text(crate::simple::paks_waiting_line(kinds));
+            }
             if let Some(pending) = &state.pending_restart {
                 widgets::chip(
                     ui,
@@ -908,6 +912,14 @@ fn pending(ui: &mut Ui, state: &mut AppState) {
         &plan.ignored,
     );
     summary_row(ui, BAD, summary.refused, "refused (denylist)", &plan.denied);
+    if let Some(kinds) = state.paks_waiting() {
+        ui.label(
+            RichText::new(crate::simple::paks_waiting_line(kinds))
+                .small()
+                .color(WARN),
+        )
+        .on_hover_text(crate::simple::PAKS_WAITING_WHY);
+    }
     if running && !plan.is_empty() {
         ui.label(
             RichText::new("Deadlock is running: file changes load next launch.")
@@ -939,8 +951,8 @@ fn pending(ui: &mut Ui, state: &mut AppState) {
     if send.clicked() {
         action = Some(PendingAction::Push);
     }
-    if widgets::wide_button(ui, state.is_dirty(), crate::simple::DISCARD)
-        .on_hover_text(crate::simple::DISCARD_HINT)
+    if widgets::wide_button(ui, state.can_discard(), crate::simple::DISCARD)
+        .on_hover_text(crate::simple::discard_hint(state))
         .clicked()
     {
         action = Some(PendingAction::RevertAll);

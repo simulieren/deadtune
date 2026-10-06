@@ -45,7 +45,8 @@ use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 use dt_core::watch::{self, Change, Watcher};
 
 use crate::bench::{self, BenchState};
-use crate::live::{BridgeTarget, LivePush, PushOutcome};
+use crate::live::{BridgeKind, BridgeTarget, LivePush, PushOutcome};
+use crate::live_hud::LivePreview;
 use crate::profiles;
 use crate::relaunch::Relaunch;
 use crate::settings::{Settings, TargetSource};
@@ -719,6 +720,8 @@ pub struct AppState {
     pub pending_paks: Option<PendingPaks>,
     /// Put waiting paks in the next time the game is not running: at start and when it closes.
     pending_paks_check: bool,
+    /// The live HUD preview (`crate::live_hud`).
+    pub live_hud: LivePreview,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -859,6 +862,11 @@ impl AppState {
             remote: None,
             watch: None,
             remote_presets: remote_views(&presets_dir),
+            live_hud: LivePreview::new(
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs() as u32),
+            ),
         };
         if !state.settings.onboarded {
             state.welcome = Some(Welcome::PickStart { choice: None });
@@ -1030,6 +1038,9 @@ impl AppState {
     }
 
     pub fn refresh_preview(&mut self) {
+        // Every HUD setter ends here, so this is where the live preview hears of edits.
+        self.live_hud.edit(&self.profile.hud, Instant::now());
+        self.live_hud.toggle(self.profile.hud.live);
         // Ranked-safe also takes our HUD addon out: stock means stock.
         let paks = self.pak_target();
         let ctx = ApplyContext {
@@ -1043,6 +1054,12 @@ impl AppState {
                 let plan =
                     apply::hud_plan(&self.paths, layout, &self.store).map_err(|e| e.to_string());
                 self.hud_cache = Some((layout.clone(), plan.clone()));
+                self.live_hud.record(
+                    dt_core::hud::install::read_record(&self.store.root)
+                        .ok()
+                        .flatten()
+                        .as_ref(),
+                );
                 plan
             }
         };
@@ -1448,6 +1465,7 @@ impl AppState {
 
     /// Polled game state; a game started after the last restart-class apply has loaded it.
     pub fn observe_game(&mut self, running: bool, started_at: Option<SystemTime>) {
+        self.live_hud.game(running, Instant::now());
         if self
             .pending_restart
             .as_ref()
@@ -2050,6 +2068,7 @@ impl AppState {
             apples_tunnels,
             ingame,
             icons,
+            live: self.profile.hud.live,
             ..preset.layout()
         };
         self.refresh_preview();
@@ -2067,6 +2086,7 @@ impl AppState {
                 apples_tunnels: self.profile.hud.apples_tunnels,
                 ingame: self.profile.hud.ingame.clone(),
                 icons: self.profile.hud.icons.clone(),
+                live: self.profile.hud.live,
                 ..p.layout()
             } == self.profile.hud
         })
@@ -2387,10 +2407,48 @@ impl AppState {
         Ok(applied)
     }
 
-    /// Sends what is due from slider drags.
+    /// Sends what is due from slider drags and the live HUD preview.
     pub fn tick_live(&mut self, now: Instant) -> Option<Result<PushOutcome, String>> {
+        if let Some(cmds) = self.live_hud.tick(now) {
+            self.deliver_live_hud(&cmds);
+        }
         let cmds = self.live_push.take_due(now)?;
         Some(self.send(&cmds))
+    }
+
+    /// The live HUD script execs the cfg itself; netcon only makes it quicker. The
+    /// script's own `DEADTUNE_LIVE` lines are the answer, so there is no ack trailer.
+    fn deliver_live_hud(&mut self, cmds: &[ConsoleCmd]) {
+        if let Err(e) = live_hud_cfg(&self.paths, cmds) {
+            self.live_hud.fail(e);
+            return;
+        }
+        if self.settings.bridge == BridgeKind::Netcon
+            && let Ok(Some(mut bridge)) = self.bridge_target().open()
+            && let Ok(lines) = cmds
+                .iter()
+                .map(ConsoleCmd::to_line)
+                .collect::<Result<Vec<_>, _>>()
+        {
+            let _ = bridge.send(&lines);
+        }
+    }
+
+    /// Turns the live HUD preview on or off; Apply bakes the script into the HUD pak.
+    pub fn set_live_preview(&mut self, on: bool) {
+        self.profile.hud.live = on;
+        self.refresh_preview();
+    }
+
+    pub fn undo_live_hud(&mut self) {
+        self.live_hud.undo();
+    }
+
+    /// DeadTune is closing: the game's mailbox ConVars go back to their defaults.
+    pub fn on_exit(&mut self) {
+        if let Some(cmds) = self.live_hud.exit_cmds() {
+            let _ = live_hud_cfg(&self.paths, &cmds);
+        }
     }
 
     /// Pushes through the bridge and starts following the reply in the console log.
@@ -2424,6 +2482,7 @@ impl AppState {
         self.conlog_polled = Some(now);
         for line in self.conlog.poll() {
             self.ack.observe_line(&line);
+            self.live_hud.line(&line, now);
             self.guard_lines.push(line);
         }
         // Drained every game poll; bounded in case none comes.
@@ -2715,6 +2774,12 @@ impl AppState {
             self.on_changes(&changes);
         }
     }
+}
+
+fn live_hud_cfg(paths: &GamePaths, cmds: &[ConsoleCmd]) -> Result<(), String> {
+    use dt_core::hud::live;
+    live::write_cfg(&paths.cfg_dir, cmds)
+        .map_err(|e| format!("Couldn't write cfg\\{}: {e}", live::CFG_NAME))
 }
 
 fn trial_started_message(changed: &[Pak]) -> String {
@@ -3062,6 +3127,85 @@ mod tests {
         state.apply().unwrap();
         assert!(state.live.practice.is_off());
         assert!(!state.profile.to_toml().unwrap().contains("practice"));
+    }
+
+    #[test]
+    fn a_live_hud_edit_writes_the_three_slots_to_the_cfg() {
+        use crate::live_hud::LiveHud;
+        use dt_core::hud::install::{InstallRecord, RECORD_FILE};
+        use dt_core::hud::live;
+
+        let (_dir, mut state) = state();
+        let baked = HudLayout {
+            live: true,
+            ..HudLayout::default()
+        };
+        let record = InstallRecord {
+            sha256: "00".into(),
+            build_id: None,
+            patched: Vec::new(),
+            features: baked.features(),
+            layout: Some(toml::to_string(&baked).unwrap()),
+            sources: Default::default(),
+        };
+        std::fs::write(
+            state.store.root.join(RECORD_FILE),
+            toml::to_string(&record).unwrap(),
+        )
+        .unwrap();
+        state.set_live_preview(true);
+        assert_eq!(state.live_hud.state(), &LiveHud::GameClosed);
+        state.observe_game(true, None);
+        let base = live::base_id(&baked).unwrap();
+        let t0 = Instant::now();
+        state
+            .live_hud
+            .line(&format!("DEADTUNE_LIVE hello {base}"), t0);
+        assert!(matches!(state.live_hud.state(), LiveHud::Live { .. }));
+        state.tick_live(t0);
+        let cfg = state.paths.cfg_dir.join(live::CFG_NAME);
+        assert!(cfg.exists(), "entering live sends the layout");
+        let first_seq = std::fs::read_to_string(&cfg).unwrap()[live::SLOTS[0].len() + 2..]
+            .split(' ')
+            .nth(1)
+            .unwrap()
+            .parse::<u32>()
+            .unwrap();
+        state
+            .live_hud
+            .line(&format!("DEADTUNE_LIVE {first_seq} ok {base}"), t0);
+
+        state.set_hud_element(
+            ElementId::Minimap,
+            ElementEdit {
+                offset_x: 40,
+                ..ElementEdit::default()
+            },
+        );
+        state.tick_live(Instant::now() + Duration::from_millis(200));
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 3, "{text}");
+        for (line, slot) in lines.iter().zip(live::SLOTS) {
+            let value = line
+                .strip_prefix(&format!("{slot} \""))
+                .and_then(|v| v.strip_suffix('"'))
+                .unwrap_or_else(|| panic!("{line}"));
+            let cmd = ConsoleCmd {
+                name: slot.into(),
+                value: value.into(),
+            };
+            assert_eq!(cmd.to_line().unwrap(), *line);
+        }
+        assert!(lines[0].contains("translateX(40px)"), "{}", lines[0]);
+
+        state.observe_game(false, None);
+        state.tick_live(Instant::now());
+        let restored = std::fs::read_to_string(&cfg).unwrap();
+        assert!(
+            restored.starts_with(&format!("{} \"\"", live::SLOTS[0])),
+            "{restored}"
+        );
     }
 
     #[test]
@@ -3664,6 +3808,18 @@ mod tests {
         state.set_apples_tunnels(ApplesTunnels::default());
         state.apply_hud_preset(HudPreset::Vanilla);
         assert!(!state.is_dirty());
+    }
+
+    #[test]
+    fn live_preview_survives_layout_presets() {
+        let (_dir, mut state) = state();
+        state.set_live_preview(true);
+        state.apply_hud_preset(HudPreset::Competitive);
+        assert!(state.profile.hud.live);
+        assert_eq!(state.hud_preset(), Some(HudPreset::Competitive));
+        state.apply_hud_preset(HudPreset::Vanilla);
+        assert!(state.profile.hud.live, "Reset layout keeps the switch");
+        assert_eq!(state.hud_preset(), Some(HudPreset::Vanilla));
     }
 
     #[test]

@@ -28,6 +28,7 @@ mod images_view;
 mod ingame_view;
 mod launch_view;
 mod live;
+mod live_hud;
 mod live_status;
 mod mark;
 mod minimap_view;

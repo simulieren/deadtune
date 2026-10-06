@@ -65,6 +65,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
     state.load_images();
     state.poll_picker();
     edit_view::prepare(ui.ctx(), state);
+    crate::hud_view::live_indicator(ui, state);
     let library = match state.images.library.take() {
         Some(Ok(library)) => library,
         other => {

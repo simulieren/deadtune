@@ -236,7 +236,7 @@ fn sources_changed(paths: &GamePaths, record: &InstallRecord) -> Result<bool, Hu
     if record.sources.is_empty() {
         return Ok(false);
     }
-    let game = VpkDir::open(&paths.citadel_dir.join(GAME_PAK))?;
+    let game = VpkDir::open_under(&paths.citadel_dir.join(GAME_PAK), "panorama/")?;
     Ok(record
         .sources
         .iter()

@@ -247,7 +247,7 @@ impl HudLayout {
 /// Validates and emits one rule per non-identity element (sorted by `ElementId`),
 /// one rule per minimap colour (sorted by `IconId`), the minimap and health bar rules, the top
 /// bar's rules and files, the apples and tunnels rules and files, the in-game settings rows,
-/// then the minified extra CSS.
+/// then the minified extra CSS, and the live preview script when `live` is on.
 /// Deterministic.
 pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
     let mut files: BTreeMap<String, String> = BTreeMap::new();
@@ -321,12 +321,16 @@ pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
             files.entry(path.clone()).or_default().push_str(&css);
         }
     }
-    Ok(HudPatch {
+    let mut patch = HudPatch {
         styles: files,
         layouts,
         own_files,
         icons: layout.icons.clone(),
-    })
+    };
+    if layout.live {
+        super::live::add_to(&mut patch);
+    }
+    Ok(patch)
 }
 
 fn validate(id: ElementId, edit: &ElementEdit) -> Result<(), LayoutError> {

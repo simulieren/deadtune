@@ -87,6 +87,10 @@ pub struct HudLayout {
     /// The player's own images in place of the game's, by game path (`hud::icons`).
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub icons: BTreeMap<String, IconOverride>,
+    /// Experimental, untested in game: a script in the pak that restyles the running HUD
+    /// from DeadTune's edits without a restart (`hud::live`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub live: bool,
 }
 
 /// Everything the addon changes, keyed by path inside the game VPK.
@@ -163,6 +167,7 @@ pub enum HudFeature {
     IngameSettings,
     CustomCss,
     Images,
+    LivePreview,
 }
 
 impl HudFeature {
@@ -178,6 +183,7 @@ impl HudFeature {
             HudFeature::IngameSettings => "in-game settings rows",
             HudFeature::CustomCss => "custom CSS",
             HudFeature::Images => "UI images",
+            HudFeature::LivePreview => "live HUD preview",
         }
     }
 }
@@ -206,6 +212,7 @@ impl HudLayout {
                 self.extra_css.values().any(|c| !c.trim().is_empty()),
             ),
             (HudFeature::Images, !self.icons.is_empty()),
+            (HudFeature::LivePreview, self.live),
         ]
         .into_iter()
         .filter_map(|(feature, on)| on.then_some(feature))
@@ -495,6 +502,21 @@ mod tests {
         assert_eq!(HudFeature::MinimapColors.label(), "minimap colours");
         let blank = layout(&[(ElementId::Minimap, edit())]);
         assert!(blank.features().is_empty() && blank.is_vanilla());
+    }
+
+    #[test]
+    fn live_preview_is_a_feature_and_stays_out_of_vanilla_toml() {
+        let l = HudLayout {
+            live: true,
+            ..HudLayout::default()
+        };
+        assert_eq!(l.features(), [HudFeature::LivePreview]);
+        assert_eq!(HudFeature::LivePreview.label(), "live HUD preview");
+        let text = toml::to_string(&l).expect("serialize");
+        assert!(text.contains("live = true"), "{text}");
+        assert_eq!(toml::from_str::<HudLayout>(&text).expect("parse"), l);
+        let vanilla = toml::to_string(&HudLayout::default()).expect("serialize");
+        assert!(!vanilla.contains("live"), "{vanilla}");
     }
 
     #[test]

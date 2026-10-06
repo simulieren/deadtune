@@ -683,15 +683,12 @@ fn watch_reports_overwrites_and_game_updates() {
         )
         .unwrap();
     });
-    let saw_stale = wait_for("HUD addon was built for the old build", &|| {});
+    let saw_rebuild = wait_for("HUD addon rebuilt from the new game files", &|| {});
     child.kill().unwrap();
     child.wait().unwrap();
     assert!(saw_overwrite, "watch reports a gameinfo overwrite");
     assert!(saw_update, "watch reports a buildid change");
-    assert!(
-        saw_stale,
-        "watch flags the HUD addon as stale after an update"
-    );
+    assert!(saw_rebuild, "watch rebuilds the HUD addon after an update");
 }
 
 #[test]

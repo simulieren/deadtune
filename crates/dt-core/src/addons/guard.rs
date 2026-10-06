@@ -90,6 +90,9 @@ pub struct Trial {
     pub loaded: PakSet,
     /// Unix seconds; when the game process appeared.
     pub launched_at: u64,
+    /// The game build it ran on.
+    #[serde(default)]
+    pub build: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -199,6 +202,9 @@ pub struct Sequence {
 #[serde(default)]
 pub struct Guard {
     pub last_good: PakSet,
+    /// The game build `last_good` started on. A pak proven on one build is untried on the
+    /// next: it carries copies of the old build's files.
+    pub build: Option<String>,
     pub trial: Option<Trial>,
     pub verdicts: BTreeMap<Pak, Verdict>,
     pub failure: Option<Failure>,
@@ -265,6 +271,8 @@ pub struct Observation<'a> {
     pub installed: &'a [InstalledPak],
     /// Console log lines new since the last poll.
     pub lines: &'a [String],
+    /// The installed game's build, when known.
+    pub build: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -376,7 +384,7 @@ impl Guard {
                 .as_ref()
                 .is_some_and(|t| t.launched_at.abs_diff(start) <= 1);
             if !resumed {
-                started = self.begin(obs.installed, start);
+                started = self.begin(obs.installed, start, obs.build);
             }
         }
         let Some(trial) = &self.trial else {
@@ -396,8 +404,8 @@ impl Guard {
             return started;
         }
         if booted || elapsed >= PASS_AFTER {
-            let loaded = trial.loaded.clone();
-            self.last_good = loaded;
+            self.last_good = trial.loaded.clone();
+            self.build = trial.build.clone();
             self.trial = None;
             for id in &ids {
                 self.verdicts.insert(*id, Verdict::Verified { at: now });
@@ -409,7 +417,14 @@ impl Guard {
     }
 
     /// The game appeared at `start`: what it loaded, and whether any of it is new.
-    fn begin(&mut self, installed: &[InstalledPak], start: u64) -> Option<Event> {
+    fn begin(
+        &mut self,
+        installed: &[InstalledPak],
+        start: u64,
+        build: Option<&str>,
+    ) -> Option<Event> {
+        let same_build = build.is_none_or(|b| self.build.as_deref() == Some(b));
+        let build = build.map(str::to_string).or_else(|| self.build.clone());
         let loaded: PakSet = installed
             .iter()
             .filter(|p| p.written_at.is_none_or(|t| unix(t) <= start + 1))
@@ -417,12 +432,13 @@ impl Guard {
             .collect();
         let changed: PakSet = loaded
             .iter()
-            .filter(|(id, sha)| !self.is_verified(**id, sha))
+            .filter(|(id, sha)| !same_build || !self.is_verified(**id, sha))
             .map(|(id, sha)| (*id, sha.clone()))
             .collect();
         if changed.is_empty() {
             // Removals cannot break a start; the smaller set is good too.
             self.last_good = loaded;
+            self.build = build;
             self.trial = None;
             return None;
         }
@@ -431,6 +447,7 @@ impl Guard {
             changed,
             loaded,
             launched_at: start,
+            build,
         });
         Some(Event::Started { changed: ids })
     }
@@ -636,6 +653,7 @@ mod tests {
             now: at(now),
             installed,
             lines,
+            build: None,
         }
     }
 
@@ -653,6 +671,52 @@ mod tests {
         assert_eq!(guard.step(&obs(true, T0 + 1, &installed, &[])), None);
         assert!(guard.trial.is_none());
         assert_eq!(guard.step(&obs(true, T0 + 200, &installed, &[])), None);
+    }
+
+    #[test]
+    fn a_game_update_puts_every_pak_back_on_trial() {
+        let installed = [
+            pak(Pak::Hud, "hud", T0 - 100),
+            pak(AddonId::BlurDisabler, "bbb", T0 - 100),
+        ];
+        let mut guard = Guard::default();
+        let first = Observation {
+            build: Some("1"),
+            ..obs(true, T0 + 1, &installed, &[])
+        };
+        guard.step(&first);
+        guard.step(&Observation {
+            now: at(T0 + 91),
+            ..first
+        });
+        assert!(guard.is_verified(Pak::Hud, "hud"));
+        guard.step(&obs(false, T0 + 200, &installed, &[]));
+
+        let later = T0 + 10_000;
+        let updated = Observation {
+            started_at: Some(at(later)),
+            now: at(later + 1),
+            build: Some("2"),
+            ..obs(true, later, &installed, &[])
+        };
+        assert_eq!(
+            guard.step(&updated),
+            Some(Event::Started {
+                changed: vec![Pak::Addon(AddonId::BlurDisabler), Pak::Hud]
+            }),
+            "the paks were proven on the old build only"
+        );
+        let fatal = lines(&[
+            "FATAL ERROR: Unable to load layout file 'file://{resources}/layout/hud_minimap.xml'.",
+        ]);
+        assert!(matches!(
+            guard.step(&Observation {
+                now: at(later + 5),
+                lines: &fatal,
+                ..updated
+            }),
+            Some(Event::Failed { ids, .. }) if ids.contains(&Pak::Hud)
+        ));
     }
 
     #[test]
@@ -934,6 +998,7 @@ mod tests {
             build_id: Some("1".into()),
             patched: vec!["panorama/styles/hud.vcss_c".into()],
             features,
+            layout: None,
         };
         std::fs::create_dir_all(state).unwrap();
         std::fs::write(
@@ -1112,6 +1177,7 @@ mod tests {
             needs_search_path: false,
             icon_problems: Vec::new(),
             features: Vec::new(),
+            layout: None,
         };
         assert!(
             guard.holds_back(&plan(b"hud two")),

@@ -277,6 +277,7 @@ fn the_real_original_builds_installs_verifies_and_removes_at_every_size() {
             now: launched,
             installed: &installed,
             lines: &[],
+            build: None,
         });
         assert_eq!(
             event,
@@ -291,6 +292,7 @@ fn the_real_original_builds_installs_verifies_and_removes_at_every_size() {
             now: launched,
             installed: &installed,
             lines: &["DEADTUNE_BOOT 0.9.0".into()],
+            build: None,
         });
         assert_eq!(
             event,
@@ -305,6 +307,7 @@ fn the_real_original_builds_installs_verifies_and_removes_at_every_size() {
             now: SystemTime::now(),
             installed: &installed,
             lines: &[],
+            build: None,
         });
     }
 

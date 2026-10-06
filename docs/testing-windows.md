@@ -122,6 +122,8 @@ How it works now: DeadTune writes `cfg\deadtune_boot.cfg` (binds F8, sets the pr
 
 ### 6. Game updates
 - [ ] After a Steam update or "Verify integrity of game files", DeadTune shows the "Deadlock updated" banner and Re-apply works.
+- [ ] **U-1 HUD rebuilt after an update**: with "Apple spots" on, let Steam update the game while DeadTune is closed. Open DeadTune before launching: the status line says it rebuilt your HUD changes from the new game files, and the game starts with the apple dots.
+- [ ] **U-2 Guard after an update**: if the game fails to start after an update while DeadTune is open, DeadTune takes out its HUD pak (and any addon) and shows the banner, even though those paks had started fine on the old build.
 
 ### 7. HUD (`docs/plan-hud.md` phase H0)
 - [ ] DeadTune's addon paks leave the VPK MD5 section zeroed (QoL Lite ships the same way). Confirm the game mounts them; Source2Viewer's verify step will report a checksum mismatch, which is expected.

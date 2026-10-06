@@ -7,7 +7,9 @@ use dt_core::hud::apples_tunnels::{self, MINIMAP_LAYOUT};
 use dt_core::hud::icons;
 use dt_core::hud::ingame::{self, IngameSettings, SETTINGS_LAYOUT};
 use dt_core::hud::inject;
-use dt_core::hud::install::{self, ADDON_FILE, GAME_PAK, HudAction, HudError, InstalledState};
+use dt_core::hud::install::{
+    self, ADDON_FILE, GAME_PAK, HudAction, HudError, InstalledState, Refreshed,
+};
 use dt_core::hud::resource::{Resource, style_text};
 use dt_core::hud::topbar::{OWN_SCRIPT, OWN_STYLE, TOP_BAR_LAYOUT, TOP_BAR_STYLE};
 use dt_core::hud::vpk::{self, VpkDir, VpkError};
@@ -225,6 +227,72 @@ fn apples_and_tunnels_rebuild_the_minimap_layout_beside_the_top_bar() {
     let expect = verify::expect_for_hud(&fake.game(), &addon);
     let verified = verify::verify(&addon, &expect);
     assert!(verified.is_ok(), "{verified}");
+}
+
+/// Build 25738777 dropped `HudMinimapEffects` from the minimap layout; the old build's copy
+/// still naming it stopped the game from starting.
+fn minimap_layout_25738777() -> Vec<u8> {
+    fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/hud/hud_minimap_25738777.vxml_c"),
+    )
+    .unwrap()
+}
+
+fn minimap_text(fake: &Fake) -> String {
+    inject::layout_text(
+        &VpkDir::open(&fake.addon())
+            .unwrap()
+            .read(MINIMAP_LAYOUT)
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_game_update_rebuilds_the_hud_from_the_new_game_files() {
+    let fake = Fake::new();
+    let mut hud = HudLayout::default();
+    hud.apples_tunnels.apples.on = true;
+    let plan = install::plan(&fake.paths, &hud, &fake.state).unwrap();
+    install::execute(&plan, &fake.paths, &fake.state).unwrap();
+    assert!(minimap_text(&fake).contains("HudMinimapEffects"));
+    assert_eq!(
+        install::refresh_after_update(&fake.paths, &fake.state).unwrap(),
+        Refreshed::Current
+    );
+
+    fake.update_game_file(MINIMAP_LAYOUT, minimap_layout_25738777());
+    write_manifest(fake.paths.appmanifest.as_ref().unwrap(), "25738777");
+    assert_eq!(
+        install::refresh_after_update(&fake.paths, &fake.state).unwrap(),
+        Refreshed::Rebuilt
+    );
+    let rebuilt = minimap_text(&fake);
+    assert!(!rebuilt.contains("HudMinimapEffects"), "{rebuilt}");
+    let original = inject::layout_text(&minimap_layout_25738777()).unwrap();
+    assert!(inject::extends(&rebuilt, &original));
+    assert!(matches!(
+        install::installed_state(&fake.paths, &fake.state).unwrap(),
+        InstalledState::Current(r) if r.build_id.as_deref() == Some("25738777")
+    ));
+}
+
+#[test]
+fn a_game_update_takes_out_a_hud_it_cannot_rebuild() {
+    let fake = Fake::new();
+    fake.install(patch(CSS));
+    write_manifest(fake.paths.appmanifest.as_ref().unwrap(), "25738777");
+    assert!(matches!(
+        install::refresh_after_update(&fake.paths, &fake.state).unwrap(),
+        Refreshed::Removed(_)
+    ));
+    assert!(!fake.addon().exists());
+    assert!(!fake.record().exists());
+    assert_eq!(
+        install::refresh_after_update(&fake.paths, &fake.state).unwrap(),
+        Refreshed::Current
+    );
 }
 
 fn patch(css: &str) -> HudPatch {

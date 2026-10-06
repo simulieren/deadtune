@@ -27,7 +27,7 @@ use dt_core::hud::apples_tunnels::{
 use dt_core::hud::elements::ElementId;
 use dt_core::hud::health_style::HealthStyle;
 use dt_core::hud::ingame::{self, IngameSettings};
-use dt_core::hud::install::{HudAction, HudPlan};
+use dt_core::hud::install::{HudAction, HudPlan, Refreshed};
 use dt_core::hud::layout::{ElementEdit, HudLayout};
 use dt_core::hud::minimap_colors::{self, Color, IconId};
 use dt_core::hud::minimap_style::{
@@ -696,6 +696,9 @@ pub struct AppState {
     pub hud_art: crate::hud_art::HudArtState,
     /// The game build the appmanifest reports, read with the snapshot listing.
     pub game_build: Option<String>,
+    /// Look for a HUD pak built for an older game build the next time the game is not
+    /// running: at start, after a game update and when the game closes.
+    hud_update_check: bool,
     /// Creation time of the backup the last Undo restored; cleared by Apply.
     pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
@@ -837,6 +840,7 @@ impl AppState {
             images: Default::default(),
             hud_art: Default::default(),
             game_build: None,
+            hud_update_check: true,
             undo_cursor: None,
             checks: None,
             checks_at: None,
@@ -1428,21 +1432,50 @@ impl AppState {
         }
         if self.ctx.game_running != running {
             self.ctx.game_running = running;
+            self.hud_update_check |= !running;
             self.refresh_preview();
         }
+        if !running && std::mem::take(&mut self.hud_update_check) {
+            self.refresh_hud_after_update();
+        }
         self.guard_tick(running, started_at, SystemTime::now());
+    }
+
+    /// A HUD pak from before a game update carries the old game files and can stop the
+    /// game from starting, so it is rebuilt from the new ones, or taken out.
+    fn refresh_hud_after_update(&mut self) {
+        let message = match dt_core::hud::install::refresh_after_update(
+            &self.paths,
+            &self.store.root,
+        ) {
+            Ok(Refreshed::Current) => return,
+            Ok(Refreshed::Rebuilt) => Status::Info(
+                "The game updated, so DeadTune rebuilt your HUD changes from the new game files."
+                    .into(),
+            ),
+            Ok(Refreshed::Removed(why)) => Status::Error(format!(
+                "The game updated and your HUD changes could not be rebuilt ({why}), so DeadTune \
+                 took them out to keep the game starting. Press Apply to put them back."
+            )),
+            Err(e) => Status::Error(format!("checking the HUD after a game update: {e}")),
+        };
+        self.status = Some(message);
+        self.hud_cache = None;
+        self.refresh_preview();
     }
 
     /// One guard step per game poll; a verdict rolls back failed paks or marks good ones.
     pub fn guard_tick(&mut self, running: bool, started_at: Option<SystemTime>, now: SystemTime) {
         let installed = guard::installed_paks(&self.paths, &self.store.root);
         let lines = std::mem::take(&mut self.guard_lines);
+        let build = dt_core::locate::buildid(&self.paths);
         let event = self.guard.step(&guard::Observation {
             running,
             started_at,
             now,
             installed: &installed,
             lines: &lines,
+            build: build.as_deref(),
         });
         let Some(event) = event else {
             return;
@@ -1645,6 +1678,7 @@ impl AppState {
             loaded: changed.clone(),
             changed,
             launched_at: guard::unix(SystemTime::now()),
+            build: None,
         });
         self.status = Some(Status::Info(trial_started_message(&ids)));
     }
@@ -1704,6 +1738,11 @@ impl AppState {
         self.addons_cache = None;
         self.refresh_preview();
         if updated {
+            self.hud_update_check = true;
+            if !self.ctx.game_running {
+                self.hud_update_check = false;
+                self.refresh_hud_after_update();
+            }
             self.snapshot_inventory = None;
             self.game_build = dt_core::locate::buildid(&self.paths);
             if self.settings.snapshots.auto {
@@ -4250,6 +4289,38 @@ mod tests {
 
     const FATAL: &str =
         "FATAL ERROR: Unable to read default keybinding configuration user_keys_default";
+
+    #[test]
+    fn a_game_update_rebuilds_the_hud_once_the_game_is_closed() {
+        use dt_core::hud::install::{InstalledState, installed_state};
+        let (_dir, mut state) = state();
+        with_game_hud(&state);
+        let acf = state.paths.game_root.join("../../appmanifest_1422450.acf");
+        std::fs::write(&acf, "\"AppState\"\n{\n\t\"buildid\"\t\t\"1\"\n}\n").unwrap();
+        state.paths.appmanifest = Some(acf.clone());
+        apply_minimap_opacity(&mut state, 50);
+        std::fs::write(&acf, "\"AppState\"\n{\n\t\"buildid\"\t\t\"2\"\n}\n").unwrap();
+        let stale = |state: &AppState| {
+            matches!(
+                installed_state(&state.paths, &state.store.root).unwrap(),
+                InstalledState::Stale(_)
+            )
+        };
+        assert!(stale(&state));
+
+        state.observe_game(true, Some(SystemTime::now() - Duration::from_secs(200)));
+        assert!(stale(&state), "left alone while the game runs");
+        state.observe_game(false, None);
+        assert!(
+            matches!(&state.status, Some(Status::Info(m)) if m.contains("rebuilt")),
+            "{:?}",
+            state.status
+        );
+        assert!(matches!(
+            installed_state(&state.paths, &state.store.root).unwrap(),
+            InstalledState::Current(r) if r.build_id.as_deref() == Some("2")
+        ));
+    }
 
     #[test]
     fn a_failed_hud_trial_restores_the_last_hud_that_worked_and_keeps_the_settings() {

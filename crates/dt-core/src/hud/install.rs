@@ -46,6 +46,8 @@ pub struct HudPlan {
     pub icon_problems: Vec<IconProblem>,
     /// What the layout changes, recorded with the pak so a failed launch can name it.
     pub features: Vec<HudFeature>,
+    /// The layout as TOML, recorded with the pak so a game update can rebuild it.
+    pub layout: Option<String>,
 }
 
 impl HudPlan {
@@ -66,6 +68,8 @@ pub struct InstallRecord {
     pub patched: Vec<String>,
     #[serde(default)]
     pub features: Vec<HudFeature>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,6 +118,7 @@ pub fn addons_dir(paths: &GamePaths) -> PathBuf {
 pub fn plan(paths: &GamePaths, layout: &HudLayout, state_dir: &Path) -> Result<HudPlan, HudError> {
     let mut plan = plan_patch(paths, layout::compile(layout)?, state_dir)?;
     plan.features = layout.features();
+    plan.layout = Some(toml::to_string(layout).map_err(|e| HudError::Toml(e.to_string()))?);
     Ok(plan)
 }
 
@@ -166,6 +171,7 @@ pub fn plan_patch(
             needs_search_path: false,
             icon_problems,
             features: Vec::new(),
+            layout: None,
         });
     };
     let built = sha256_hex(&bytes);
@@ -197,6 +203,7 @@ pub fn plan_patch(
         needs_search_path,
         icon_problems,
         features: Vec::new(),
+        layout: None,
     })
 }
 
@@ -226,6 +233,7 @@ pub fn execute(plan: &HudPlan, paths: &GamePaths, state_dir: &Path) -> Result<()
                 build_id: build_id(paths)?,
                 patched: plan.shipped().map(str::to_string).collect(),
                 features: plan.features.clone(),
+                layout: plan.layout.clone(),
             };
             write_record(state_dir, &record)
         }
@@ -358,6 +366,42 @@ pub fn installed_state(paths: &GamePaths, state_dir: &Path) -> Result<InstalledS
             }
         }
         _ => Ok(InstalledState::Foreign),
+    }
+}
+
+/// What `refresh_after_update` did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Refreshed {
+    /// Nothing of ours, or ours and built for the installed game.
+    Current,
+    Rebuilt,
+    /// Could not be rebuilt for the new game, so our pak is out; why.
+    Removed(String),
+}
+
+/// After a game update our pak still carries the old build's copies of the files it
+/// changes, and an old layout can stop the game from starting (build 25738777 dropped a
+/// panel the old `hud_minimap` still named). Rebuilds the pak from the new game files with
+/// the layout it was built from, or takes it out when that fails.
+pub fn refresh_after_update(paths: &GamePaths, state_dir: &Path) -> Result<Refreshed, HudError> {
+    let InstalledState::Stale(record) = installed_state(paths, state_dir)? else {
+        return Ok(Refreshed::Current);
+    };
+    let rebuilt = match &record.layout {
+        Some(text) => toml::from_str::<HudLayout>(text)
+            .map_err(|e| HudError::Toml(e.to_string()))
+            .and_then(|layout| plan(paths, &layout, state_dir))
+            .and_then(|plan| execute(&plan, paths, state_dir))
+            .map_err(|e| e.to_string()),
+        None => Err("an older DeadTune built it and did not record how".to_string()),
+    };
+    match rebuilt {
+        Ok(()) => Ok(Refreshed::Rebuilt),
+        Err(why) => {
+            remove_if_present(&addons_dir(paths).join(ADDON_FILE))?;
+            remove_if_present(&state_dir.join(RECORD_FILE))?;
+            Ok(Refreshed::Removed(why))
+        }
     }
 }
 

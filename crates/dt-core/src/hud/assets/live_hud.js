@@ -9,7 +9,10 @@
     var lastWrong = null;
     var rules = [];
     var styled = [];
-    var polls = 0;
+    var clock = 0;
+    var nextHello = 0;
+    var nextExec = 0;
+    var hotUntil = -1;
 
     function valid(p) {
         try { return !!p && (!p.IsValid || p.IsValid()); } catch (e) { return false; }
@@ -193,6 +196,7 @@
         } else if (held && fresh) {
             echo(held.seq + " got " + held.count + " " + CONFIG.base);
         }
+        return fresh;
     }
 
     function hello() {
@@ -200,15 +204,24 @@
         echo("hello " + CONFIG.base + (read === null ? "" : " tv_title=" + encodeURIComponent(read.slice(0, 24))));
     }
 
-    function poll() {
+    // The console may log every exec, so the cfg is read once a second until DeadTune
+    // sends something and four times a second while it does.
+    function execCfg() {
+        if (!CONFIG.cfg || clock < nextExec) { return; }
         cmd("exec " + CONFIG.cfg);
-        receive();
+        nextExec = clock + (clock < hotUntil ? CONFIG.poll : CONFIG.idle);
+    }
+
+    function poll() {
+        clock += CONFIG.poll;
+        execCfg();
+        if (receive()) { hotUntil = clock + CONFIG.hot; nextExec = Math.min(nextExec, clock + CONFIG.poll); }
         if (rules.length || styled.length) { restyle(); }
-        polls++;
-        if (polls * CONFIG.poll >= CONFIG.hello) { polls = 0; hello(); }
+        if (clock >= nextHello) { nextHello = clock + CONFIG.hello; hello(); }
         $.Schedule(CONFIG.poll, poll);
     }
 
+    nextHello = CONFIG.hello;
     hello();
     $.Schedule(CONFIG.poll, poll);
 })();

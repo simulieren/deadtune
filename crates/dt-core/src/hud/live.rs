@@ -26,7 +26,15 @@ const SLOT_DEFAULTS: [&str; 3] = ["", "SourceTV", "SourceTV"];
 /// Payload characters per chunk; the header comes on top.
 pub const CHUNK: usize = 200;
 /// How long a batch may wait for the script's answer before everything is sent again.
-pub const TIMEOUT: Duration = Duration::from_secs(1);
+/// Longer than an idle script takes to read the cfg, plus the console log's delay.
+pub const TIMEOUT: Duration = Duration::from_secs(2);
+/// The script reads the slots this often, and execs the cfg this often for `HOT_SECS`
+/// after a chunk arrives.
+pub const POLL_SECS: f64 = 0.25;
+/// How often an idle script execs the cfg, since the console may log every exec.
+pub const IDLE_SECS: f64 = 1.0;
+pub const HOT_SECS: f64 = 10.0;
+pub const HELLO_SECS: f64 = 10.0;
 pub const CFG_NAME: &str = "deadtune_hud.cfg";
 pub const OWN_SCRIPT: &str = "panorama/scripts/deadtune/live_hud.vjs_c";
 /// The HUD root layout; our script goes into its `<scripts>`.
@@ -647,7 +655,7 @@ pub fn script(base: &str) -> String {
     let slots = SLOTS.map(|s| format!("\"{s}\"")).join(", ");
     let cfg = CFG_NAME.trim_end_matches(".cfg");
     format!(
-        "var DT_LIVE = {{ base: \"{base}\", slots: [{slots}], cfg: \"{cfg}\", poll: 0.25, hello: 10 }};\n{SCRIPT}"
+        "var DT_LIVE = {{ base: \"{base}\", slots: [{slots}], cfg: \"{cfg}\", poll: {POLL_SECS}, idle: {IDLE_SECS}, hot: {HOT_SECS}, hello: {HELLO_SECS} }};\n{SCRIPT}"
     )
 }
 
@@ -1043,7 +1051,7 @@ mod tests {
         want.resize(3, String::new());
         assert_eq!(values(&second), want);
         assert_eq!(
-            mb.poll(ms(1200)),
+            mb.poll(t0 + TIMEOUT + Duration::from_millis(100)),
             None,
             "the timeout counts from the latest batch"
         );
@@ -1057,8 +1065,8 @@ mod tests {
         mb.send(vec![rule("#A", "opacity", "1")], Kind::Full, t0);
         mb.ack(1);
         mb.send(vec![rule("#B", "opacity", "0")], Kind::Patch, ms(10));
-        assert_eq!(mb.poll(ms(900)), None);
-        let again = mb.poll(ms(1010)).unwrap();
+        assert_eq!(mb.poll(ms(10) + TIMEOUT - Duration::from_millis(1)), None);
+        let again = mb.poll(ms(10) + TIMEOUT).unwrap();
         assert_eq!(
             decode(&values(&again)[..1]).unwrap(),
             msg(
@@ -1494,8 +1502,12 @@ mod tests {
     #[test]
     fn script_carries_the_base_and_compile_adds_it() {
         let text = script("0badf00d");
-        assert!(text.starts_with("var DT_LIVE = { base: \"0badf00d\", slots: [\"iv_debugbone\", \"tv_title\", \"tv_name\"], cfg: \"deadtune_hud\", poll: 0.25, hello: 10 };\n(function () {"), "{text}");
+        assert!(text.starts_with("var DT_LIVE = { base: \"0badf00d\", slots: [\"iv_debugbone\", \"tv_title\", \"tv_name\"], cfg: \"deadtune_hud\", poll: 0.25, idle: 1, hot: 10, hello: 10 };\n(function () {"), "{text}");
         assert!(text.contains("GetSettingString"));
+        assert!(
+            TIMEOUT.as_secs_f64() > IDLE_SECS + POLL_SECS,
+            "an idle script reads the cfg before the mailbox gives up"
+        );
         let mut l = element_layout(&[(
             crate::hud::ElementId::Chat,
             ElementEdit {

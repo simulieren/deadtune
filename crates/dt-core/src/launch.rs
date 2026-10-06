@@ -1,6 +1,5 @@
 //! Start/stop the game through Steam. Never touches the game process beyond kill.
 
-use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sysinfo::{Process, ProcessRefreshKind, ProcessesToUpdate, System};
@@ -110,7 +109,7 @@ fn open_url(url: &str) -> std::io::Result<()> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     // raw_arg keeps Rust's argv quoting away from cmd's own parser; the empty "" is start's window title.
-    Command::new("cmd")
+    std::process::Command::new("cmd")
         .raw_arg(format!("/C start \"\" \"{url}\""))
         .creation_flags(CREATE_NO_WINDOW)
         .status()
@@ -128,7 +127,7 @@ fn open_url(_url: &str) -> std::io::Result<()> {
 
 #[cfg(not(any(windows, target_os = "macos")))]
 fn open_url(url: &str) -> std::io::Result<()> {
-    Command::new("xdg-open")
+    std::process::Command::new("xdg-open")
         .arg(url)
         .status()
         .and_then(check_opener)

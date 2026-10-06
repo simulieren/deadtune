@@ -268,7 +268,24 @@ pub(crate) fn live_step(state: &AppState) -> String {
 }
 
 pub(crate) const DISCARD: &str = "Discard changes";
-pub(crate) const DISCARD_HINT: &str = "Throw away changes since your last Apply";
+
+pub(crate) fn discard_hint(state: &AppState) -> &'static str {
+    if state.pending_paks.is_some() {
+        "Throw away changes since your last Apply, and HUD or addon changes still waiting for Deadlock to close"
+    } else {
+        "Throw away changes since your last Apply"
+    }
+}
+
+/// The line every view shows while pak changes wait for the game to close.
+pub(crate) fn paks_waiting_line(kinds: dt_core::apply::PakKinds) -> String {
+    format!(
+        "Saved. Your {} changes go in when you close Deadlock.",
+        kinds.label()
+    )
+}
+
+pub(crate) const PAKS_WAITING_WHY: &str = "Deadlock locks those files while it runs.";
 
 /// Ranked-safe on or off from any view, with the same words.
 pub(crate) fn toggle_ranked_safe(state: &mut AppState) -> Status {
@@ -2000,16 +2017,18 @@ struct BarClicks {
 fn apply_bar(ui: &mut Ui, state: &mut AppState) {
     let pending = state.pending();
     let ready = pending != Pending::Nothing;
-    let restart = !ready && state.ctx.game_running && state.pending_restart.is_some();
+    let restart = !ready
+        && state.ctx.game_running
+        && (state.pending_restart.is_some() || state.paks_waiting().is_some());
     let mut clicks = BarClicks::default();
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         clicks.apply = accent_button(ui, ready, "Apply")
             .on_disabled_hover_text("Nothing to apply yet")
             .clicked();
-        if state.is_dirty() {
+        if state.can_discard() {
             clicks.discard = ui
                 .add(egui::Button::new(DISCARD).min_size(vec2(90.0, 36.0)))
-                .on_hover_text(DISCARD_HINT)
+                .on_hover_text(discard_hint(state))
                 .clicked();
         }
         if restart {
@@ -2076,6 +2095,9 @@ fn bar_message(ui: &mut Ui, state: &AppState, pending: &Pending, clicks: &mut Ba
         n => format!("{n} tweaks"),
     };
     let (color, title, detail) = match pending {
+        Pending::Nothing if let Some(kinds) = state.paks_waiting() => {
+            (WARN, paks_waiting_line(kinds), PAKS_WAITING_WHY.to_string())
+        }
         Pending::Nothing => match &state.pending_restart {
             Some(_) if state.ctx.game_running => (
                 WARN,

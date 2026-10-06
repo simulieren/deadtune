@@ -392,6 +392,7 @@ fn plan_buckets_follow_catalog_apply_classes() {
         let ctx = ApplyContext {
             in_sandbox,
             game_running: true,
+            waiting_paks: WaitingPaks::None,
         };
         let plan = plan_for(&install, &profile, ctx);
         let live: BTreeMap<_, _> = plan
@@ -553,6 +554,7 @@ fn execute_writes_backs_up_snapshots_and_pushes_then_reapply_is_a_no_op() {
     let ctx = ApplyContext {
         in_sandbox: true,
         game_running: true,
+        waiting_paks: WaitingPaks::None,
     };
     let plan = plan_for(&install, &profile, ctx);
     let mut bridge = RecordingBridge::default();
@@ -569,6 +571,7 @@ fn execute_writes_backs_up_snapshots_and_pushes_then_reapply_is_a_no_op() {
             receipt: report.receipt.clone(),
             hud_changed: false,
             addons_changed: false,
+            paks_deferred: false,
         }
     );
     assert_eq!(bridge.pushed, plan.live);
@@ -613,6 +616,7 @@ fn bridge_failure_after_writing_reports_what_was_written() {
     let ctx = ApplyContext {
         in_sandbox: true,
         game_running: true,
+        waiting_paks: WaitingPaks::None,
     };
     let plan = plan_for(&install, &kaiz_profile(), ctx);
     assert!(!plan.live.is_empty());
@@ -637,6 +641,7 @@ fn execute_without_bridge_marks_live_changes_as_needing_restart() {
     let ctx = ApplyContext {
         in_sandbox: true,
         game_running: false,
+        waiting_paks: WaitingPaks::None,
     };
     let plan = plan_for(&install, &kaiz_profile(), ctx);
     let report = execute(&install.paths, &plan, &install.store, None).unwrap();
@@ -756,6 +761,10 @@ fn hud_profile() -> Profile {
 }
 
 fn plan_with_hud(install: &FakeInstall, profile: &Profile) -> ApplyPlan {
+    plan_with_hud_in(install, profile, ApplyContext::default())
+}
+
+fn plan_with_hud_in(install: &FakeInstall, profile: &Profile, ctx: ApplyContext) -> ApplyPlan {
     let live = read(&install.paths.gameinfo);
     let hud = hud_plan(&install.paths, &profile.hud, &install.store).unwrap();
     let base = resolve_base(profile, no_cache()).unwrap();
@@ -771,15 +780,7 @@ fn plan_with_hud(install: &FakeInstall, profile: &Profile) -> ApplyPlan {
         },
     )
     .unwrap();
-    plan(
-        &install.paths,
-        &live,
-        None,
-        &tgt,
-        catalog(),
-        ApplyContext::default(),
-    )
-    .unwrap()
+    plan(&install.paths, &live, None, &tgt, catalog(), ctx).unwrap()
 }
 
 #[test]
@@ -1099,4 +1100,111 @@ fn apply_leaves_foreign_scene_system_edits_alone_unless_practice_wrote_them() {
         safe.gameinfo
             .contains("VolumetricFog                     \"1\"")
     );
+}
+
+const RUNNING: ApplyContext = ApplyContext {
+    in_sandbox: false,
+    game_running: true,
+    waiting_paks: WaitingPaks::None,
+};
+
+#[test]
+fn a_running_game_defers_the_hud_pak_and_writes_everything_else() {
+    let install = fake_install(VANILLA, None);
+    with_game_pak(&install);
+    let profile = hud_profile();
+    let plan = plan_with_hud_in(&install, &profile, RUNNING);
+    assert_eq!(plan.paks, PakTiming::AfterExit);
+
+    let report = execute(&install.paths, &plan, &install.store, None).unwrap();
+    assert!(report.paks_deferred && report.wrote_gameinfo && !report.hud_changed);
+    let pak = addons_dir(&install.paths).join(ADDON_FILE);
+    assert!(!pak.exists(), "the running game holds the addon paks");
+    assert!(has_addons(&read(&install.paths.gameinfo)).unwrap());
+    assert!(
+        addons_dir(&install.paths).is_dir(),
+        "the mounted dir exists before the pak"
+    );
+
+    let queued = plan_with_hud_in(
+        &install,
+        &profile,
+        ApplyContext {
+            waiting_paks: WaitingPaks::Same,
+            ..RUNNING
+        },
+    );
+    assert_eq!(queued.paks, PakTiming::Queued);
+    assert!(
+        queued.is_empty(),
+        "already waiting for the game to close: {queued:?}"
+    );
+
+    let hud = hud_plan(&install.paths, &profile.hud, &install.store).unwrap();
+    let written = write_paks(&install.paths, hud.as_ref(), None, &install.store).unwrap();
+    assert!(written.hud_changed && !written.locked);
+    assert!(pak.is_file());
+    assert!(plan_with_hud(&install, &profile).is_empty());
+}
+
+#[test]
+fn nothing_waits_when_the_paks_do_not_change() {
+    let install = fake_install(VANILLA, None);
+    with_game_pak(&install);
+    let profile = hud_profile();
+    execute(
+        &install.paths,
+        &plan_with_hud(&install, &profile),
+        &install.store,
+        None,
+    )
+    .unwrap();
+
+    let mut convar_only = profile.clone();
+    convar_only
+        .convars
+        .set
+        .insert("fps_max".into(), "240".into());
+    let plan = plan_with_hud_in(&install, &convar_only, RUNNING);
+    let report = execute(&install.paths, &plan, &install.store, None).unwrap();
+    assert!(report.wrote_gameinfo && !report.paks_deferred);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_pak_the_game_holds_open_waits_instead_of_failing_the_apply() {
+    use std::os::unix::fs::PermissionsExt;
+    let install = fake_install(VANILLA, None);
+    with_game_pak(&install);
+    let dir = addons_dir(&install.paths);
+    fs::create_dir_all(&dir).unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
+
+    let plan = plan_with_hud(&install, &hud_profile());
+    assert_eq!(plan.paks, PakTiming::Now);
+    let report = execute(&install.paths, &plan, &install.store, None);
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+    let report = report.unwrap();
+    assert!(report.paks_deferred && report.wrote_gameinfo && !report.hud_changed);
+    assert!(!dir.join(ADDON_FILE).exists());
+}
+
+#[test]
+fn waiting_paks_survive_a_restart_and_clear() {
+    let install = fake_install(VANILLA, None);
+    let root = &install.store.root;
+    assert_eq!(PendingPaks::load(root).unwrap(), None);
+    let pending = PendingPaks {
+        target: PakTarget {
+            hud: hud_profile().hud,
+            addons: AddonsConfig::default(),
+        },
+        discard_to: PakTarget::default(),
+        kinds: PakKinds::Hud,
+    };
+    pending.save(root).unwrap();
+    assert_eq!(PendingPaks::load(root).unwrap(), Some(pending));
+    PendingPaks::clear(root).unwrap();
+    PendingPaks::clear(root).unwrap();
+    assert_eq!(PendingPaks::load(root).unwrap(), None);
 }

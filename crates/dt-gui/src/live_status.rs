@@ -64,13 +64,17 @@ pub fn launch_control(ui: &mut Ui, state: &mut AppState, fit: Fit) {
     }
     if state.ctx.game_running {
         let restart = |ui: &mut Ui, state: &mut AppState| {
-            let Some(pending) = &state.pending_restart else {
-                return;
+            let tip = match (&state.pending_restart, state.paks_waiting()) {
+                (Some(pending), _) => format!(
+                    "Close Deadlock and start it again through Steam to load: {}",
+                    pending.names.join(", ")
+                ),
+                (None, Some(kinds)) => format!(
+                    "Close Deadlock, put your {} changes in and start it again through Steam",
+                    kinds.label()
+                ),
+                (None, None) => return,
             };
-            let tip = format!(
-                "Close Deadlock and start it again through Steam to load: {}",
-                pending.names.join(", ")
-            );
             let button = egui::Button::new(RichText::new("Restart").size(12.0).color(TEXT))
                 .min_size(vec2(0.0, 22.0));
             if ui.add(button).on_hover_text(tip).clicked() {

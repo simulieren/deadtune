@@ -303,6 +303,8 @@ impl AddonsConfig {
 pub enum AddonError {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    #[error("{0} is held open by the running game")]
+    Locked(PathBuf),
     #[error(transparent)]
     Vpk(#[from] crate::hud::vpk::VpkError),
     #[error(transparent)]

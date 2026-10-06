@@ -75,6 +75,11 @@ fn reconcile(env: &Env, args: &Args, layout: &HudLayout) -> CliResult {
     if report.hud_changed {
         println!("HUD addon updated. Restart the game to load it.");
     }
+    if report.paks_deferred {
+        println!(
+            "The HUD addon was not changed: Deadlock holds it while it runs. Close it and run this again."
+        );
+    }
     Ok(())
 }
 

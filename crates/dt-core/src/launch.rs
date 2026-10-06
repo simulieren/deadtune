@@ -117,12 +117,13 @@ fn open_url(url: &str) -> std::io::Result<()> {
         .and_then(check_opener)
 }
 
+/// Deadlock has no macOS build; DeadTune runs here only as a preview, and opening the URL would
+/// start the developer's Steam client from screenshots and tests.
 #[cfg(target_os = "macos")]
-fn open_url(url: &str) -> std::io::Result<()> {
-    Command::new("open")
-        .arg(url)
-        .status()
-        .and_then(check_opener)
+fn open_url(_url: &str) -> std::io::Result<()> {
+    Err(std::io::Error::other(
+        "Deadlock doesn't run on macOS, so DeadTune doesn't start Steam here",
+    ))
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
@@ -133,6 +134,7 @@ fn open_url(url: &str) -> std::io::Result<()> {
         .and_then(check_opener)
 }
 
+#[cfg(not(target_os = "macos"))]
 fn check_opener(status: std::process::ExitStatus) -> std::io::Result<()> {
     if status.success() {
         Ok(())

@@ -32,13 +32,32 @@ pub fn watch(env: &Env, args: &Args) -> CliResult {
                     let store = env.store()?;
                     match install::refresh_after_update(&paths, &store.root) {
                         Ok(Refreshed::Current) => {}
+                        Ok(Refreshed::SteamBusy) => {
+                            println!(
+                                "Steam is still updating; run `deadtune-cli hud apply` once it is done"
+                            )
+                        }
                         Ok(Refreshed::Rebuilt) => {
                             println!("HUD addon rebuilt from the new game files")
+                        }
+                        Ok(Refreshed::Partial { dropped, why }) => {
+                            println!("HUD addon rebuilt without {dropped:?}: {why}")
                         }
                         Ok(Refreshed::Removed(why)) => println!(
                             "HUD addon removed: it could not be rebuilt ({why}); run `deadtune-cli hud apply`"
                         ),
                         Err(e) => println!("HUD addon check failed: {e}"),
+                    }
+                    match dt_core::addons::install::refresh_after_update(&paths, &store.root) {
+                        Ok(done) => {
+                            for id in done.rebuilt {
+                                println!("{} rebuilt from the new game files", id.key());
+                            }
+                            for (id, why) in done.removed {
+                                println!("{} removed: it could not be rebuilt ({why})", id.key());
+                            }
+                        }
+                        Err(e) => println!("addon check failed: {e}"),
                     }
                 }
                 Change::GameInfoChanged => println!("gameinfo.gi changed"),

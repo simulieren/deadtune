@@ -696,9 +696,9 @@ pub struct AppState {
     pub hud_art: crate::hud_art::HudArtState,
     /// The game build the appmanifest reports, read with the snapshot listing.
     pub game_build: Option<String>,
-    /// Look for a HUD pak built for an older game build the next time the game is not
+    /// Look for paks built for an older game build the next time the game is not
     /// running: at start, after a game update and when the game closes.
-    hud_update_check: bool,
+    update_check: bool,
     /// Creation time of the backup the last Undo restored; cleared by Apply.
     pub undo_cursor: Option<chrono::DateTime<chrono::Utc>>,
     /// Last "Check setup" run; `None` until the panel is opened.
@@ -840,7 +840,7 @@ impl AppState {
             images: Default::default(),
             hud_art: Default::default(),
             game_build: None,
-            hud_update_check: true,
+            update_check: true,
             undo_cursor: None,
             checks: None,
             checks_at: None,
@@ -1432,35 +1432,72 @@ impl AppState {
         }
         if self.ctx.game_running != running {
             self.ctx.game_running = running;
-            self.hud_update_check |= !running;
+            self.update_check |= !running;
             self.refresh_preview();
         }
-        if !running && std::mem::take(&mut self.hud_update_check) {
-            self.refresh_hud_after_update();
+        if !running && std::mem::take(&mut self.update_check) {
+            self.refresh_after_update();
         }
         self.guard_tick(running, started_at, SystemTime::now());
     }
 
-    /// A HUD pak from before a game update carries the old game files and can stop the
-    /// game from starting, so it is rebuilt from the new ones, or taken out.
-    fn refresh_hud_after_update(&mut self) {
-        let message = match dt_core::hud::install::refresh_after_update(
-            &self.paths,
-            &self.store.root,
-        ) {
-            Ok(Refreshed::Current) => return,
-            Ok(Refreshed::Rebuilt) => Status::Info(
-                "The game updated, so DeadTune rebuilt your HUD changes from the new game files."
-                    .into(),
-            ),
-            Ok(Refreshed::Removed(why)) => Status::Error(format!(
-                "The game updated and your HUD changes could not be rebuilt ({why}), so DeadTune \
-                 took them out to keep the game starting. Press Apply to put them back."
+    /// Paks from before a game update carry the old game files and can stop the game from
+    /// starting, so they are rebuilt from the new ones, or taken out.
+    fn refresh_after_update(&mut self) {
+        use dt_core::addons::install as addons_install;
+        let mut infos = Vec::new();
+        let mut errors = Vec::new();
+        match dt_core::hud::install::refresh_after_update(&self.paths, &self.store.root) {
+            Ok(Refreshed::Current) => {}
+            Ok(Refreshed::SteamBusy) => {
+                self.update_check = true;
+                return;
+            }
+            Ok(Refreshed::Rebuilt) => infos.push("your HUD changes".to_string()),
+            Ok(Refreshed::Partial { dropped, why }) => errors.push(format!(
+                "DeadTune rebuilt your HUD changes without {} ({why})",
+                dropped
+                    .iter()
+                    .map(|f| f.label())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )),
-            Err(e) => Status::Error(format!("checking the HUD after a game update: {e}")),
+            Ok(Refreshed::Removed(why)) => errors.push(format!(
+                "your HUD changes could not be rebuilt ({why}), so DeadTune took them out"
+            )),
+            Err(e) => errors.push(format!("checking the HUD failed: {e}")),
+        }
+        match addons_install::refresh_after_update(&self.paths, &self.store.root) {
+            Ok(done) => {
+                infos.extend(
+                    done.rebuilt
+                        .iter()
+                        .map(|id| addons::info(*id).name.to_string()),
+                );
+                errors.extend(done.removed.iter().map(|(id, why)| {
+                    format!(
+                        "{} could not be rebuilt ({why}), so DeadTune took it out",
+                        addons::info(*id).name
+                    )
+                }));
+            }
+            Err(e) => errors.push(format!("checking the addons failed: {e}")),
+        }
+        self.status = if !errors.is_empty() {
+            Some(Status::Error(format!(
+                "The game updated: {}. Press Apply to try again.",
+                errors.join("; ")
+            )))
+        } else if !infos.is_empty() {
+            Some(Status::Info(format!(
+                "The game updated, so DeadTune rebuilt {} from the new game files.",
+                infos.join(", ")
+            )))
+        } else {
+            return;
         };
-        self.status = Some(message);
         self.hud_cache = None;
+        self.addons_cache = None;
         self.refresh_preview();
     }
 
@@ -1738,10 +1775,10 @@ impl AppState {
         self.addons_cache = None;
         self.refresh_preview();
         if updated {
-            self.hud_update_check = true;
+            self.update_check = true;
             if !self.ctx.game_running {
-                self.hud_update_check = false;
-                self.refresh_hud_after_update();
+                self.update_check = false;
+                self.refresh_after_update();
             }
             self.snapshot_inventory = None;
             self.game_build = dt_core::locate::buildid(&self.paths);

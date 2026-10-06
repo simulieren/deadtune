@@ -999,6 +999,7 @@ mod tests {
             patched: vec!["panorama/styles/hud.vcss_c".into()],
             features,
             layout: None,
+            sources: Default::default(),
         };
         std::fs::create_dir_all(state).unwrap();
         std::fs::write(
@@ -1178,6 +1179,7 @@ mod tests {
             icon_problems: Vec::new(),
             features: Vec::new(),
             layout: None,
+            sources: Default::default(),
         };
         assert!(
             guard.holds_back(&plan(b"hud two")),

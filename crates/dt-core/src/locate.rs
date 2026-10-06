@@ -98,15 +98,45 @@ pub fn from_game_root(game_root: &Path) -> Result<GamePaths, LocateError> {
 }
 
 pub fn parse_buildid(acf: &str) -> Option<String> {
+    acf_value(acf, "buildid").map(str::to_string)
+}
+
+fn acf_value<'a>(acf: &'a str, want: &str) -> Option<&'a str> {
     acf.lines().find_map(|line| {
         let mut fields = line.split('"').filter(|f| !f.trim().is_empty());
         match (fields.next(), fields.next()) {
-            (Some(key), Some(value)) if key.eq_ignore_ascii_case("buildid") => {
-                Some(value.to_string())
-            }
+            (Some(key), Some(value)) if key.eq_ignore_ascii_case(want) => Some(value),
             _ => None,
         }
     })
+}
+
+/// True while Steam is downloading, validating or applying an update, from the
+/// appmanifest's `StateFlags` (Steam's `EAppState` bits). The game files are half old,
+/// half new until it clears.
+pub fn parse_steam_busy(acf: &str) -> bool {
+    const FULLY_INSTALLED: u64 = 4;
+    const BUSY: u64 = 2 // update required
+        | 256 // update running
+        | 512 // update paused
+        | 1024 // update started
+        | 131_072 // validating
+        | 262_144 // adding files
+        | 524_288 // preallocating
+        | 1_048_576 // downloading
+        | 2_097_152 // staging
+        | 4_194_304; // committing
+    acf_value(acf, "StateFlags")
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .is_some_and(|flags| flags & FULLY_INSTALLED == 0 || flags & BUSY != 0)
+}
+
+pub fn steam_busy(paths: &GamePaths) -> bool {
+    paths
+        .appmanifest
+        .as_ref()
+        .and_then(|acf| std::fs::read_to_string(acf).ok())
+        .is_some_and(|acf| parse_steam_busy(&acf))
 }
 
 /// The installed build, read from the Steam appmanifest when there is one.
@@ -176,6 +206,23 @@ mod tests {
         assert_eq!(
             parse_buildid("\"AppState\"\r\n{\r\n\t\"buildid\"\t\t\"7\"\r\n}\r\n").as_deref(),
             Some("7")
+        );
+    }
+
+    #[test]
+    fn steam_is_busy_until_the_update_is_fully_installed() {
+        let acf = |flags: &str| format!("\"AppState\"\n{{\n\t\"StateFlags\"\t\t\"{flags}\"\n}}\n");
+        assert!(!parse_steam_busy(&acf("4")));
+        assert!(
+            !parse_steam_busy(&acf("68")),
+            "running the game is not an update"
+        );
+        assert!(parse_steam_busy(&acf("6")), "update required");
+        assert!(parse_steam_busy(&acf("1026")), "updating");
+        assert!(parse_steam_busy(&acf("1030")));
+        assert!(
+            !parse_steam_busy("\"AppState\"\n{\n}\n"),
+            "unknown is not busy"
         );
     }
 

@@ -53,7 +53,9 @@ None is archived, so nothing lands in `user_convars_*.vcfg`; DeadTune still sets
 
 ### 3.4 Transport
 
-DeadTune writes `cfg/deadtune_hud.cfg` (temp file and rename, like `deadtune_live.cfg`) with three `name "chunk"` lines. The script runs `exec deadtune_hud` on every poll, so the file is read within 250 ms with no key bound and no netcon. When the bridge is netcon, DeadTune also sends the same lines directly for lower latency. The exec of an unchanged file re-sets the same values, which is a no-op. At session end DeadTune writes the resets into the same file so the next poll restores the ConVars, then empties it.
+DeadTune writes `cfg/deadtune_hud.cfg` (temp file and rename, like `deadtune_live.cfg`) with three `name "chunk"` lines. The script runs `exec deadtune_hud` itself, so the file is read with no key bound and no netcon. When the bridge is netcon, DeadTune also sends the same lines directly for lower latency. The exec of an unchanged file re-sets the same values, which is a no-op. At session end DeadTune writes the resets into the same file so the next poll restores the ConVars, then empties it.
+
+Console spam: if `exec` prints a line per call (LH-P2 measures it), a 4 Hz exec would add 14,400 lines an hour to `console.log`. So the exec runs at an idle rate of once a second until a chunk arrives, then at the hot rate (every 250 ms) for 10 s after the last chunk, then idle again; ConVar reads and restyling cost no console lines and stay at the hot rate while anything is styled. First-edit latency is therefore up to 1 s, later edits in a session up to 250 ms. If LH-P2 shows `exec` printing even at 1 Hz, the cfg transport is turned off in the script's config (`cfg: ""`) and netcon becomes the only transport.
 
 Known gap: if DeadTune dies mid-session, the file keeps the last state and the next game start shows it until DeadTune runs again (the base check in 3.5 still prevents double application after an Apply).
 

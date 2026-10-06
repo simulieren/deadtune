@@ -151,6 +151,9 @@ pub enum CodecError {
 pub enum LiveLine {
     Hello {
         base: String,
+        /// The first 24 characters the script read from `tv_title`, for probe LH-P1;
+        /// `None` from a script that does not report it.
+        read: Option<String>,
     },
     Ok {
         seq: u32,
@@ -605,6 +608,10 @@ pub fn parse_line(line: &str) -> Option<LiveLine> {
     if first == "hello" {
         return Some(LiveLine::Hello {
             base: words.next()?.to_string(),
+            read: words
+                .next()
+                .and_then(|w| w.strip_prefix("tv_title="))
+                .and_then(unescape),
         });
     }
     let seq = first.parse().ok()?;
@@ -1073,9 +1080,31 @@ mod tests {
     fn parse_line_reads_every_live_line() {
         let cases = [
             (
-                "DEADTUNE_LIVE hello 0badf00d read ok",
+                "DEADTUNE_LIVE hello 0badf00d",
                 LiveLine::Hello {
                     base: "0badf00d".into(),
+                    read: None,
+                },
+            ),
+            (
+                "DEADTUNE_LIVE hello 0badf00d tv_title=dt1%201%201/1%20x",
+                LiveLine::Hello {
+                    base: "0badf00d".into(),
+                    read: Some("dt1 1 1/1 x".into()),
+                },
+            ),
+            (
+                "DEADTUNE_LIVE hello 0badf00d tv_title=dt1%205%201%2F1%20x%3B%20y%22z%20%25%20and%20a",
+                LiveLine::Hello {
+                    base: "0badf00d".into(),
+                    read: Some("dt1 5 1/1 x; y\"z % and a".into()),
+                },
+            ),
+            (
+                "DEADTUNE_LIVE hello 0badf00d tv_title=",
+                LiveLine::Hello {
+                    base: "0badf00d".into(),
+                    read: Some(String::new()),
                 },
             ),
             (

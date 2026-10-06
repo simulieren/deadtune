@@ -196,7 +196,8 @@
     }
 
     function hello() {
-        echo("hello " + CONFIG.base + " read " + (readSlot(CONFIG.slots[1]) === null ? "none" : "ok"));
+        var read = readSlot("tv_title");
+        echo("hello " + CONFIG.base + (read === null ? "" : " tv_title=" + encodeURIComponent(read.slice(0, 24))));
     }
 
     function poll() {

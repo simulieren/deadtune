@@ -1050,7 +1050,7 @@ fn chip(ui: &mut Ui, state: &AppState, item: &PreviewRect, actions: &mut Vec<Act
     }
 }
 
-fn eye_glyph(p: &Painter, c: Pos2, open: bool, hovered: bool) {
+pub(crate) fn eye_glyph(p: &Painter, c: Pos2, open: bool, hovered: bool) {
     let ink = if open {
         TEXT.gamma_multiply(if hovered { 1.0 } else { 0.8 })
     } else {

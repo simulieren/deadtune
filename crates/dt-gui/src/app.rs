@@ -176,6 +176,19 @@ impl App {
                         .find(|s| s.label.to_lowercase().starts_with(&name.to_lowercase()))
                         .map(|s| s.id);
                 }
+                // `DEADTUNE_STATS_SELECT=souls` opens the Player stats page on that part.
+                if let Ok(name) = std::env::var("DEADTUNE_STATS_SELECT") {
+                    let name = name.to_lowercase();
+                    state.ui.stats_selected = dt_core::hud::player_stats::StatsPart::ALL
+                        .into_iter()
+                        .find(|p| {
+                            p.spec()
+                                .label
+                                .to_lowercase()
+                                .split_whitespace()
+                                .any(|w| w.starts_with(&name))
+                        });
+                }
                 // `DEADTUNE_HUD_BACKDROP=off` hides the layout preview's game screenshot,
                 // `=40` draws it at 40% opacity.
                 match std::env::var("DEADTUNE_HUD_BACKDROP").as_deref() {

@@ -471,11 +471,18 @@ fn hud_checks(paths: &GamePaths, data_dir: &Path, checks: &mut Vec<Check>) {
 }
 
 /// Stylesheets DeadTune's HUD addon can replace; another pak shipping one clashes with it.
-const PATCHED_STYLES: [&str; 4] = [
+const PATCHED_STYLES: [&str; 11] = [
     HUD_STYLE,
     crate::hud::minimap_colors::MINIMAP_STYLE,
     crate::hud::health_style::HEALTH_STYLE,
     crate::hud::health_style::HEALTH_CONTAINER_STYLE,
+    crate::hud::player_stats::ACTIVE_STATS_STYLE,
+    crate::hud::player_stats::GOLD_STYLE,
+    crate::hud::player_stats::LEVEL_STYLE,
+    crate::hud::player_stats::MOD_ICON_STYLE,
+    crate::hud::player_stats::MODS_PANEL_STYLE,
+    crate::hud::player_stats::QUICKBUY_STYLE,
+    crate::hud::player_stats::STATUS_STYLE,
 ];
 
 /// Other addons that ship their own `hud.vcss_c`; only one of them can win.

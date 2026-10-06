@@ -66,6 +66,7 @@ pub enum Feature {
     Minimap,
     TopBar,
     Health,
+    PlayerStats,
     Addon(AddonId),
     /// Planned: rows added to the game's own settings menu.
     SettingsRows,
@@ -80,6 +81,7 @@ impl Feature {
             Feature::Minimap => "Minimap (colours, apples and tunnels)".into(),
             Feature::TopBar => "Top bar".into(),
             Feature::Health => "Health bar".into(),
+            Feature::PlayerStats => "Player stats".into(),
             Feature::Addon(id) => ADDONS
                 .iter()
                 .find(|a| a.id == id)
@@ -101,6 +103,13 @@ pub fn dependencies() -> Vec<(Feature, Vec<&'static str>)> {
         (Feature::Minimap, vec![MINIMAP_STYLE, MINIMAP_LAYOUT]),
         (Feature::TopBar, vec![TOP_BAR_STYLE, TOP_BAR_LAYOUT]),
         (Feature::Health, vec![HEALTH_STYLE, HEALTH_CONTAINER_STYLE]),
+        (
+            Feature::PlayerStats,
+            crate::hud::player_stats::STYLES
+                .into_iter()
+                .filter(|&s| s != HUD_STYLE)
+                .collect(),
+        ),
         (Feature::SettingsRows, vec![SETTINGS_LAYOUT]),
         (Feature::GameInfo, vec![GAMEINFO]),
         (Feature::Video, vec![VIDEO]),

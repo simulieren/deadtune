@@ -39,6 +39,7 @@ mod settings;
 mod simple;
 mod snapshots;
 mod state;
+mod stats_view;
 mod theme;
 mod thumbs;
 mod topbar_view;

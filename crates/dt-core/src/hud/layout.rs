@@ -13,6 +13,7 @@ use super::ingame::{self, IngameError, IngameSettings};
 use super::inject::LayoutEdit;
 use super::minimap_colors::{self, Color, IconId, MINIMAP_STYLE};
 use super::minimap_style::{MinimapStyle, StyleError};
+use super::player_stats::{PlayerStatsError, PlayerStatsStyle};
 use super::topbar::{TOP_BAR_LAYOUT, TOP_BAR_STYLE, TopBarError, TopBarStyle};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -68,6 +69,10 @@ pub struct HudLayout {
     pub top_bar: TopBarStyle,
     /// Experimental, untested in game: health bar styling.
     pub health: HealthStyle,
+    /// Experimental, untested in game: the lower-left player stats, part by part
+    /// (`hud::player_stats`).
+    #[serde(skip_serializing_if = "PlayerStatsStyle::is_vanilla")]
+    pub player_stats: PlayerStatsStyle,
     /// Experimental, untested in game: apple spots and tunnel entrances on the minimap
     /// (`hud::apples_tunnels`).
     #[serde(skip_serializing_if = "ApplesTunnels::is_vanilla")]
@@ -132,6 +137,8 @@ pub enum LayoutError {
     TopBar(#[from] TopBarError),
     #[error("health bar: {0}")]
     Health(#[from] HealthError),
+    #[error("player stats: {0}")]
+    PlayerStats(#[from] PlayerStatsError),
     #[error("apples and tunnels: {0}")]
     ApplesTunnels(#[from] ApplesTunnelsError),
     #[error("in-game settings: {0}")]
@@ -151,6 +158,7 @@ pub enum HudFeature {
     MinimapStyle,
     TopBar,
     HealthBar,
+    PlayerStats,
     ApplesTunnels,
     IngameSettings,
     CustomCss,
@@ -165,6 +173,7 @@ impl HudFeature {
             HudFeature::MinimapStyle => "minimap style",
             HudFeature::TopBar => "top bar",
             HudFeature::HealthBar => "health bar",
+            HudFeature::PlayerStats => "player stats",
             HudFeature::ApplesTunnels => "apples and tunnels",
             HudFeature::IngameSettings => "in-game settings rows",
             HudFeature::CustomCss => "custom CSS",
@@ -189,6 +198,7 @@ impl HudLayout {
             (HudFeature::MinimapStyle, !self.minimap.is_vanilla()),
             (HudFeature::TopBar, !self.top_bar.is_vanilla()),
             (HudFeature::HealthBar, !self.health.is_vanilla()),
+            (HudFeature::PlayerStats, !self.player_stats.is_vanilla()),
             (HudFeature::ApplesTunnels, !self.apples_tunnels.is_vanilla()),
             (HudFeature::IngameSettings, !self.ingame.is_vanilla()),
             (
@@ -239,6 +249,9 @@ pub fn compile(layout: &HudLayout) -> Result<HudPatch, LayoutError> {
         files.entry(path.to_string()).or_default().push_str(&css);
     }
     for (path, css) in layout.health.compile()? {
+        files.entry(path.to_string()).or_default().push_str(&css);
+    }
+    for (path, css) in layout.player_stats.compile()? {
         files.entry(path.to_string()).or_default().push_str(&css);
     }
     let top_bar = layout.top_bar.compile()?;

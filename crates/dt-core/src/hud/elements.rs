@@ -199,7 +199,9 @@ pub static ELEMENTS: &[ElementSpec] = &[
     ElementSpec {
         id: ElementId::PlayerStats,
         label: "Player stats",
-        selector: "#StatsAndModsContainer",
+        // The category numbers live in the full-screen sibling `#hudActivePlayerStats`;
+        // one rule moves, sizes and hides both.
+        selector: "#StatsAndModsContainer,#hudActivePlayerStats",
         scale: ScaleProp::UiScale,
         vanilla_ui_scale_pct: 100,
         vanilla: VanillaBox {

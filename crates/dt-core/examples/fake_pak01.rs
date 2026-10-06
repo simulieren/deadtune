@@ -409,7 +409,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     files.extend(stand_in_images(&pak89.read(native_scope::TEXTURE)?)?);
     files.extend(preview_stand_ins(&pak89.read(native_scope::TEXTURE)?)?);
     files.insert(VECTOR_ICON.to_string(), vector_icon(VECTOR_SVG));
-    for style in [HUD_STYLE, HEALTH_STYLE, HEALTH_CONTAINER_STYLE] {
+    let stats = dt_core::hud::player_stats::STYLES;
+    for style in [HUD_STYLE, HEALTH_STYLE, HEALTH_CONTAINER_STYLE]
+        .into_iter()
+        .chain(stats)
+    {
         files.insert(
             style.to_string(),
             std::fs::read(here("tests/fixtures/hud/hud_vanilla.vcss_c"))?,

@@ -28,6 +28,7 @@ pub mod kv3;
 pub mod layout;
 pub mod minimap_colors;
 pub mod minimap_style;
+pub mod player_stats;
 pub mod resource;
 pub mod searchpaths;
 pub mod topbar;

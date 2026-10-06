@@ -33,6 +33,7 @@ use dt_core::hud::minimap_colors::{self, Color, IconId};
 use dt_core::hud::minimap_style::{
     MAP_OPACITY_RANGE, MARKER_SCALE_RANGE, MarkerGroup, MinimapStyle,
 };
+use dt_core::hud::player_stats::PlayerStatsStyle;
 use dt_core::hud::topbar::{
     MISSING_OPACITY_RANGE, PORTRAIT_GAP_RANGE, PORTRAIT_SCALE_RANGE, TopBarPreset, TopBarStyle,
 };
@@ -200,6 +201,7 @@ pub enum Section {
     TopBar,
     Images,
     Health,
+    Stats,
     Ingame,
     Addons,
     System,
@@ -208,7 +210,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 16] = [
+    pub const ALL: [Section; 17] = [
         Section::Overview,
         Section::Display,
         Section::Shadows,
@@ -220,6 +222,7 @@ impl Section {
         Section::TopBar,
         Section::Images,
         Section::Health,
+        Section::Stats,
         Section::Ingame,
         Section::Addons,
         Section::System,
@@ -240,6 +243,7 @@ impl Section {
             Section::TopBar => "Top bar",
             Section::Images => "UI images",
             Section::Health => "Health bar",
+            Section::Stats => "Player stats",
             Section::Ingame => "In-game settings",
             Section::Addons => "Addons",
             Section::System => "System check",
@@ -263,6 +267,9 @@ impl Section {
                 "Every picture and icon in the game's interface. Look at any of them, save a copy, or drop in your own."
             }
             Section::Health => "A bigger health number, colours by health, less shaking.",
+            Section::Stats => {
+                "Your stat numbers, level, souls and items in the lower left: move, resize, recolour or hide every part."
+            }
             Section::Ingame => {
                 "DeadTune rows inside Deadlock's own settings menu: a Wide FOV slider and live performance sliders."
             }
@@ -401,6 +408,8 @@ pub struct UiState {
     pub overrides_path: String,
     pub new_profile_name: String,
     pub hud_selected: Option<ElementId>,
+    /// The part the Player stats page is editing.
+    pub stats_selected: Option<dt_core::hud::player_stats::StatsPart>,
     pub hud_backdrop: Backdrop,
     pub hud_page: HudPage,
     pub section: Section,
@@ -2041,6 +2050,44 @@ impl AppState {
 
     pub fn health_changed_count(&self) -> usize {
         self.profile.hud.health.changed_count()
+    }
+
+    /// Player stats edits are made on a copy and stored whole; out-of-range values are
+    /// pulled back in.
+    pub fn set_player_stats_style(&mut self, mut style: PlayerStatsStyle) {
+        use dt_core::hud::player_stats as ps;
+        let parts: Vec<_> = style.parts.iter().map(|(&k, &v)| (k, v)).collect();
+        for (part, mut edit) in parts {
+            edit.offset_x = edit
+                .offset_x
+                .clamp(*ps::OFFSET_RANGE.start(), *ps::OFFSET_RANGE.end());
+            edit.offset_y = edit
+                .offset_y
+                .clamp(*ps::OFFSET_RANGE.start(), *ps::OFFSET_RANGE.end());
+            edit.scale_pct = edit
+                .scale()
+                .clamp(*ps::SCALE_RANGE.start(), *ps::SCALE_RANGE.end());
+            edit.opacity_pct = edit.opacity_pct.map(|o| o.min(100));
+            style.set_part(part, edit);
+        }
+        let clamp = |v: u8, r: &std::ops::RangeInclusive<u8>| v.clamp(*r.start(), *r.end());
+        style.number_px = clamp(style.number_px, &ps::NUMBER_PX_RANGE);
+        style.level_px = clamp(style.level_px, &ps::NUMBER_PX_RANGE);
+        style.souls_px = clamp(style.souls_px, &ps::SOULS_PX_RANGE);
+        style.tile_gap_px = clamp(style.tile_gap_px, &ps::TILE_GAP_RANGE);
+        for pct in [
+            &mut style.icon_opacity_pct,
+            &mut style.empty_opacity_pct,
+            &mut style.cooldown_pct,
+        ] {
+            *pct = (*pct).min(100);
+        }
+        self.profile.hud.player_stats = style;
+        self.refresh_preview();
+    }
+
+    pub fn player_stats_changed_count(&self) -> usize {
+        self.profile.hud.player_stats.changed_count()
     }
 
     /// Replaces the in-game settings rows; names that are not rows of the DeadTune group

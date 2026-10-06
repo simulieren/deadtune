@@ -480,6 +480,7 @@ pub fn groups(section: Section) -> &'static [Group] {
         | Section::TopBar
         | Section::Images
         | Section::Health
+        | Section::Stats
         | Section::Ingame
         | Section::Addons
         | Section::System

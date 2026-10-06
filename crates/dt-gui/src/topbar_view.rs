@@ -157,7 +157,7 @@ fn bar_crop(
 fn gallery(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
     let current = state.top_bar_preset();
     let gap = 10.0;
-    let columns = if ui.available_width() > 1100.0 { 3 } else { 2 };
+    let columns = if ui.available_width() > 640.0 { 3 } else { 2 };
     let width = (ui.available_width() - gap * (columns - 1) as f32) / columns as f32;
     let preview = TopBarPreview {
         missing_enemy: true,
@@ -168,9 +168,9 @@ fn gallery(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec
             ui.spacing_mut().item_spacing.x = gap;
             for preset in row {
                 let selected = current == Some(*preset);
-                let stage_height = (width - 14.0) / (CROP.1 - CROP.0) * BAR_HEIGHT + 6.0;
+                let stage_height = ((width - 12.0) / (CROP.1 - CROP.0) * BAR_HEIGHT).min(96.0);
                 let (rect, response) =
-                    ui.allocate_exact_size(vec2(width, stage_height + 50.0), Sense::click());
+                    ui.allocate_exact_size(vec2(width, stage_height + 32.0), Sense::click());
                 ui.painter().rect(
                     rect,
                     CornerRadius::same(10),
@@ -182,28 +182,17 @@ fn gallery(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec
                     StrokeKind::Inside,
                 );
                 let stage = Rect::from_min_size(
-                    rect.min + vec2(7.0, 7.0),
-                    vec2(rect.width() - 14.0, stage_height),
+                    rect.min + vec2(6.0, 6.0),
+                    vec2(rect.width() - 12.0, stage_height),
                 );
                 bar_crop(ui, stage, &preset.style(), preview, images);
                 let painter = ui.painter();
                 painter.text(
-                    pos2(rect.left() + 12.0, stage.bottom() + 9.0),
-                    Align2::LEFT_TOP,
+                    pos2(rect.left() + 11.0, stage.bottom() + 13.0),
+                    Align2::LEFT_CENTER,
                     preset.label(),
                     FontId::new(12.5, theme::semibold()),
                     if selected { ACCENT } else { TEXT },
-                );
-                let mut job = egui::text::LayoutJob::simple_singleline(
-                    preset.blurb().to_string(),
-                    FontId::proportional(11.0),
-                    WEAK,
-                );
-                job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 24.0);
-                painter.galley(
-                    pos2(rect.left() + 12.0, stage.bottom() + 25.0),
-                    painter.layout_job(job),
-                    WEAK,
                 );
                 if selected {
                     let c = pos2(rect.right() - 18.0, rect.top() + 18.0);
@@ -224,7 +213,7 @@ fn gallery(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec
                 }
             }
         });
-        ui.add_space(gap);
+        ui.add_space(8.0);
     }
 }
 

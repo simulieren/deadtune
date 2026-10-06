@@ -341,9 +341,11 @@ pub(crate) fn draw_health(
     let bar_upright = moved(upright, style.bar_offset);
     let bar = layout.place(bar_upright);
     if style.shape != BarShape::Hidden {
+        let mut faded = painter.clone();
+        faded.multiply_opacity(f32::from(style.bar_opacity_pct) / 100.0);
         drawn.real = match style.shape {
-            BarShape::Ruler => draw_ruler(painter, images, style, bar, fill),
-            _ => draw_shaped(painter, images, style, bar, layout.size, fill),
+            BarShape::Ruler => draw_ruler(&faded, images, style, bar, fill),
+            _ => draw_shaped(&faded, images, style, bar, layout.size, fill),
         };
         drawn.parts.push((
             Part::Bar,

@@ -157,7 +157,7 @@ fn bar_crop(
 fn gallery(ui: &mut Ui, state: &AppState, images: &mut Images, actions: &mut Vec<Action>) {
     let current = state.top_bar_preset();
     let gap = 10.0;
-    let columns = if ui.available_width() > 640.0 { 3 } else { 2 };
+    let columns = ((ui.available_width() / 240.0).floor() as usize).clamp(2, 5);
     let width = (ui.available_width() - gap * (columns - 1) as f32) / columns as f32;
     let preview = TopBarPreview {
         missing_enemy: true,
@@ -390,6 +390,24 @@ fn inspector_left(ui: &mut Ui, s: &mut TopBarStyle) {
             "Hide souls tags",
             &mut s.hide_player_souls,
             d.hide_player_souls,
+        );
+        switch_row(
+            ui,
+            "Hide ultimate icons",
+            &mut s.hide_ultimate,
+            d.hide_ultimate,
+        );
+        switch_row(
+            ui,
+            "Hide health bars",
+            &mut s.hide_health_bars,
+            d.hide_health_bars,
+        );
+        switch_row(
+            ui,
+            "Hide kill streak banners",
+            &mut s.hide_streaks,
+            d.hide_streaks,
         );
     });
 }
@@ -894,7 +912,7 @@ fn portrait(
         }
     }
 
-    if health_visible && !dead {
+    if health_visible && !dead && !style.hide_health_bars {
         let x = if enemy {
             PORTRAIT_WIDTH - 4.0 - 16.0
         } else {
@@ -954,6 +972,9 @@ fn portrait(
     }
 
     let status = q(mid, 136.0);
+    if style.hide_ultimate {
+        return real;
+    }
     if ready {
         if !icon(
             p,

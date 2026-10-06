@@ -23,7 +23,7 @@ const SCRIPT: &str = include_str!("assets/top_bar.js");
 const STYLE: &str = include_str!("assets/top_bar.css");
 
 pub const MISSING_OPACITY_RANGE: RangeInclusive<u8> = 10..=100;
-pub const PORTRAIT_SCALE_RANGE: RangeInclusive<u16> = 70..=130;
+pub const PORTRAIT_SCALE_RANGE: RangeInclusive<u16> = 60..=130;
 pub const PORTRAIT_GAP_RANGE: RangeInclusive<u8> = 0..=24;
 
 /// How a dead hero's portrait looks until respawn.
@@ -72,6 +72,12 @@ pub struct TopBarStyle {
     pub hide_player_souls: bool,
     /// Shows hero levels on the bar, not only with the scoreboard open.
     pub show_levels: bool,
+    /// The ultimate status icon under each portrait.
+    pub hide_ultimate: bool,
+    /// The small health bar beside each portrait.
+    pub hide_health_bars: bool,
+    /// The kill streak and first blood banners on portraits.
+    pub hide_streaks: bool,
     pub spawn_timers: bool,
     pub urn_lead: bool,
     pub purchases: bool,
@@ -94,6 +100,9 @@ impl Default for TopBarStyle {
             hide_kill_counts: false,
             hide_player_souls: false,
             show_levels: false,
+            hide_ultimate: false,
+            hide_health_bars: false,
+            hide_streaks: false,
             spawn_timers: false,
             urn_lead: false,
             purchases: false,
@@ -105,7 +114,7 @@ impl Default for TopBarStyle {
 pub enum TopBarError {
     #[error("out-of-vision opacity {0}% outside 10..=100")]
     MissingOpacity(u8),
-    #[error("portrait size {0}% outside 70..=130")]
+    #[error("portrait size {0}% outside 60..=130")]
     PortraitScale(u16),
     #[error("portrait gap {0}px outside 0..=24")]
     PortraitGap(u8),
@@ -149,6 +158,9 @@ impl TopBarStyle {
             self.hide_kill_counts,
             self.hide_player_souls,
             self.show_levels,
+            self.hide_ultimate,
+            self.hide_health_bars,
+            self.hide_streaks,
             self.spawn_timers,
             self.urn_lead,
             self.purchases,
@@ -255,6 +267,16 @@ impl TopBarStyle {
         if self.show_levels {
             rule(".HeroLevelBacker", &[("visibility", "visible".into())]);
         }
+        let gone = || vec![("visibility", "collapse".to_string())];
+        if self.hide_ultimate {
+            rule("#UltimateStatus,#UltimateStatusBG", &gone());
+        }
+        if self.hide_health_bars {
+            rule("CitadelHudTopBarPlayer #HealthBar", &gone());
+        }
+        if self.hide_streaks {
+            rule("#KillStreakContainer", &gone());
+        }
         Ok(out)
     }
 
@@ -305,11 +327,17 @@ pub enum TopBarPreset {
     HighContrast,
     TopBarPlus,
     Minimal,
+    Compact,
+    Tiny,
+    PortraitsOnly,
 }
 
 impl TopBarPreset {
-    pub const ALL: [TopBarPreset; 6] = [
+    pub const ALL: [TopBarPreset; 9] = [
         TopBarPreset::Vanilla,
+        TopBarPreset::Compact,
+        TopBarPreset::Tiny,
+        TopBarPreset::PortraitsOnly,
         TopBarPreset::FightReadability,
         TopBarPreset::Clean,
         TopBarPreset::HighContrast,
@@ -325,6 +353,9 @@ impl TopBarPreset {
             TopBarPreset::HighContrast => "High contrast",
             TopBarPreset::TopBarPlus => "Top Bar Plus style",
             TopBarPreset::Minimal => "Minimal",
+            TopBarPreset::Compact => "Compact",
+            TopBarPreset::Tiny => "Tiny",
+            TopBarPreset::PortraitsOnly => "Portraits only",
         }
     }
 
@@ -343,6 +374,15 @@ impl TopBarPreset {
             }
             TopBarPreset::Minimal => {
                 "Spawn timers and urn lead with a smaller soul lead and darkened missing enemies. Idea by Stovven."
+            }
+            TopBarPreset::Compact => {
+                "Portraits at 85%, smaller clock, soul lead and rejuvenators, no souls tags."
+            }
+            TopBarPreset::Tiny => {
+                "Portraits at 65%, everything in the centre smaller, no souls tags, ultimate icons or streak banners."
+            }
+            TopBarPreset::PortraitsOnly => {
+                "Just the heroes and their health: no souls tags, soul lead, rejuvenators or ultimate icons."
             }
         }
     }
@@ -383,6 +423,34 @@ impl TopBarPreset {
                 soul_lead: Treatment::Compact,
                 spawn_timers: true,
                 urn_lead: true,
+                ..d
+            },
+            TopBarPreset::Compact => TopBarStyle {
+                portrait_scale_pct: 85,
+                clock: Treatment::Compact,
+                soul_lead: Treatment::Compact,
+                rejuv_charges: Treatment::Compact,
+                hide_player_souls: true,
+                ..d
+            },
+            TopBarPreset::Tiny => TopBarStyle {
+                portrait_scale_pct: 65,
+                clock: Treatment::Compact,
+                soul_lead: Treatment::Compact,
+                rejuv_charges: Treatment::Compact,
+                hide_player_souls: true,
+                hide_ultimate: true,
+                hide_streaks: true,
+                hide_kill_counts: true,
+                ..d
+            },
+            TopBarPreset::PortraitsOnly => TopBarStyle {
+                soul_lead: Treatment::Hidden,
+                rejuv_charges: Treatment::Hidden,
+                hide_player_souls: true,
+                hide_ultimate: true,
+                hide_streaks: true,
+                missing_opacity_pct: 40,
                 ..d
             },
         }
@@ -612,6 +680,26 @@ mod tests {
             .unwrap_err(),
             TopBarError::PortraitGap(25)
         );
+    }
+
+    #[test]
+    fn tiny_hides_the_small_parts_and_shrinks_portraits() {
+        let css = TopBarPreset::Tiny.style().css().unwrap();
+        assert!(
+            css.contains("CitadelHudTopBarPlayer{ui-scale:65%;}"),
+            "{css}"
+        );
+        assert!(css.contains("#UltimateStatus,#UltimateStatusBG{visibility:collapse;}"));
+        assert!(css.contains("#KillStreakContainer{visibility:collapse;}"));
+        let bars = TopBarStyle {
+            hide_health_bars: true,
+            ..TopBarStyle::default()
+        };
+        assert_eq!(
+            bars.css().unwrap(),
+            "CitadelHudTopBarPlayer #HealthBar{visibility:collapse;}"
+        );
+        assert_eq!(bars.changed_count(), 1);
     }
 
     #[test]

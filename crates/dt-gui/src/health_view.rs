@@ -3,8 +3,8 @@
 //! `crate::health_art`; edits go out with the HUD addon on Apply.
 
 use dt_core::hud::health_style::{
-    BarAngle, BarShape, HealthPreset, HealthStyle, LENGTH_RANGE, NumberFont, NumberLayout, Offset,
-    PresetGroup, RegenPlace, THICKNESS_RANGE,
+    BAR_OPACITY_RANGE, BarAngle, BarShape, HealthPreset, HealthStyle, LENGTH_RANGE, NumberFont,
+    NumberLayout, Offset, PresetGroup, RegenPlace, THICKNESS_RANGE,
 };
 use dt_core::texture::adjust::Rgb;
 use eframe::egui::color_picker::color_edit_button_srgb;
@@ -23,7 +23,7 @@ use crate::widgets;
 
 const INSPECTOR: f32 = 360.0;
 const CARD_SIZE: egui::Vec2 = vec2(148.0, 156.0);
-const NUMBER_SIZES: [u16; 5] = [80, 100, 130, 160, 200];
+const NUMBER_SIZES: [u16; 6] = [70, 80, 100, 130, 160, 200];
 const SWATCHES: [(&str, Rgb); 6] = [
     ("Paper white", Rgb([0xFF, 0xEF, 0xD7])),
     ("White", Rgb::WHITE),
@@ -423,6 +423,14 @@ fn inspector(ui: &mut Ui, style: &mut HealthStyle) {
                 "The game's paper texture, or one flat colour",
                 |ui| fill_row(ui, &mut style.fill),
             );
+            row(ui, "Opacity", "How see-through the whole bar is", |ui| {
+                ui.spacing_mut().slider_width = 150.0;
+                ui.add(
+                    egui::Slider::new(&mut style.bar_opacity_pct, BAR_OPACITY_RANGE)
+                        .suffix("%")
+                        .step_by(5.0),
+                );
+            });
             row(ui, "Ticks", "A mark every 250 health", |ui| {
                 switch(ui, &mut style.ticks)
             });

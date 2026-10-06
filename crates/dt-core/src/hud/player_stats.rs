@@ -299,13 +299,28 @@ pub enum StatsPreset {
     Clean,
     Compact,
     BigNumbers,
+    CleanSmall,
+    Tiny,
+    Minimal,
+    Quiet,
+}
+
+fn sized(scale_pct: u16) -> PartEdit {
+    PartEdit {
+        scale_pct,
+        ..PartEdit::default()
+    }
 }
 
 impl StatsPreset {
-    pub const ALL: [StatsPreset; 4] = [
+    pub const ALL: [StatsPreset; 8] = [
         StatsPreset::Vanilla,
         StatsPreset::Clean,
+        StatsPreset::CleanSmall,
         StatsPreset::Compact,
+        StatsPreset::Tiny,
+        StatsPreset::Minimal,
+        StatsPreset::Quiet,
         StatsPreset::BigNumbers,
     ];
 
@@ -315,6 +330,10 @@ impl StatsPreset {
             StatsPreset::Clean => "Clean",
             StatsPreset::Compact => "Compact",
             StatsPreset::BigNumbers => "Big numbers",
+            StatsPreset::CleanSmall => "Clean small",
+            StatsPreset::Tiny => "Tiny",
+            StatsPreset::Minimal => "Minimal",
+            StatsPreset::Quiet => "Quiet",
         }
     }
 
@@ -326,6 +345,12 @@ impl StatsPreset {
             }
             StatsPreset::Compact => "Everything a little smaller and tighter.",
             StatsPreset::BigNumbers => "Bigger category numbers, level and souls.",
+            StatsPreset::CleanSmall => "Clean, and everything at 85%.",
+            StatsPreset::Tiny => "Everything at 70% with tight item tiles.",
+            StatsPreset::Minimal => {
+                "Only the numbers, level, souls and items: no popups, bars, glow, tier corners or upgrade pips."
+            }
+            StatsPreset::Quiet => "The game's layout at two thirds opacity, so it sits back.",
         }
     }
 
@@ -367,6 +392,85 @@ impl StatsPreset {
                 number_px: 34,
                 level_px: 34,
                 souls_px: 40,
+                ..d
+            },
+            StatsPreset::CleanSmall => {
+                let clean = StatsPreset::Clean.style();
+                let mut parts = clean.parts.clone();
+                for part in [
+                    StatsPart::Numbers,
+                    StatsPart::Level,
+                    StatsPart::Souls,
+                    StatsPart::Items,
+                ] {
+                    parts.insert(part, sized(85));
+                }
+                PlayerStatsStyle {
+                    parts,
+                    tile_gap_px: 2,
+                    ..clean
+                }
+            }
+            StatsPreset::Tiny => PlayerStatsStyle {
+                parts: [
+                    StatsPart::Numbers,
+                    StatsPart::Level,
+                    StatsPart::Souls,
+                    StatsPart::Items,
+                    StatsPart::StatusEffects,
+                ]
+                .into_iter()
+                .map(|part| (part, sized(70)))
+                .collect(),
+                tile_gap_px: 1,
+                ..d
+            },
+            StatsPreset::Minimal => PlayerStatsStyle {
+                parts: [
+                    StatsPart::Popups,
+                    StatsPart::StatusEffects,
+                    StatsPart::Quickbuy,
+                ]
+                .into_iter()
+                .map(|part| {
+                    (
+                        part,
+                        PartEdit {
+                            hidden: true,
+                            ..PartEdit::default()
+                        },
+                    )
+                })
+                .collect(),
+                straight_numbers: true,
+                hide_deltas: true,
+                hide_bars: true,
+                hide_glow: true,
+                hide_souls_icon: true,
+                hide_souls_label: true,
+                hide_tiers: true,
+                hide_upgrades: true,
+                ..d
+            },
+            StatsPreset::Quiet => PlayerStatsStyle {
+                parts: [
+                    StatsPart::Numbers,
+                    StatsPart::Level,
+                    StatsPart::Souls,
+                    StatsPart::Items,
+                ]
+                .into_iter()
+                .map(|part| {
+                    (
+                        part,
+                        PartEdit {
+                            opacity_pct: Some(65),
+                            ..PartEdit::default()
+                        },
+                    )
+                })
+                .collect(),
+                hide_glow: true,
                 ..d
             },
         }

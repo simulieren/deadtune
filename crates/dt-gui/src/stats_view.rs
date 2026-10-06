@@ -300,7 +300,9 @@ fn presets(
     ui.add_space(8.0);
     let current = style.preset();
     let gap = 10.0;
-    let count = StatsPreset::ALL.len() as f32;
+    let count = ((ui.available_width() + gap) / (170.0 + gap))
+        .floor()
+        .clamp(3.0, StatsPreset::ALL.len() as f32);
     let width = ((ui.available_width() - gap * (count - 1.0)) / count).min(220.0);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(gap, gap);

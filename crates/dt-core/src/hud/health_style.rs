@@ -14,7 +14,8 @@ use crate::texture::adjust::Rgb;
 
 pub const HEALTH_STYLE: &str = "panorama/styles/hud_health.vcss_c";
 pub const HEALTH_CONTAINER_STYLE: &str = "panorama/styles/hud_health_container.vcss_c";
-pub const NUMBER_SCALE_RANGE: RangeInclusive<u16> = 80..=200;
+pub const NUMBER_SCALE_RANGE: RangeInclusive<u16> = 60..=200;
+pub const BAR_OPACITY_RANGE: RangeInclusive<u8> = 20..=100;
 pub const THICKNESS_RANGE: RangeInclusive<u16> = 30..=300;
 pub const LENGTH_RANGE: RangeInclusive<u16> = 40..=200;
 
@@ -251,6 +252,8 @@ pub struct HealthStyle {
     pub font: NumberFont,
     pub hide_number: bool,
     pub hide_max: bool,
+    /// The whole bar's opacity, percent.
+    pub bar_opacity_pct: u8,
     pub number_layout: NumberLayout,
     pub regen_place: RegenPlace,
     /// Moves made by dragging in the page's preview.
@@ -281,6 +284,7 @@ impl Default for HealthStyle {
             font: NumberFont::Game,
             hide_number: false,
             hide_max: false,
+            bar_opacity_pct: 100,
             number_layout: NumberLayout::Stacked,
             regen_place: RegenPlace::Bar,
             bar_offset: Offset::default(),
@@ -305,19 +309,25 @@ pub enum HealthPreset {
     Terminal,
     Minimal,
     NumberOnly,
+    SmallRuler,
+    Tiny,
+    MicroBar,
+    SmallNumber,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PresetGroup {
     Game,
+    Small,
     Vertical,
     Horizontal,
     Minimal,
 }
 
 impl PresetGroup {
-    pub const ALL: [PresetGroup; 4] = [
+    pub const ALL: [PresetGroup; 5] = [
         PresetGroup::Game,
+        PresetGroup::Small,
         PresetGroup::Vertical,
         PresetGroup::Horizontal,
         PresetGroup::Minimal,
@@ -326,6 +336,7 @@ impl PresetGroup {
     pub fn label(self) -> &'static str {
         match self {
             PresetGroup::Game => "Game look",
+            PresetGroup::Small => "Small and clean",
             PresetGroup::Vertical => "Vertical",
             PresetGroup::Horizontal => "Horizontal",
             PresetGroup::Minimal => "Minimal and type",
@@ -336,11 +347,15 @@ impl PresetGroup {
 const OFF_WHITE: Rgb = Rgb([0xFF, 0xEF, 0xD7]);
 
 impl HealthPreset {
-    pub const ALL: [HealthPreset; 12] = [
+    pub const ALL: [HealthPreset; 16] = [
         HealthPreset::Vanilla,
         HealthPreset::Clean,
         HealthPreset::BigNumber,
         HealthPreset::Upright,
+        HealthPreset::SmallRuler,
+        HealthPreset::Tiny,
+        HealthPreset::MicroBar,
+        HealthPreset::SmallNumber,
         HealthPreset::Slim,
         HealthPreset::Wedge,
         HealthPreset::Blade,
@@ -365,6 +380,10 @@ impl HealthPreset {
             HealthPreset::Terminal => "Terminal",
             HealthPreset::Minimal => "Minimal",
             HealthPreset::NumberOnly => "Number only",
+            HealthPreset::SmallRuler => "Small ruler",
+            HealthPreset::Tiny => "Tiny",
+            HealthPreset::MicroBar => "Micro bar",
+            HealthPreset::SmallNumber => "Small number",
         }
     }
 
@@ -379,6 +398,10 @@ impl HealthPreset {
                 PresetGroup::Horizontal
             }
             HealthPreset::Minimal | HealthPreset::NumberOnly => PresetGroup::Minimal,
+            HealthPreset::SmallRuler
+            | HealthPreset::Tiny
+            | HealthPreset::MicroBar
+            | HealthPreset::SmallNumber => PresetGroup::Small,
         }
     }
 
@@ -398,6 +421,12 @@ impl HealthPreset {
             HealthPreset::Terminal => "A flat cyan bar with a monospaced number.",
             HealthPreset::Minimal => "A hairline bar and a small number, nothing else.",
             HealthPreset::NumberOnly => "No bar at all: one big number that changes colour.",
+            HealthPreset::SmallRuler => {
+                "The game's ruler at three quarters, a small clean number, no backer."
+            }
+            HealthPreset::Tiny => "A short thin bar and a small number on one line.",
+            HealthPreset::MicroBar => "A short rounded bar lying flat, half see-through.",
+            HealthPreset::SmallNumber => "No bar: a small quiet number with its max on one line.",
         }
     }
 
@@ -499,14 +528,63 @@ impl HealthPreset {
                 color_by_health: true,
                 ..calm
             },
+            HealthPreset::SmallRuler => HealthStyle {
+                thickness_pct: 75,
+                length_pct: 75,
+                number_scale_pct: 80,
+                ..calm
+            },
+            HealthPreset::Tiny => HealthStyle {
+                shape: BarShape::Straight,
+                angle: BarAngle::Upright,
+                thickness_pct: 40,
+                length_pct: 55,
+                fill: Some(OFF_WHITE),
+                ticks: false,
+                frame: false,
+                number_scale_pct: 70,
+                font: NumberFont::Sans,
+                number_layout: NumberLayout::Row,
+                regen_place: RegenPlace::Number,
+                ..calm
+            },
+            HealthPreset::MicroBar => HealthStyle {
+                shape: BarShape::Rounded,
+                angle: BarAngle::Flat,
+                thickness_pct: 45,
+                length_pct: 70,
+                fill: Some(Rgb::WHITE),
+                ticks: false,
+                frame: false,
+                bar_opacity_pct: 70,
+                number_scale_pct: 70,
+                font: NumberFont::Sans,
+                number_layout: NumberLayout::Row,
+                regen_place: RegenPlace::Number,
+                color_by_health: true,
+                ..calm
+            },
+            HealthPreset::SmallNumber => HealthStyle {
+                shape: BarShape::Hidden,
+                angle: BarAngle::Upright,
+                number_scale_pct: 80,
+                font: NumberFont::Sans,
+                number_layout: NumberLayout::Row,
+                regen_place: RegenPlace::Number,
+                hide_regen: true,
+                color_by_health: true,
+                ..calm
+            },
         }
     }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum HealthError {
-    #[error("health number size {0}% outside 80..=200")]
+    #[error("health number size {0}% outside 60..=200")]
     NumberScale(u16),
+    #[error("health bar opacity {0}% outside 20..=100")]
+    BarOpacity(u8),
     #[error("health bar thickness {0}% outside 30..=300")]
     Thickness(u16),
     #[error("health bar length {0}% outside 40..=200")]
@@ -541,6 +619,7 @@ impl HealthStyle {
             self.font != v.font,
             self.hide_number,
             self.hide_max,
+            self.bar_opacity_pct != v.bar_opacity_pct,
             self.number_layout != v.number_layout,
             self.regen_place != v.regen_place,
             !self.bar_offset.is_zero(),
@@ -565,6 +644,9 @@ impl HealthStyle {
     pub fn compile(&self) -> Result<BTreeMap<&'static str, String>, HealthError> {
         if !NUMBER_SCALE_RANGE.contains(&self.number_scale_pct) {
             return Err(HealthError::NumberScale(self.number_scale_pct));
+        }
+        if !BAR_OPACITY_RANGE.contains(&self.bar_opacity_pct) {
+            return Err(HealthError::BarOpacity(self.bar_opacity_pct));
         }
         if !THICKNESS_RANGE.contains(&self.thickness_pct) {
             return Err(HealthError::Thickness(self.thickness_pct));
@@ -759,6 +841,16 @@ impl HealthStyle {
                 &[("visibility", "collapse".to_string())],
             );
             return;
+        }
+        if self.bar_opacity_pct != 100 {
+            add(
+                HEALTH_STYLE,
+                ".bars_container",
+                &[(
+                    "opacity",
+                    format!("{}", f64::from(self.bar_opacity_pct) / 100.0),
+                )],
+            );
         }
         let (w, h) = self.bar_size();
         let resized = self.thickness_pct != 100 || self.length_pct != 100;
@@ -1036,6 +1128,20 @@ mod tests {
         assert_eq!(s.changed_count(), 3);
         let text = toml::to_string(&HealthStyle::default()).unwrap();
         assert!(!text.contains("offset"), "{text}");
+    }
+
+    #[test]
+    fn small_styles_shrink_and_fade() {
+        let micro = HealthPreset::MicroBar.style().compile().unwrap();
+        assert!(micro[HEALTH_STYLE].contains(".bars_container{opacity:0.7;}"));
+        let small = HealthPreset::SmallRuler.style().compile().unwrap();
+        assert!(small[HEALTH_STYLE].contains(&format!("{BARS}{{width:50px;height:159px;}}")));
+        assert!(small[HEALTH_CONTAINER_STYLE].contains(".currentHealthLabel{font-size:26px;}"));
+        let faint = HealthStyle {
+            bar_opacity_pct: 5,
+            ..HealthStyle::default()
+        };
+        assert_eq!(faint.compile(), Err(HealthError::BarOpacity(5)));
     }
 
     #[test]

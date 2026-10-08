@@ -74,7 +74,7 @@ Check 1280x800 and 1600x1000. The screenshot PNGs are uncompressed; convert with
 
 Several sessions work on this repo at once (core, HUD, updater). Avoid stepping on each other:
 
-- **Use a git worktree or a separate clone for any change**, and merge into `main` when done. Worktrees are explicitly allowed in this repo. Do not leave uncommitted work in the main checkout at `~/Projects/Code/deadtune/deadtune-core`; another session's commit can sweep it up.
+- **Work lands on `main` directly** (Simon, 2026-10-08): run the four gates, `git pull --rebase origin main`, push to `main`. No feature branches left for someone else to merge. A lone agent may work in the main checkout; parallel agents use a worktree each for isolation and push to `main` themselves. Do not leave uncommitted work in the main checkout at `~/Projects/Code/deadtune/deadtune-core`; another session's commit can sweep it up.
 - Commit only the files you changed (`git add <paths>`, not `git add -A`), and check `git show --stat HEAD` after committing.
 - Pull before merging. Resolve conflicts keeping both sides' intent, then rerun all gates.
 - The git stash stack is shared across worktrees and sessions. Don't use bare `git stash`/`git stash pop`; prefer a WIP commit.

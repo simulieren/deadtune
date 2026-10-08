@@ -40,7 +40,7 @@ if [ "$mode" = minor ] || [ "$mode" = first ]; then
     next="0.$((BASH_REMATCH[1] + 1)).0"
     sed -i '' "s/^version = \"$current\"/version = \"$next\"/" Cargo.toml
     cargo update -q -w
-    cargo test -q -p dt-core --lib version_is_minor_only
+    [[ "$(version)" =~ ^0\.[0-9]+\.0$ ]] || { echo "bump produced $(version), not 0.Y.0" >&2; exit 1; }
     git commit -qam "Release v$next
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -71,8 +71,14 @@ exe=deadtune-windows-x64.exe
 
 out="$root/target/release-local"
 src="$out/src"
-rm -rf "$src" && mkdir -p "$src"
-git archive "$sha" | tar -x -C "$src"
+# A persistent checkout keeps unchanged files' mtimes, so incremental builds only redo what changed.
+if [ -e "$src/.git" ]; then
+  git -C "$src" checkout -q --detach --force "$sha"
+else
+  rm -rf "$src"
+  git worktree add -q --detach "$src" "$sha"
+fi
+git -C "$src" clean -qfdx -e /target
 export CARGO_TARGET_DIR="$out/cargo"
 export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 export DEADTUNE_COMMIT="$sha"

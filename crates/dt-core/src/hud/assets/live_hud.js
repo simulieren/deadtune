@@ -1,5 +1,8 @@
 (function () {
     "use strict";
+    function say(text) { try { $.Msg("DEADTUNE_LIVE " + text); } catch (e) {} }
+    function warn(text) { try { $.Warning("DEADTUNE_LIVE " + text); } catch (e) {} }
+    say("loaded " + (typeof DT_LIVE === "undefined" ? "noconfig" : DT_LIVE.base));
     var CONFIG = DT_LIVE;
     var TOKEN = /#[\w-]+|\.[\w-]+|:not\(\.[\w-]+\)|[A-Za-z_][\w-]*/g;
     var ctx = $.GetContextPanel();
@@ -303,15 +306,26 @@
         return out.join(" ");
     }
 
+    var pollFailed = false;
     function poll() {
         clock += CONFIG.poll;
-        receive();
-        pull();
-        if (rules.length || styled.length) { restyle(); }
+        try {
+            receive();
+            pull();
+            if (rules.length || styled.length) { restyle(); }
+        } catch (e) {
+            if (!pollFailed) { pollFailed = true; warn("error poll " + e); }
+        }
         $.Schedule(CONFIG.poll, poll);
     }
 
-    function hello() { echo("hello " + CONFIG.base + " " + probes()); }
+    function hello() {
+        var extra;
+        try { extra = probes(); } catch (e) { extra = "probe_error=" + encodeURIComponent(String(e)).slice(0, 80); }
+        var line = "hello " + CONFIG.base + " " + extra;
+        say(line);
+        echo(line);
+    }
 
     // The sliders read their ConVars as they come up, so the hello waits a moment.
     $.Schedule(1.0, function () { greeted = true; hello(); });

@@ -314,6 +314,36 @@ fn cleanup_removes_leftovers_and_tolerates_none() {
 }
 
 #[test]
+fn install_steps_around_an_old_copy_it_cannot_delete() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = exe_in(&dir);
+    let locked = dir.path().join("deadtune.exe.old");
+    fs::create_dir(&locked).unwrap();
+    fs::write(locked.join("in use"), b"").unwrap();
+    let old = install(&exe, b"new build").unwrap();
+    assert_eq!(fs::read(&exe).unwrap(), b"new build");
+    assert_eq!(fs::read(&old).unwrap(), b"old build");
+    assert_ne!(old, locked);
+}
+
+#[test]
+fn cleanup_removes_every_numbered_old_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = exe_in(&dir);
+    for name in ["deadtune.exe.old", "deadtune.exe.old1", "deadtune.exe.old2"] {
+        fs::write(dir.path().join(name), b"older").unwrap();
+    }
+    fs::write(dir.path().join("deadtune.exe.older-notes"), b"keep").unwrap();
+    cleanup(&exe);
+    let mut names: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["deadtune.exe", "deadtune.exe.older-notes"]);
+}
+
+#[test]
 fn manifest_json_uses_the_documented_field_names() {
     let m = manifest(Channel::Testing, Version(0, 3, 0), "abc1234");
     let json: serde_json::Value = serde_json::to_value(&m).unwrap();

@@ -102,47 +102,52 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
     }
 }
 
-/// One line on what the live HUD preview is doing, at the top of every HUD page.
+/// One line on what the live HUD preview is doing, at the top of every HUD page, with
+/// "Check live preview" beside it and the check's card below.
 pub fn live_indicator(ui: &mut Ui, state: &mut AppState) {
-    let Some(status) = state.live_hud_status() else {
-        return;
+    let status = state.live_hud_status();
+    let live = match state.live_hud.state() {
+        LiveHud::Live { undone, .. } => Some(*undone),
+        _ => None,
     };
-    let color = match status.tone {
-        Tone::Weak => WEAK,
-        Tone::Warn => WARN,
-        Tone::Good => GOOD,
-        Tone::Bad => BAD,
-    };
-    let text = RichText::new(&status.text).small().color(color);
-    let hover = |r: egui::Response| match &status.hover {
-        Some(h) => r.on_hover_text(h),
-        None => r,
-    };
-    let LiveHud::Live { undone, .. } = state.live_hud.state() else {
-        hover(ui.label(text));
-        return;
-    };
-    let undone = *undone;
     let mut undo = false;
-    ui.horizontal(|ui| {
-        hover(crate::live_status::dot(ui, GOOD));
-        hover(ui.label(text));
-        let tip = if undone {
-            "The game shows what Apply installed until your next edit"
-        } else {
-            "Show what Apply installed, without your edits since"
-        };
-        undo = ui
-            .add_enabled(
-                !undone,
-                egui::Button::new(RichText::new("Undo live changes").small()).small(),
-            )
-            .on_hover_text(tip)
-            .on_disabled_hover_text(tip)
-            .clicked();
+    ui.horizontal_wrapped(|ui| {
+        if let Some(status) = &status {
+            let color = match status.tone {
+                Tone::Weak => WEAK,
+                Tone::Warn => WARN,
+                Tone::Good => GOOD,
+                Tone::Bad => BAD,
+            };
+            let hover = |r: egui::Response| match &status.hover {
+                Some(h) => r.on_hover_text(h),
+                None => r,
+            };
+            if live.is_some() {
+                hover(crate::live_status::dot(ui, GOOD));
+            }
+            hover(ui.label(RichText::new(&status.text).small().color(color)));
+        }
+        crate::live_check_view::button(ui, state);
+        if let Some(undone) = live {
+            let tip = if undone {
+                "The game shows what Apply installed until your next edit"
+            } else {
+                "Show what Apply installed, without your edits since"
+            };
+            undo = ui
+                .add_enabled(
+                    !undone,
+                    egui::Button::new(RichText::new("Undo live changes").small()).small(),
+                )
+                .on_hover_text(tip)
+                .on_disabled_hover_text(tip)
+                .clicked();
+        }
     });
+    crate::live_check_view::card(ui, state);
     let missing = state.live_hud.not_live();
-    if !missing.is_empty() {
+    if status.is_some() && !missing.is_empty() {
         let labels: Vec<&str> = missing.iter().map(|(label, _)| *label).collect();
         let why: Vec<String> = missing
             .iter()

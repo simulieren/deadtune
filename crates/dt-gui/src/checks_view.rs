@@ -231,7 +231,7 @@ fn color(status: CheckStatus) -> Color32 {
 }
 
 /// A check mark, an exclamation or a cross in a filled circle.
-fn status_glyph(ui: &mut Ui, status: CheckStatus, size: f32) -> egui::Response {
+pub(crate) fn status_glyph(ui: &mut Ui, status: CheckStatus, size: f32) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
     let c = rect.center();
     let r = size / 2.0;
@@ -278,6 +278,7 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
             .request_repaint_after(std::time::Duration::from_millis(100));
     }
     summary(ui, state);
+    live_preview_card(ui, state);
     let Some(checks) = state.checks.clone() else {
         return;
     };
@@ -336,6 +337,19 @@ pub fn page(ui: &mut Ui, state: &mut AppState) {
             ui.add_space(12.0);
         }
     }
+}
+
+/// The live HUD preview's own check, which talks to the running game.
+fn live_preview_card(ui: &mut Ui, state: &mut AppState) {
+    ui.add_space(14.0);
+    section_caption(ui, "Live HUD preview");
+    ui.horizontal_wrapped(|ui| {
+        if let Some(status) = state.live_hud_status() {
+            ui.label(RichText::new(status.text).color(WEAK));
+        }
+        crate::live_check_view::button(ui, state);
+    });
+    crate::live_check_view::card(ui, state);
 }
 
 /// Splits cards between two columns so their heights come out close; each column keeps

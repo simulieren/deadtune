@@ -12,7 +12,7 @@ use crate::profiles;
 
 impl AppState {
     /// What the paks are built from now: nothing of ours in ranked-safe and safe mode.
-    pub(super) fn pak_target(&self) -> PakTarget {
+    pub(crate) fn pak_target(&self) -> PakTarget {
         if self.without_addons() {
             PakTarget::default()
         } else {
@@ -79,6 +79,14 @@ impl AppState {
             self.status = Some(Status::Error(format!("remembering the HUD changes: {e}")));
         }
         self.pending_paks = next;
+        self.live_hud.paks_waiting(self.hud_waits());
+    }
+
+    /// A HUD change waits for the game to close.
+    pub(crate) fn hud_waits(&self) -> bool {
+        self.pending_paks
+            .as_ref()
+            .is_some_and(|p| matches!(p.kinds, PakKinds::Hud | PakKinds::Both))
     }
 
     /// Writes the waiting paks. Safe to run any number of times: the plans compare against

@@ -28,6 +28,8 @@ mod images_view;
 mod ingame_view;
 mod launch_view;
 mod live;
+mod live_check;
+mod live_check_view;
 mod live_hud;
 mod live_status;
 mod mark;

@@ -366,6 +366,11 @@ impl App {
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_LIVE_HUD") {
                     fake_live_hud(&mut state, &kind);
                 }
+                // `DEADTUNE_FAKE_LIVE_CHECK=showing|shown|asking|<sample>` opens "Check live
+                // preview" at that point; samples are `dt_core::hud::live_check::sample`'s.
+                if let Ok(kind) = std::env::var("DEADTUNE_FAKE_LIVE_CHECK") {
+                    fake_live_check(&mut state, &kind);
+                }
                 // `DEADTUNE_FAKE_STATUS=error:<raw>`, `warn:<raw>` or `info:<text>`.
                 if let Some((kind, text)) =
                     std::env::var("DEADTUNE_FAKE_STATUS").ok().and_then(|v| {
@@ -534,6 +539,10 @@ impl App {
         }
         if state.live_hud.busy() {
             ctx.request_repaint_after(Duration::from_millis(50));
+        }
+        state.tick_live_check(Instant::now());
+        if state.live_check.active() {
+            ctx.request_repaint_after(Duration::from_millis(200));
         }
         state.poll_conlog(Instant::now());
         if state.ack.is_waiting() {
@@ -802,6 +811,26 @@ fn images_levers(state: &mut AppState) {
 fn fake_running() -> bool {
     std::env::var_os("DEADTUNE_FAKE_RUNNING").is_some_and(|v| v == "1")
         || std::env::var("DEADTUNE_FAKE_TRIAL").is_ok_and(|v| v.starts_with("testing"))
+}
+
+fn fake_live_check(state: &mut AppState, kind: &str) {
+    use crate::live_check::LiveCheck;
+    let now = Instant::now();
+    match kind {
+        "showing" | "shown" => {
+            let applied = (kind == "shown").then(|| now - Duration::from_secs(1));
+            state.live_hud.inject_flash(applied);
+            state.live_check = LiveCheck::Showing {
+                since: now - Duration::from_secs(3),
+            };
+        }
+        "asking" => state.live_check = LiveCheck::Asking { seq: 1 },
+        sample => {
+            if let Some(facts) = dt_core::hud::live_check::sample(sample) {
+                state.show_live_check(facts);
+            }
+        }
+    }
 }
 
 fn fake_live_hud(state: &mut AppState, kind: &str) {

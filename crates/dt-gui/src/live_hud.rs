@@ -181,6 +181,27 @@ pub struct LivePreview {
     next_seq: u32,
     /// Set by the screenshot lever: the state stays put, with this key wait.
     fake: Option<bool>,
+    /// A HUD change waits for the game to close, so the game runs an older HUD.
+    paks_waiting: bool,
+    /// The check's bigger minimap, sent in place of the profile's layout while it lasts.
+    flash: Option<Flash>,
+}
+
+/// The visible test of "Check live preview".
+#[derive(Clone, Debug)]
+struct Flash {
+    layout: HudLayout,
+    /// The message that carries it, once it went out.
+    seq: Option<u32>,
+    /// When the script said it applied that message.
+    applied: Option<Instant>,
+}
+
+/// How far the check's bigger minimap got.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlashState {
+    pub seq: Option<u32>,
+    pub applied: Option<Instant>,
 }
 
 impl LivePreview {
@@ -200,6 +221,8 @@ impl LivePreview {
             blank: false,
             next_seq: seed,
             fake: None,
+            paks_waiting: false,
+            flash: None,
         }
     }
 
@@ -236,8 +259,21 @@ impl LivePreview {
     /// log candidates.
     pub fn status(&self, key: &str, logs: &[TailReport], now: Instant) -> Option<StatusLine> {
         let press = format!("Press {key} in game");
+        let close = "Close Deadlock, then press Launch.";
         Some(match &self.state {
             LiveHud::Off => return None,
+            LiveHud::NotInstalled | LiveHud::Stale { .. } | LiveHud::Waiting { .. }
+                if self.paks_waiting && self.game.running().is_some() =>
+            {
+                StatusLine::new(
+                    format!("Your last Apply waits until Deadlock closes. {close}"),
+                    Tone::Warn,
+                )
+                .hover(
+                    "Windows locks the HUD file while the game runs, so the new HUD and its \
+                     live script go in when Deadlock closes.",
+                )
+            }
             LiveHud::NotInstalled => StatusLine::new(
                 "Apply to add the live script to your HUD; Deadlock loads it when it starts",
                 Tone::Weak,
@@ -254,8 +290,11 @@ impl LivePreview {
                     None => "Deadlock started before DeadTune wrote the HUD with the live script."
                         .to_string(),
                 };
-                StatusLine::new("Restart Deadlock once so the live script loads", Tone::Warn)
-                    .hover(why)
+                StatusLine::new(
+                    format!("Deadlock is running the HUD from before your last Apply. {close}"),
+                    Tone::Warn,
+                )
+                .hover(why)
             }
             LiveHud::Waiting { .. } if self.key_pending() => {
                 StatusLine::new(format!("{press} to connect the live preview"), Tone::Weak).hover(
@@ -301,6 +340,43 @@ impl LivePreview {
                 .session
                 .as_ref()
                 .is_some_and(|s| s.mailbox.key_pending())
+    }
+
+    /// A HUD change waits for the game to close.
+    pub fn paks_waiting(&mut self, waiting: bool) {
+        self.paks_waiting = waiting;
+    }
+
+    /// Sends `layout` in place of the profile's until `end_flash`; only while a session
+    /// runs. Returns whether it went.
+    pub fn flash(&mut self, layout: HudLayout, now: Instant) -> bool {
+        let Some(session) = self.session.as_mut() else {
+            return false;
+        };
+        session.due = Some(now);
+        session.undo = false;
+        self.flash = Some(Flash {
+            layout,
+            seq: None,
+            applied: None,
+        });
+        true
+    }
+
+    /// Back to the profile's layout.
+    pub fn end_flash(&mut self, now: Instant) {
+        if self.flash.take().is_some()
+            && let Some(session) = self.session.as_mut()
+        {
+            session.due = Some(now);
+        }
+    }
+
+    pub fn flash_state(&self) -> Option<FlashState> {
+        self.flash.as_ref().map(|f| FlashState {
+            seq: f.seq,
+            applied: f.applied,
+        })
     }
 
     /// The layout wants the preview: the switch is on and there is a pak to ride in.
@@ -397,6 +473,9 @@ impl LivePreview {
                     && session.mailbox.base() == base
                 {
                     session.mailbox.ack(done);
+                    if let Some(flash) = self.flash.as_mut().filter(|f| f.seq == Some(done)) {
+                        flash.applied = Some(now);
+                    }
                     self.hello = Some((base, now));
                     self.settle();
                     if let LiveHud::Live { seq, acked, .. } = &mut self.state {
@@ -464,17 +543,30 @@ impl LivePreview {
         let baked = self.baked.as_ref()?;
         let session = self.session.as_mut()?;
         if !session.undo && session.due.is_none_or(|due| now < due) {
-            return session.mailbox.poll(now, pull).map(Delivery::Chunk);
+            let batch = session.mailbox.poll(now, pull);
+            if let (Some(flash), Some(b)) = (self.flash.as_mut(), &batch)
+                && b.i == 1
+            {
+                flash.seq = Some(b.seq);
+            }
+            return batch.map(Delivery::Chunk);
         }
         let undo = std::mem::take(&mut session.undo);
         session.due = None;
+        let target = self.flash.as_ref().map_or(&self.desired, |f| &f.layout);
         let rules = if undo {
             live::rules(&baked.layout)
         } else {
-            live::overrides(&self.desired, &baked.layout).map(|o| o.rules)
+            live::overrides(target, &baked.layout).map(|o| o.rules)
         };
         match rules {
-            Ok(rules) => session.mailbox.send(rules, now, pull).map(Delivery::Chunk),
+            Ok(rules) => {
+                let batch = session.mailbox.send(rules, now, pull);
+                if let (Some(flash), Some(b)) = (self.flash.as_mut(), &batch) {
+                    flash.seq = Some(b.seq);
+                }
+                batch.map(Delivery::Chunk)
+            }
             Err(e) => {
                 self.fail(format!("The live preview can't read this layout: {e}"));
                 self.tick(now, pull)
@@ -486,6 +578,15 @@ impl LivePreview {
     /// may have set them.
     pub fn exit_cmds(&self) -> Option<Vec<ConsoleCmd>> {
         (self.restore || self.session.is_some()).then(live::reset_cmds)
+    }
+
+    /// The check's bigger minimap as sent, for the screenshot lever.
+    pub fn inject_flash(&mut self, applied: Option<Instant>) {
+        self.flash = Some(Flash {
+            layout: self.desired.clone(),
+            seq: Some(1),
+            applied,
+        });
     }
 
     /// Puts the preview in `state` without a game, for the screenshot lever.
@@ -544,6 +645,7 @@ impl LivePreview {
             }
             (false, Some(_), _) => {
                 self.session = None;
+                self.flash = None;
                 self.restore = true;
             }
             _ => {}
@@ -611,6 +713,29 @@ mod tests {
             .map(|c| c.value.parse().unwrap())
             .collect();
         live::decode(&[words], &live::dictionary(baked).unwrap()).unwrap()
+    }
+
+    /// Every chunk of the message `first` opens, as the script would collect them.
+    fn whole(p: &mut LivePreview, first: Batch, baked: &HudLayout, now: Instant) -> live::Message {
+        let base = live::base_id(baked).unwrap();
+        let mut chunks = vec![first.clone()];
+        while chunks.len() < first.n {
+            p.line(
+                &format!("DEADTUNE_LIVE {} got {} {base}", first.seq, chunks.len()),
+                now,
+            );
+            chunks.push(chunk(p.tick(now, false)));
+        }
+        let words: Vec<Vec<u32>> = chunks
+            .iter()
+            .map(|b| {
+                b.cmds[1..]
+                    .iter()
+                    .map(|c| c.value.parse().unwrap())
+                    .collect()
+            })
+            .collect();
+        live::decode(&words, &live::dictionary(baked).unwrap()).unwrap()
     }
 
     /// A preview on a running game whose script said hello for `baked`, with its first
@@ -1019,9 +1144,15 @@ mod tests {
         p.game(true, Some(written - Duration::from_secs(5)), t0);
         assert_eq!(
             text(&p, &[], t0).unwrap(),
-            "Restart Deadlock once so the live script loads",
+            "Deadlock is running the HUD from before your last Apply. Close Deadlock, then press Launch.",
             "only a game older than the pak needs the restart"
         );
+        p.paks_waiting(true);
+        assert_eq!(
+            text(&p, &[], t0).unwrap(),
+            "Your last Apply waits until Deadlock closes. Close Deadlock, then press Launch."
+        );
+        p.paks_waiting(false);
         p.game(false, None, t0);
         p.game(true, Some(written + Duration::from_secs(5)), t0);
         assert_eq!(
@@ -1056,5 +1187,52 @@ mod tests {
         assert!(text(&p, &[], later).unwrap().starts_with("Live in game"));
         p.line(&ok(1, &baked), later);
         assert_eq!(text(&p, &[], later).unwrap(), "Live in game");
+    }
+
+    #[test]
+    fn a_flash_sends_its_layout_until_it_ends_and_knows_when_it_showed() {
+        let t0 = Instant::now();
+        let baked = moved(10);
+        let mut p = live_on(&baked, t0);
+        let big = dt_core::hud::live_check::test_layout(&baked);
+        assert!(p.flash(big.clone(), t0));
+        let sent = chunk(p.tick(t0, false));
+        let msg = whole(&mut p, sent.clone(), &baked, t0);
+        assert!(
+            msg.rules
+                .iter()
+                .any(|r| r.value.contains("translateX(-150px)")),
+            "{:?}",
+            msg.rules
+        );
+        assert_eq!(
+            p.flash_state(),
+            Some(FlashState {
+                seq: Some(sent.seq),
+                applied: None
+            })
+        );
+        let t1 = t0 + Duration::from_secs(1);
+        p.line(&ok(sent.seq, &baked), t1);
+        assert_eq!(p.flash_state().unwrap().applied, Some(t1));
+        p.end_flash(t1);
+        assert_eq!(p.flash_state(), None);
+        let back = chunk(p.tick(t1, false));
+        let msg = whole(&mut p, back, &baked, t1);
+        assert!(
+            msg.rules
+                .iter()
+                .any(|r| r.value == "translateX(10px) translateY(0px)"),
+            "the profile's layout again: {:?}",
+            msg.rules
+        );
+    }
+
+    #[test]
+    fn no_flash_without_a_session() {
+        let mut p = LivePreview::new(1);
+        p.toggle(true);
+        assert!(!p.flash(HudLayout::default(), Instant::now()));
+        assert_eq!(p.flash_state(), None);
     }
 }

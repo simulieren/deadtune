@@ -722,6 +722,10 @@ pub struct AppState {
     pending_paks_check: bool,
     /// The live HUD preview (`crate::live_hud`).
     pub live_hud: LivePreview,
+    /// "Check live preview" (`crate::live_check`).
+    pub live_check: crate::live_check::LiveCheck,
+    /// When the running game's process started, from the last game poll.
+    pub game_started: Option<SystemTime>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -867,6 +871,8 @@ impl AppState {
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .map_or(0, |d| d.as_secs() as u32),
             ),
+            live_check: Default::default(),
+            game_started: None,
         };
         if !state.settings.onboarded {
             state.welcome = Some(Welcome::PickStart { choice: None });
@@ -1045,6 +1051,7 @@ impl AppState {
         // Vanilla has no pak for the script to ride in, ranked-safe takes the pak out.
         self.live_hud
             .toggle(paks.hud.features().contains(&HudFeature::LivePreview));
+        self.live_hud.paks_waiting(self.hud_waits());
         let ctx = ApplyContext {
             waiting_paks: self.waiting_paks(&paks),
             ..self.ctx
@@ -1471,6 +1478,11 @@ impl AppState {
     /// Polled game state; a game started after the last restart-class apply has loaded it.
     pub fn observe_game(&mut self, running: bool, started_at: Option<SystemTime>) {
         self.live_hud.game(running, started_at, Instant::now());
+        self.game_started = if running {
+            started_at.or(self.game_started)
+        } else {
+            None
+        };
         if self
             .pending_restart
             .as_ref()
@@ -2462,6 +2474,10 @@ impl AppState {
             &self.conlog.report(),
             Instant::now(),
         )
+    }
+
+    pub(crate) fn conlog_paths(&self) -> Vec<PathBuf> {
+        self.conlog.paths().map(Path::to_path_buf).collect()
     }
 
     pub fn undo_live_hud(&mut self) {

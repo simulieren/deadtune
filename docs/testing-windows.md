@@ -203,23 +203,11 @@ How it works since v0.18: "Live HUD preview" (Layout page toolbar) is on for eve
 
 v0.17.0 result (Simon, 2026-10-06): the script loaded and printed `DEADTUNE_LIVE hello 285ebd44` without ` tv_title=`, so `GameInterfaceAPI.GetSettingString` does not exist; `exec '{}cfg/deadtune_hud.cfg'` failed once a second because DeadTune never wrote the file, and the HUD page stayed at "Looking for the live script in game...".
 
-Launch through DeadTune so `-condebug` is on; open the console with F7.
+Press **Check live preview** on the HUD page; if it isn't green, press **Copy report** and paste it.
 
-- [ ] **LH-P1 Sliders read their ConVars**: Apply a HUD edit with the game closed, launch. Within 15 s of the main menu `console.log` has one line `DEADTUNE_LIVE hello <base> ctl=1024 raw=<text>/<slider> col=1024 d=1000,1001,...,1009 n=10 api=missing kv=... html=...`. The boot cfg set those probe values, so `ctl=1024` and `d=1000,...` mean the hidden sliders show their ConVars. Copy the whole line. If `ctl=null` or `n=0`, the sliders did not load in the HUD; if the numbers differ from the probe values, note which, a slot may be clamped.
-- [ ] **LH-P2 Sliders follow the console**: run `tv_chattimelimit 2048` in the console. Within a second a second hello line appears with `ctl=2048`. That is the hello on demand (sequence 2, chunk 0). If no line comes, a slider does not follow later console changes: note it, the preview then needs netcon or plan option (e).
-- [ ] **LH-P3 Quiet when idle**: leave the game in the main menu for a minute with DeadTune open. `console.log` gets no `exec` and no `DEADTUNE_LIVE` lines in that minute.
-- [ ] **LH-P4 Survives game states**: die in a sandbox match or enter and leave the hideout, then run `tv_chattimelimit 3072`: a hello comes back, so the script is still loaded.
-
-Then the feature itself:
-
-- [ ] **LH-1 Status lines**: with a HUD edit not yet applied the HUD page reads "Apply to add the live script to your HUD; Deadlock loads it when it starts". Apply with the game closed: "Live preview starts when Deadlock runs". Launch through DeadTune: within 15 s of the main menu either "Press F8 in game to connect the live preview" or "Live in game". Start the game from Steam before an Apply lands (or keep a game running across an Apply): "Restart Deadlock once so the live script loads", and only then.
-- [ ] **LH-2 Connect and drag**: press F8 in game. `console.log` shows `DEADTUNE_LIVE <seq> got 1 <base>`, then for a long message a few `execing deadtune_hud` lines and `got <n>` lines, then `DEADTUNE_LIVE <seq> ok <base>`; the page says "Live in game". Drag the minimap on the Layout page: the page asks for F8, press it, the minimap moves within about a second. Note the lag and how many `execing` lines one edit costs.
-- [ ] **LH-3 Tint live**: Minimap page, pick an enemy hero colour, press F8: enemy markers recolour. Top bar page, set Missing portraits to 30%, press F8: out-of-vision portraits dim.
-- [ ] **LH-4 Needs a restart**: turn on a top bar extra (spawn timers): the page lists "Needs Apply and a restart: top bar extras" and nothing changes in game.
-- [ ] **LH-5 Undo**: "Undo live changes", press F8: the HUD is back to what the last Apply baked.
-- [ ] **LH-6 No double application**: with live edits showing (minimap at 140%), close the game, Apply, launch, press F8. The minimap is at 140% once, and the hover on "Live in game" shows the new base id.
-- [ ] **LH-7 Clean exit**: close the game: `cfg\deadtune_hud.cfg` holds the slots' defaults (`tv_chattimelimit "0.2"` first); none of the slots is saved, so the game starts on its defaults anyway. Turn the toggle off, Apply: the pak has no `live_hud` entry and no hello line comes.
-- [ ] **LH-8 Netcon** (only if netcon works on your setup): with the Netcon bridge, edits go live without F8 and `console.log` shows no `execing deadtune_hud` lines.
+- [ ] **LH-1 One button**: Apply a HUD edit, close Deadlock, press Launch in DeadTune, wait for the main menu. On the HUD page press **Check live preview**. With the F8 bridge the card says "Press F8 in game now": switch to the game and press F8. The minimap grows by half and moves toward the centre for about 5 s, then DeadTune asks "Did the minimap get bigger for a few seconds?". Answer honestly. Green "Live preview works" is a pass. Anything else: press **Copy report** and paste the whole block (it is also saved under `<data>\reports\live-hud-<time>.txt`, **Open folder** shows it). If the card offers **Restart Deadlock**, press it and check again once the game is back.
+- [ ] **LH-2 Moving the map is the test**: with the game running and the HUD page on Layout, drag or scale the minimap. It moves in game within about a second (press F8 first with the F8 bridge).
+- [ ] **LH-3 Status line**: keep Deadlock running and Apply a HUD change. The HUD page reads "Your last Apply waits until Deadlock closes. Close Deadlock, then press Launch." A game started before an Apply landed reads "Deadlock is running the HUD from before your last Apply. Close Deadlock, then press Launch."
 
 ### 8. Benchmark
 - [ ] **P0-7**: capture 3 identical 60 s runs with PresentMon, import each in Advanced > Bench. Variance under 3%? Note which CSV columns your PresentMon version writes (`MsBetweenPresents` or `FrameTime`).

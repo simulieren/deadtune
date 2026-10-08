@@ -126,10 +126,12 @@ State machine `LivePreview` (`crates/dt-gui/src/live_hud.rs`), one value in `App
 | `Off` | nothing | switch off, Vanilla (no pak), Ranked-safe (pak taken out) |
 | `NotInstalled` | "Apply to add the live script to your HUD; Deadlock loads it when it starts" | the installed pak lacks `HudFeature::LivePreview` |
 | `GameClosed` | "Live preview starts when Deadlock runs" | script installed, game not running |
-| `Stale` | "Restart Deadlock once so the live script loads" (hover says why) | the game started before the pak was written, or a hello named another base |
+| `Stale` | "Deadlock is running the HUD from before your last Apply. Close Deadlock, then press Launch." (hover says why) | the game started before the pak was written, or a hello named another base |
 | `Waiting` | "Press F8 in game to connect the live preview" while chunk 1 waits for the key; else "Looking for the live script in game..." for 20 s, then which console log DeadTune reads and when its last line came, or that no log was found | game running, no hello yet |
 | `Live` | "Live in game", plus "Press F8 in game to show your latest edits" while a chunk waits; "Undo live changes" | a hello, `ok`, or `got` with the installed base |
 | `Error` | the message | a cfg write failed |
+
+While a HUD change waits for the game to close (`PendingPaks`), `NotInstalled`, `Stale` and `Waiting` read "Your last Apply waits until Deadlock closes. Close Deadlock, then press Launch." instead.
 
 The game poll has three states (`Unknown`, `Closed`, `Running`): a hello read before the first poll is kept, one read while the game is known closed is an old line. The switch is `HudLayout::live`, on unless the profile says `live = false` (profiles from before parse as on); Apply bakes the script only when the layout has a pak for other reasons. If the game's HUD root layout no longer takes the script, `install::plan` builds the rest without it.
 
@@ -144,14 +146,24 @@ Screenshot lever: `DEADTUNE_FAKE_LIVE_HUD=off|not_installed|closed|waiting|waiti
 
 ## 7. Windows checks
 
-`docs/testing-windows.md` section 7e: LH-P1 to LH-P4 probes, then LH-1 to LH-8.
+`docs/testing-windows.md` section 7e: press Check live preview (section 9); when it isn't green, its report answers the unknowns below.
 
 ## 8. Unknowns
 
 | Unknown | Probe | If it fails |
 |---|---|---|
-| A hidden slider in the HUD shows its ConVar | LH-P1: hello reports `ctl=1024 d=1000,...` | try the collapsed probe (`col=`), a visible 1 px slider, or option (e) |
-| A slider follows later console changes | LH-P2: `tv_chattimelimit 2048` brings a hello with `ctl=2048` | netcon only, or option (e) |
-| An integer `tv_` ConVar clamps a word | LH-P1: a `d=` value differs from 1000 + k | swap that slot for another from section 3.2 |
-| Inline resets (`wash-color`, `visibility`) clear | LH-5 undo | shrink `RESETS` |
-| The script survives game states | LH-P4 | move the include to a layout that stays loaded |
+| A hidden slider in the HUD shows its ConVar | The check's report: hello reports `ctl=1024 d=1000,...` | try the collapsed probe (`col=`), a visible 1 px slider, or option (e) |
+| A slider follows later console changes | The check's report: "Sliders follow DeadTune's changes" (the test message's `got`/`ok`) | netcon only, or option (e) |
+| An integer `tv_` ConVar clamps a word | The report's hello: a `d=` value differs from 1000 + k | swap that slot for another from section 3.2 |
+| Inline resets (`wash-color`, `visibility`) clear | Undo live changes, by eye | shrink `RESETS` |
+| The script survives game states | Check live preview after a match or the hideout | move the include to a layout that stays loaded |
+
+## 9. Check live preview
+
+Simon is the only tester and the preview failed in ways only `console.log` could tell, so the check does the reading. One button on every HUD page (next to the live line) and in System check.
+
+1. **Visible test.** When a session runs (`Waiting` or `Live`), DeadTune sends `live_check::test_layout` in place of the profile's layout (`LivePreview::flash`): the minimap at 150%, its bottom-right origin pulled 160 px left and 80 px up. With the key bridge the card says "Press F8 in game now". When the script's `ok` for that message arrives the card counts 5 s ("Look at your minimap now"), the layout goes back and it asks "Did the minimap get bigger for a few seconds?". Yes is green. No, or no `ok` within 20 s, goes to the diagnosis. With no session the diagnosis runs at once.
+2. **Diagnosis.** `hud::live_check::diagnose` is pure over `Facts`: game running and its start time, the newest console log candidate read whole (the session starts at the last `DEADTUNE_BOOT`), DeadTune's pak read back (`read_pak`: the script's baked base and how many of the eleven sliders `hud.vxml_c` holds), whether a HUD change is pending, the bridge, and the test (its seq and the player's answer). It returns rows (good, warn, bad, skipped) and one `Step`, the highest-priority problem: turn the preview on, start the game, Apply, close and Launch (stale pak, pending pak, no console log this session, wrong base), send the report (script error, no hello, sliders missing, test applied but not seen), try again with the key. The test message doubles as the slider probe: it sets `tv_chattimelimit`, and a `got`/`ok` for its seq means the sliders follow DeadTune's changes.
+3. **Report.** `live_check::report` is the checklist, the next step, every DeadTune line of the session (last 200), the error lines and the last 50 lines. Copy report puts it on the clipboard; it is always saved to `<data>/reports/live-hud-<time>.txt` (Open folder). On Windows a close-and-Launch step offers Restart Deadlock (`views::restart_game`, the Apply + relaunch flow).
+
+Error lines are lines naming our script, `DtLive` panels or the HUD layout together with an error word, never our own `DEADTUNE_` lines. Samples for every situation (`live_check::sample`) back the tests and the screenshot lever `DEADTUNE_FAKE_LIVE_CHECK`; `scripts/live-check-shots.sh` renders them all.

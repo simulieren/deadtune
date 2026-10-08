@@ -27,6 +27,7 @@ pub mod install;
 pub mod kv3;
 pub mod layout;
 pub mod live;
+pub mod live_check;
 pub mod minimap_colors;
 pub mod minimap_style;
 pub mod player_stats;

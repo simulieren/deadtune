@@ -53,6 +53,8 @@ pub struct WebFacts {
     /// The HUD the page's script was built for.
     pub base: Option<String>,
     pub recent_acks: Vec<u32>,
+    /// DeadTune wants the page awake: someone edits the HUD, or this check's test runs.
+    pub awake: bool,
 }
 
 /// The visible test: DeadTune sent a bigger minimap through the live channel.
@@ -305,7 +307,7 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
         GameFacts::Running { started } => Some(*started),
         GameFacts::Closed => None,
     };
-    let polls = f.web.counters.polls;
+    let polls = f.web.counters.waits;
     if !f.preview_on {
         steps.push(Step::TurnOn);
     }
@@ -593,6 +595,28 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
         ),
     });
 
+    if polls > 0 {
+        let c = &f.web.counters;
+        let reloads = page.all.iter().filter(|t| t.starts_with("reload ")).count();
+        let mode = if f.web.awake {
+            "awake"
+        } else {
+            "asleep, as it should be while nobody edits the HUD"
+        };
+        rows.push(row(
+            Tone::Good,
+            format!(
+                "The live connection is {mode} ({} wake{}, {} sleep{}, {polls} waits, {} ran out quietly, {reloads} page reload{})",
+                c.wakes,
+                plural(c.wakes as usize),
+                c.sleeps,
+                plural(c.sleeps as usize),
+                c.idle,
+                plural(reloads)
+            ),
+        ));
+    }
+
     rows.push(match (errors.len(), &session) {
         (_, None) => row(Tone::Skip, "Script errors in the console log: not checked"),
         (0, _) => row(
@@ -725,16 +749,19 @@ pub fn report(f: &Facts, d: &Diagnosis, version: &str) -> String {
     ));
     let c = &f.web.counters;
     out.push_str(&format!(
-        "Bridge server: {:?}; polls {}, page starts {}, messages delivered {}, acks {}, preflights {}, plain http loads {}, refused {}, other {}; last poll {}; page HUD {}; recent acks {:?}.\n",
+        "Bridge server: {:?}; waits {}, page starts {}, messages delivered {}, waits that ran out {}, wakes {}, sleeps {}, acks {}, preflights {}, refused {}, other {}; page {}; last wait {}; page HUD {}; recent acks {:?}.\n",
         f.web.listening,
-        c.polls,
+        c.waits,
         c.hellos,
         c.delivered,
+        c.idle,
+        c.wakes,
+        c.sleeps,
         c.acks,
         c.preflights,
-        c.controls,
         c.refused,
         c.other,
+        if f.web.awake { "awake" } else { "asleep" },
         f.web.last_poll_ago.map_or("never".into(), secs_ago),
         f.web.base.as_deref().unwrap_or("unknown"),
         f.web.recent_acks
@@ -895,7 +922,6 @@ pub fn sample(kind: &str) -> Option<Facts> {
     let hello = say(&format!("hello {base} web=panel"));
     let ready = say("web ready storage=ok");
     let fetch_ok = say("web fetch ok");
-    let control = say("web control title=about:blank");
     let ok = say(&format!("300 ok {base}"));
     let mut lines: Vec<String> = vec![
         "[Console] DEADTUNE_BOOT 0.27.0".into(),
@@ -904,9 +930,12 @@ pub fn sample(kind: &str) -> Option<Facts> {
     let reached = WebFacts {
         listening: Some(Ok(PORT)),
         counters: Counters {
-            polls: 412,
+            waits: 40,
             hellos: 1,
             delivered: 3,
+            idle: 12,
+            wakes: 2,
+            sleeps: 1,
             acks: 3,
             preflights: 1,
             ..Counters::default()
@@ -914,6 +943,7 @@ pub fn sample(kind: &str) -> Option<Facts> {
         last_poll_ago: Some(Duration::from_millis(200)),
         base: Some(base.into()),
         recent_acks: vec![298, 299, 300],
+        awake: true,
     };
     let unreached = WebFacts {
         listening: Some(Ok(PORT)),
@@ -926,7 +956,7 @@ pub fn sample(kind: &str) -> Option<Facts> {
     let mut pending_hud = false;
     let mut script_base = Some(base.to_string());
     let sent = |saw| TestFacts::Sent { seq: 300, saw };
-    let healthy = [hello.clone(), ready.clone(), fetch_ok, control.clone()];
+    let healthy = [hello.clone(), ready.clone(), fetch_ok];
     match kind {
         "works" => {
             lines.extend(healthy);
@@ -953,7 +983,7 @@ pub fn sample(kind: &str) -> Option<Facts> {
             web = unreached;
         }
         "no_page" => {
-            lines.extend([hello, control, say("web retry 1")]);
+            lines.extend([hello, say("web retry 1")]);
             web = unreached;
         }
         "fetch_blocked" => {
@@ -961,7 +991,6 @@ pub fn sample(kind: &str) -> Option<Facts> {
                 hello,
                 ready,
                 say("web fetch blocked TypeError: Failed to fetch"),
-                control,
             ]);
             web = unreached;
         }
@@ -1070,7 +1099,7 @@ mod tests {
         WebFacts {
             listening: Some(Ok(PORT)),
             counters: Counters {
-                polls,
+                waits: polls,
                 hellos: 1,
                 acks: acks.len() as u64,
                 ..Counters::default()
@@ -1078,6 +1107,7 @@ mod tests {
             last_poll_ago: Some(Duration::from_millis(300)),
             base: Some(BASE.into()),
             recent_acks: acks.to_vec(),
+            awake: false,
         }
     }
 
@@ -1233,10 +1263,7 @@ mod tests {
 
     #[test]
     fn a_script_without_its_page_asks_for_the_report() {
-        let d = diagnose(&facts(&[
-            &hello(BASE),
-            &say("web control title=about:blank"),
-        ]));
+        let d = diagnose(&facts(&[&hello(BASE), &say("web retry 1")]));
         assert!(has(&d, Tone::Good, "The live script is running"));
         assert!(has(&d, Tone::Bad, "bridge page didn't load in game"));
         let page = d
@@ -1244,7 +1271,7 @@ mod tests {
             .iter()
             .find(|r| r.text.contains("bridge page didn't"))
             .unwrap();
-        assert_eq!(page.detail.as_deref(), Some("control title=about:blank"));
+        assert_eq!(page.detail.as_deref(), Some("retry 1"));
         assert!(matches!(&d.step, Step::SendReport(why) if why.contains("bridge page")));
         let d = diagnose(&facts(&[&hello(BASE), &say("web nopanel")]));
         assert!(has(&d, Tone::Bad, "wouldn't make a web panel"));
@@ -1339,6 +1366,38 @@ mod tests {
     }
 
     #[test]
+    fn the_connection_row_says_whether_it_sleeps_and_counts_wakes_and_reloads() {
+        let mut f = facts(&[&hello(BASE), &say("web reload 1"), &say("web reload 2")]);
+        f.web = reached(41, &[300]);
+        f.web.counters.wakes = 3;
+        f.web.counters.sleeps = 2;
+        f.web.counters.idle = 7;
+        let d = diagnose(&f);
+        assert!(
+            has(
+                &d,
+                Tone::Good,
+                "The live connection is asleep, as it should be while nobody edits the HUD (3 wakes, 2 sleeps, 41 waits, 7 ran out quietly, 2 page reloads)"
+            ),
+            "{:#?}",
+            texts(&d)
+        );
+        f.web.awake = true;
+        assert!(has(
+            &diagnose(&f),
+            Tone::Good,
+            "The live connection is awake"
+        ));
+        f.web = WebFacts::default();
+        assert!(
+            !texts(&diagnose(&f))
+                .iter()
+                .any(|(_, t)| t.contains("live connection")),
+            "no row before the page reached DeadTune"
+        );
+    }
+
+    #[test]
     fn report_carries_the_checklist_the_counters_and_the_log_lines() {
         let f = sample("fetch_blocked").unwrap();
         let d = diagnose(&f);
@@ -1347,7 +1406,7 @@ mod tests {
         assert!(text.contains("[ok]   The live script is running"));
         assert!(text.contains("Next step: "));
         assert!(
-            text.contains("Bridge server: Some(Ok(47613)); polls 0, page starts 0"),
+            text.contains("Bridge server: Some(Ok(47613)); waits 0, page starts 0"),
             "{text}"
         );
         assert!(text.contains("DEADTUNE_LIVE web fetch blocked TypeError: Failed to fetch"));

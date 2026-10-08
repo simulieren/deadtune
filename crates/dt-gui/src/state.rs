@@ -726,6 +726,9 @@ pub struct AppState {
     pub web: dt_core::hud::web_bridge::Bridge,
     /// "Check live preview" (`crate::live_check`).
     pub live_check: crate::live_check::LiveCheck,
+    /// A HUD page drew its live line this frame; the live preview wakes the bridge page
+    /// while one is on screen.
+    pub hud_page_drawn: bool,
     /// When the running game's process started, from the last game poll.
     pub game_started: Option<SystemTime>,
 }
@@ -875,11 +878,15 @@ impl AppState {
             ),
             web: Default::default(),
             live_check: Default::default(),
+            hud_page_drawn: false,
             game_started: None,
         };
         if !state.settings.onboarded {
             state.welcome = Some(Welcome::PickStart { choice: None });
         }
+        state
+            .live_hud
+            .set_editing(state.settings.live_editing, Instant::now());
         state.refresh_preview();
         state.reload_bench();
         state.refresh_snapshots();
@@ -2431,6 +2438,10 @@ impl AppState {
     /// page's news and the page its next message.
     pub fn tick_live(&mut self, now: Instant) -> Option<Result<PushOutcome, String>> {
         self.live_hud.page(self.web.take(), now);
+        self.web.set_awake(self.live_hud.awake(now));
+        if let Some(seq) = self.live_hud.applied_seq() {
+            self.web.set_applied(seq);
+        }
         match self.live_hud.tick(now) {
             Some(Delivery::Post(post)) => self.web.post(post),
             Some(Delivery::Clear) => self.web.clear(),
@@ -2444,6 +2455,17 @@ impl AppState {
     pub fn set_live_preview(&mut self, on: bool) {
         self.profile.hud.live = on;
         self.refresh_preview();
+    }
+
+    /// The "Live editing" switch on the HUD pages: takes effect in the running game at once.
+    pub fn set_live_editing(&mut self, on: bool) {
+        self.settings.live_editing = on;
+        self.live_hud.set_editing(on, Instant::now());
+    }
+
+    /// DeadTune is closing: the bridge page goes to sleep.
+    pub fn shutdown(&mut self) {
+        self.web.set_awake(false);
     }
 
     /// The live HUD preview's line for the HUD pages.
@@ -3245,16 +3267,19 @@ mod tests {
         );
 
         let poll = |state: &AppState, since: u32, hello: bool, now: Instant| {
-            let (r, _) = state.web.respond(
-                &Request::Live {
+            let r = state.web.respond(
+                &Request::Wait {
                     since,
                     base: Some(base.clone()),
                     hello,
+                    awake: state.web.status().awake,
                 },
                 Some(PAGE_ORIGIN),
                 now,
+                Duration::ZERO,
+                &|| {},
             );
-            (r.status == 200).then(|| {
+            r.body.contains("\"seq\":").then(|| {
                 let post = state.web.posted().unwrap();
                 assert!(
                     r.body.contains(&format!("\"seq\":{}", post.seq)),
@@ -3273,15 +3298,33 @@ mod tests {
         );
         let first = poll(&state, 0, false, t0).expect("a full message waits");
         assert_eq!(first.kind, live::Kind::Full);
-        state
-            .web
-            .respond(&Request::Ack { seq: first.seq }, Some(PAGE_ORIGIN), t0);
+        state.web.respond(
+            &Request::Ack { seq: first.seq },
+            Some(PAGE_ORIGIN),
+            t0,
+            Duration::ZERO,
+            &|| {},
+        );
         let t1 = t0 + Duration::from_millis(200);
         state.tick_live(t1);
         assert!(matches!(
             state.live_hud.state(),
             LiveHud::Live { seq: Some(s), .. } if *s == first.seq
         ));
+        assert_eq!(state.web.status().applied, Some(first.seq));
+        assert!(!state.web.status().awake, "asleep off the HUD pages");
+        state.live_hud.viewing(true, t1);
+        state.tick_live(t1);
+        assert!(state.web.status().awake, "a HUD page wakes the page");
+        state.set_live_editing(false);
+        state.tick_live(t1);
+        assert!(!state.web.status().awake, "off sleeps it at once");
+        assert!(!state.settings.live_editing, "remembered");
+        let off = poll(&state, first.seq, false, t1).expect("the baked HUD goes out");
+        assert!(off.rules.is_empty(), "{off:?}");
+        state.set_live_editing(true);
+        state.tick_live(t1);
+        assert!(state.web.status().awake);
 
         state.set_hud_element(
             ElementId::Minimap,
@@ -3299,6 +3342,12 @@ mod tests {
                 .iter()
                 .any(|r| r.value == "translateX(40px) translateY(0px)"),
             "{patch:?}"
+        );
+
+        state.shutdown();
+        assert!(
+            !state.web.status().awake,
+            "DeadTune closing puts the page to sleep"
         );
 
         state.observe_game(false, None);

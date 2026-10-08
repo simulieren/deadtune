@@ -167,6 +167,7 @@ impl AppState {
                 .map(|t| Instant::now().saturating_duration_since(t)),
             base: status.base,
             recent_acks: status.recent_acks,
+            awake: status.awake,
         }
     }
 

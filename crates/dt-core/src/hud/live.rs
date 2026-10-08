@@ -23,12 +23,22 @@ use super::web_bridge;
 pub const LIVE: &str = "DEADTUNE_LIVE";
 /// First word of every message chunk the page hands the script.
 const FORMAT: &str = "dt1";
-/// Payload characters per chunk; the page sets one title per chunk.
-pub const CHUNK_CHARS: usize = 200;
+/// Payload characters per chunk; the page sets one title per chunk. QOL Lock sends 1500 per
+/// title in this game; fewer titles means fewer to lose at a low frame rate.
+pub const CHUNK_CHARS: usize = 1500;
 /// How long a message may wait for the script's ack before it goes again as a full one.
 pub const TIMEOUT: Duration = Duration::from_secs(3);
-/// The script re-matches its rules this often, so panels created later get their style.
-pub const POLL_SECS: f64 = 0.25;
+/// The script restyles when a message arrives. Rules keyed on a class (minimap markers,
+/// a dead hero's portrait) also need re-matching as panels come and go: this often while
+/// someone edits the HUD (awake), and `SLEEP_BEAT_SECS` while the bridge sleeps. Rules on
+/// ids alone are never re-matched.
+pub const BEAT_SECS: f64 = 1.0;
+pub const SLEEP_BEAT_SECS: f64 = 3.0;
+/// A message still missing chunks this long after its first one asks the page for them.
+pub const NEED_SECS: f64 = 0.5;
+/// While awake the page sets a title at least every `web_bridge::WAIT`; a script that
+/// heard nothing for this long loads the page again.
+pub const QUIET_SECS: f64 = 30.0;
 /// The script opens the bridge page again when it hasn't said ready after this long, up to
 /// `RETRIES` loads in all.
 pub const RETRY_SECS: f64 = 20.0;
@@ -150,7 +160,7 @@ pub enum LiveLine {
         base: String,
     },
     /// What the web panel reported: `ready storage=ok`, `fetch ok`, `fetch blocked <why>`,
-    /// `control <title>`, `retry <n>`, `nopanel`, ...
+    /// `retry <n>`, `gave up`, `reload <n>`, `nopanel`, ...
     Web(String),
 }
 
@@ -617,7 +627,7 @@ fn js_string(text: &str) -> String {
 /// Our script for a pak whose rules hash to `base`.
 pub fn script(base: &str) -> String {
     format!(
-        "var DT_LIVE = {{ base: \"{base}\", page: {}, port: {}, protocol: {}, poll: {POLL_SECS}, retry: {RETRY_SECS}, retries: {RETRIES} }};\n{SCRIPT}",
+        "var DT_LIVE = {{ base: \"{base}\", page: {}, port: {}, protocol: {}, beat: {BEAT_SECS}, sleepBeat: {SLEEP_BEAT_SECS}, need: {NEED_SECS}, quiet: {QUIET_SECS}, retry: {RETRY_SECS}, retries: {RETRIES} }};\n{SCRIPT}",
         js_string(web_bridge::PAGE_URL),
         web_bridge::PORT,
         js_string(web_bridge::PROTOCOL)
@@ -873,7 +883,7 @@ mod tests {
 
     #[test]
     fn long_messages_split_into_titles_that_reassemble_in_any_order() {
-        let m = msg(41, Kind::Full, many(30));
+        let m = msg(41, Kind::Full, many(200));
         let mut t = titles(&m);
         assert!(t.len() > 3, "{}", t.len());
         for (i, title) in t.iter().enumerate() {
@@ -1370,7 +1380,7 @@ mod tests {
         let text = script("0badf00d");
         assert!(
             text.starts_with(
-                "var DT_LIVE = { base: \"0badf00d\", page: \"https://simulieren.github.io/deadtune/bridge/\", port: 47613, protocol: \"DTLIVE:v1\", poll: 0.25, retry: 20, retries: 5 };\n(function () {"
+                "var DT_LIVE = { base: \"0badf00d\", page: \"https://simulieren.github.io/deadtune/bridge/\", port: 47613, protocol: \"DTLIVE:v2\", beat: 1, sleepBeat: 3, need: 0.5, quiet: 30, retry: 20, retries: 5 };\n(function () {"
             ),
             "{text}"
         );

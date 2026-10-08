@@ -7,8 +7,10 @@
     var TOKEN = /#[\w-]+|\.[\w-]+|:not\(\.[\w-]+\)|[A-Za-z_][\w-]*/g;
     var ctx = $.GetContextPanel();
     var rules = [];
+    var classed = false;
     var styled = [];
-    var clock = 0;
+    var beats = 0;
+    var restyles = 0;
     var titles = 0;
 
     function valid(p) {
@@ -106,6 +108,7 @@
     }
 
     function restyle() {
+        restyles++;
         var top = root();
         var want = [];
         for (var r = 0; r < rules.length; r++) {
@@ -151,23 +154,36 @@
             var rule = compile(records[r]);
             if (rule) { incoming.push(rule); }
         }
-        if (full) { rules = incoming; return; }
-        for (var j = 0; j < incoming.length; j++) {
-            var at = -1;
-            for (var k = 0; k < rules.length; k++) { if (rules[k].key === incoming[j].key) { at = k; break; } }
-            if (at < 0) { rules.push(incoming[j]); } else { rules[at] = incoming[j]; }
+        if (full) {
+            rules = incoming;
+        } else {
+            for (var j = 0; j < incoming.length; j++) {
+                var at = -1;
+                for (var k = 0; k < rules.length; k++) { if (rules[k].key === incoming[j].key) { at = k; break; } }
+                if (at < 0) { rules.push(incoming[j]); } else { rules[at] = incoming[j]; }
+            }
         }
+        classed = false;
+        for (var c = 0; c < rules.length; c++) {
+            var chain = rules[c].chain;
+            for (var d = 0; d < chain.length; d++) { if (chain[d].cls.length || chain[d].not.length) { classed = true; } }
+        }
+        try { restyle(); } catch (e) { warn("error restyle " + e); }
     }
 
     // The web channel. The game's web panel loads only HTTPS pages, so it opens DeadTune's
-    // page on GitHub Pages, which fetches messages from DeadTune on 127.0.0.1 and hands
+    // page on GitHub Pages, which waits on DeadTune at 127.0.0.1 for messages and hands
     // them over as titles. Requests go back through the URL's fragment, which changes no
     // page. The panel stays tiny, nearly transparent and visible, so the page's timers
-    // run, and it is never deleted.
+    // run, and it is never deleted. DeadTune wakes the page while someone edits the HUD
+    // and puts it to sleep otherwise; asleep, the page only holds one open request.
     var web = null;
     var url = null;
     var ready = false;
+    var awake = false;
+    var heard = Date.now();
     var opened = 0;
+    var reloads = 0;
     var asked = 0;
     var applied = null;
     var liveSeen = false;
@@ -180,13 +196,6 @@
         reported[text] = true;
         say("web " + text);
     }
-    function makePanel(id) {
-        var p = $.CreatePanel("CitadelHTMLPanel", ctx, id);
-        if (!p) { return null; }
-        try { p.hittest = false; } catch (e) {}
-        try { p.style.width = "2px"; p.style.height = "2px"; p.style.opacity = "0.01"; } catch (e) {}
-        return p;
-    }
     function ask(verb, arg) {
         if (!web || !url) { return; }
         asked++;
@@ -195,14 +204,38 @@
     function open() {
         opened++;
         ready = false;
-        url = CONFIG.page + "?port=" + CONFIG.port + "&base=" + CONFIG.base + (opened > 1 ? "&r=" + opened : "");
+        awake = false;
+        heard = Date.now();
+        url = CONFIG.page + "?v=" + CONFIG.protocol.split(":v")[1] + "&port=" + CONFIG.port + "&base=" + CONFIG.base + (opened > 1 ? "&r=" + opened : "");
         try { web.SetURL(url); } catch (e) { report("seturl error " + e); }
     }
+    // A page that never says ready is loaded again a few times, then left blank so an old
+    // copy can't keep running.
     function watchdog() {
-        if (ready || opened >= CONFIG.retries) { return; }
+        if (ready) { return; }
+        if (opened >= CONFIG.retries) {
+            report("gave up");
+            try { web.SetURL("about:blank"); } catch (e) {}
+            return;
+        }
         report("retry " + opened);
         open();
         $.Schedule(CONFIG.retry, watchdog);
+    }
+
+    function missing(msg) {
+        var out = [];
+        for (var i = 1; i <= msg.n; i++) { if (msg.parts[i] === undefined) { out.push(i); } }
+        return out;
+    }
+    // A title lost at a low frame rate would lose the whole message; the page shows the
+    // missing chunks again.
+    function needLater(key, tries) {
+        $.Schedule(CONFIG.need, function () {
+            if (!held || held.key !== key || held.restore || tries <= 0) { return; }
+            ask("need", held.seq + "." + missing(held).join(","));
+            needLater(key, tries - 1);
+        });
     }
 
     // One chunk of a message: `dt1 <seq> <i>/<n> <base> full|patch <payload part>`. A
@@ -224,6 +257,7 @@
         var key = (restore ? "r" : "l") + seq;
         if (!held || held.key !== key) {
             held = { key: key, seq: seq, n: n, parts: {}, count: 0, base: w[3], full: w[4] === "full", restore: restore };
+            if (n > 1) { needLater(key, 3); }
         }
         if (held.parts[i] !== undefined) { return; }
         held.parts[i] = w.length > 5 ? w.slice(5).join(" ") : "";
@@ -252,6 +286,7 @@
         recent.push(title);
         if (recent.length > 64) { recent.shift(); }
         titles++;
+        heard = Date.now();
         if (title.indexOf(CONFIG.protocol + " ") !== 0) {
             report("old page " + title.split(" ")[0]);
             if (opened < CONFIG.retries) { open(); }
@@ -261,6 +296,9 @@
         var body = rest.slice(rest.indexOf(" ") + 1);
         if (body.indexOf("dt1 ") === 0) { chunk(body, false); return; }
         if (body.indexOf("restore dt1 ") === 0) { chunk(body.slice(8), true); return; }
+        if (body === "wake") { awake = true; return; }
+        if (body === "sleep") { awake = false; return; }
+        if (body === "beat") { return; }
         if (body.indexOf("ready") === 0) {
             report(body);
             if (!ready) { ready = true; ask("restore"); }
@@ -269,37 +307,37 @@
         report(body);
     }
 
-    // A plain http:// page, which the game refused since its 2026-10-01 update; the check
-    // shows what this one did.
-    function control() {
-        var p = makePanel("DtLiveWebControl");
-        if (!p) { return; }
-        $.RegisterEventHandler("HTMLTitle", p, function (panel, title) { report("control title=" + title); });
-        p.SetURL("http://127.0.0.1:" + CONFIG.port + "/control");
-    }
-
     function start() {
-        web = makePanel("DtLiveWeb");
+        web = $.CreatePanel("CitadelHTMLPanel", ctx, "DtLiveWeb");
         if (!web) { report("nopanel"); return; }
+        try { web.hittest = false; } catch (e) {}
+        try { web.style.width = "2px"; web.style.height = "2px"; web.style.opacity = "0.01"; } catch (e) {}
         $.RegisterEventHandler("HTMLTitle", web, onTitle);
         open();
         $.Schedule(CONFIG.retry, watchdog);
-        control();
     }
 
-    var pollFailed = false;
-    function poll() {
-        clock += CONFIG.poll;
+    // Rules keyed on a class follow panels as they come and go; nothing else runs on a
+    // timer. An awake page that went quiet is loaded again.
+    var beatFailed = false;
+    function beat() {
+        beats++;
         try {
-            if (rules.length || styled.length) { restyle(); }
+            if (classed && (rules.length || styled.length)) { restyle(); }
         } catch (e) {
-            if (!pollFailed) { pollFailed = true; warn("error poll " + e); }
+            if (!beatFailed) { beatFailed = true; warn("error beat " + e); }
         }
-        $.Schedule(CONFIG.poll, poll);
+        if (awake && ready && Date.now() - heard > CONFIG.quiet * 1000) {
+            reloads++;
+            say("web reload " + reloads);
+            open();
+            $.Schedule(CONFIG.retry, watchdog);
+        }
+        $.Schedule(awake ? CONFIG.beat : CONFIG.sleepBeat, beat);
     }
 
     try { start(); } catch (e) { report("error " + e); }
     say("hello " + CONFIG.base + " web=" + (web ? "panel" : "nopanel"));
-    $.Schedule(10, function () { say("alive 10s polls=" + Math.round(clock / CONFIG.poll) + " titles=" + titles); });
-    $.Schedule(CONFIG.poll, poll);
+    $.Schedule(10, function () { say("alive 10s beats=" + beats + " restyles=" + restyles + " titles=" + titles); });
+    $.Schedule(CONFIG.beat, beat);
 })();

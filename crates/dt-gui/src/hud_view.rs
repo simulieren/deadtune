@@ -36,9 +36,10 @@ const TEAM_AMBER: Color32 = Color32::from_rgb(0xD4, 0x86, 0x0B);
 pub const SIZE_RANGE: RangeInclusive<u16> = 50..=200;
 const HINT: &str =
     "Drag to move. Corner handles or scroll to resize. Arrow keys nudge, Shift for 10 px.";
-const LIVE_HINT: &str = "A small DeadTune script in the HUD pak restyles the running game as you \
-     edit. On for every changed HUD; Vanilla and Ranked-safe have no HUD pak, so it is off there. \
-     Needs one Apply and a restart to install. In game, the live key (F8) sends your edits.";
+const LIVE_HINT: &str = "Puts DeadTune's small live script into the HUD file, so HUD edits can \
+     show in the running game. Takes effect after Apply and a game restart. Vanilla and \
+     Ranked-safe have no HUD file, so it is off there. To pause live edits mid-game, use the \
+     Live editing switch instead; it needs no Apply.";
 
 enum Action {
     Select(Option<ElementId>),
@@ -105,6 +106,7 @@ pub fn hud(ui: &mut Ui, state: &mut AppState) {
 /// One line on what the live HUD preview is doing, at the top of every HUD page, with
 /// "Check live preview" beside it and the check's card below.
 pub fn live_indicator(ui: &mut Ui, state: &mut AppState) {
+    state.hud_page_drawn = true;
     let status = state.live_hud_status();
     let live = match state.live_hud.state() {
         LiveHud::Live { undone, .. } => Some(*undone),
@@ -123,13 +125,32 @@ pub fn live_indicator(ui: &mut Ui, state: &mut AppState) {
                 Some(h) => r.on_hover_text(h),
                 None => r,
             };
-            if live.is_some() {
+            if live.is_some() && status.tone == Tone::Good {
                 hover(crate::live_status::dot(ui, GOOD));
             }
             hover(ui.label(RichText::new(&status.text).small().color(color)));
         }
+        if editing_switch_shown(state.live_hud.state()) {
+            let on = state.live_hud.editing();
+            let label = if on {
+                "Live editing: On"
+            } else {
+                "Live editing: Off"
+            };
+            if ui
+                .add(
+                    egui::Button::new(RichText::new(label).small())
+                        .small()
+                        .selected(on),
+                )
+                .on_hover_text(EDITING_HINT)
+                .clicked()
+            {
+                state.set_live_editing(!on);
+            }
+        }
         crate::live_check_view::button(ui, state);
-        if let Some(undone) = live {
+        if let Some(undone) = live.filter(|_| state.live_hud.editing()) {
             let tip = if undone {
                 "The game shows what Apply installed until your next edit"
             } else {
@@ -163,6 +184,19 @@ pub fn live_indicator(ui: &mut Ui, state: &mut AppState) {
     if undo {
         state.undo_live_hud();
     }
+}
+
+const EDITING_HINT: &str = "On: your HUD edits show in the running game while a HUD page is \
+     open; the connection pauses a minute after your last change. Off: the game shows the HUD \
+     from your last Apply right away and DeadTune sends nothing. Works mid-game, no Apply.";
+
+/// The switch shows once the live script is in the HUD; before that there is nothing to
+/// switch.
+fn editing_switch_shown(state: &LiveHud) -> bool {
+    !matches!(
+        state,
+        LiveHud::Off | LiveHud::NotInstalled | LiveHud::Error(_)
+    )
 }
 
 /// Why HUD changes are not reaching the game, and what the launch guard knows about them.

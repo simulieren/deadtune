@@ -101,6 +101,9 @@ pub struct Settings {
     pub preview_images: Option<PathBuf>,
     /// Windows starts `deadtune --background` at sign-in to rebuild paks after game updates.
     pub start_with_windows: bool,
+    /// HUD edits reach the running game while a HUD page is open (the "Live editing"
+    /// switch). Off, the game shows the HUD from the last Apply.
+    pub live_editing: bool,
 }
 
 impl Default for Settings {
@@ -125,6 +128,7 @@ impl Default for Settings {
             snapshots: SnapshotSettings::default(),
             preview_images: None,
             start_with_windows: false,
+            live_editing: true,
         }
     }
 }

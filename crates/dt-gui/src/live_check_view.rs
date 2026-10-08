@@ -231,10 +231,13 @@ fn result(ui: &mut Ui, state: &mut AppState, done: &crate::live_check::Done) {
         Ok(path) => format!("Saved to {}", path.display()),
         Err(e) => format!("Couldn't save the report: {e}"),
     };
-    let polls = done.facts.web.counters.polls;
+    let c = done.facts.web.counters;
     ui.label(
-        RichText::new(format!("{saved} \u{b7} bridge page requests: {polls}"))
-            .small()
-            .color(WEAK),
+        RichText::new(format!(
+            "{saved} \u{b7} bridge page waits: {}, wakes: {}, sleeps: {}",
+            c.waits, c.wakes, c.sleeps
+        ))
+        .small()
+        .color(WEAK),
     );
 }

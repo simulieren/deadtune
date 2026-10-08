@@ -376,6 +376,11 @@ impl App {
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_LIVE_HUD") {
                     fake_live_hud(&mut state, &kind);
                 }
+                // `DEADTUNE_LIVE_EDITING=on|off` sets the HUD pages' Live editing switch for
+                // this run, without saving it.
+                if let Ok(kind) = std::env::var("DEADTUNE_LIVE_EDITING") {
+                    state.live_hud.set_editing(kind != "off", Instant::now());
+                }
                 // `DEADTUNE_FAKE_LIVE_CHECK=showing|shown|asking|<sample>` opens "Check live
                 // preview" at that point; samples are `dt_core::hud::live_check::sample`'s.
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_LIVE_CHECK") {
@@ -541,6 +546,8 @@ impl App {
                 state.relaunch = Relaunch::Failed(e);
             }
         }
+        let drawn = std::mem::take(&mut state.hud_page_drawn);
+        state.live_hud.viewing(drawn, Instant::now());
         if let Some(result) = state.tick_live(Instant::now()) {
             report_push(ctx, state, result);
         }
@@ -935,6 +942,14 @@ pub fn report_push(ctx: &egui::Context, state: &mut AppState, result: Result<Pus
 }
 
 impl eframe::App for App {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Screen::Main(state) = &mut self.screen {
+            state.shutdown();
+            // Held waits answer "sleep" on their own threads; give them a moment to write.
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let frame_start = Instant::now();

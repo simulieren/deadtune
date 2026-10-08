@@ -14,6 +14,8 @@ use dt_core::hud::web_bridge::{CONNECTED, PageNews};
 pub const DEBOUNCE: Duration = Duration::from_millis(100);
 /// How long the script and its page may take before the page explains what to check.
 pub const HELLO_WAIT: Duration = Duration::from_secs(20);
+/// The bridge page sleeps this long after the last edit, or after a HUD page opened.
+pub const IDLE: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LiveHud {
@@ -182,6 +184,13 @@ pub struct LivePreview {
     paks_waiting: bool,
     /// The check's bigger minimap, sent in place of the profile's layout while it lasts.
     flash: Option<Flash>,
+    /// The player's "Live editing" switch: off, the game shows what Apply baked.
+    editing: bool,
+    /// A HUD page was on screen in the last frame.
+    viewing: bool,
+    /// The page stays awake until then: a minute after the last edit or the HUD page
+    /// opening.
+    active_until: Option<Instant>,
 }
 
 /// The visible test of "Check live preview".
@@ -221,6 +230,59 @@ impl LivePreview {
             fake: false,
             paks_waiting: false,
             flash: None,
+            editing: true,
+            viewing: false,
+            active_until: None,
+        }
+    }
+
+    /// Whether the bridge page should be awake: a session runs and either the check's
+    /// test is on, or live editing is on and someone edited on a HUD page within `IDLE`.
+    /// Asleep, the page holds one request and the script restyles nothing on ids.
+    pub fn awake(&self, now: Instant) -> bool {
+        (self.session.is_some() || self.fake)
+            && (self.flash.is_some()
+                || (self.editing
+                    && self.viewing
+                    && self.active_until.is_some_and(|until| now < until)))
+    }
+
+    /// Whether a HUD page was on screen this frame; opening one counts as activity.
+    pub fn viewing(&mut self, on_page: bool, now: Instant) {
+        if on_page && !self.viewing {
+            self.active_until = Some(now + IDLE);
+        }
+        self.viewing = on_page;
+    }
+
+    pub fn editing(&self) -> bool {
+        self.editing
+    }
+
+    /// The "Live editing" switch. Off sends an empty override set, so the game shows the
+    /// HUD as Apply baked it, and puts the page to sleep; on wakes it and sends the edits.
+    pub fn set_editing(&mut self, on: bool, now: Instant) {
+        if self.editing == on {
+            return;
+        }
+        self.editing = on;
+        if on {
+            self.active_until = Some(now + IDLE);
+        }
+        if let Some(session) = self.session.as_mut() {
+            session.due = Some(now);
+            session.undo = false;
+        }
+        if let LiveHud::Live { undone, .. } = &mut self.state {
+            *undone = false;
+        }
+    }
+
+    /// The last message the script applied, by either path.
+    pub fn applied_seq(&self) -> Option<u32> {
+        match &self.state {
+            LiveHud::Live { seq, .. } => *seq,
+            _ => None,
         }
     }
 
@@ -308,6 +370,11 @@ impl LivePreview {
                  talks to DeadTune on this PC.",
             ),
             LiveHud::Waiting { .. } => StatusLine::new(log_line(logs, now), Tone::Weak),
+            LiveHud::Live { .. } if !self.editing => StatusLine::new(
+                "Live editing is off: the game shows the HUD from your last Apply",
+                Tone::Weak,
+            )
+            .hover("Turn Live editing on to see your edits in game without a restart."),
             LiveHud::Live { base, acked, .. } => {
                 let answer = match acked {
                     Some(at) => format!(
@@ -316,8 +383,17 @@ impl LivePreview {
                     ),
                     None => "No answer from the game yet.".to_string(),
                 };
-                StatusLine::new("Live in game", Tone::Good)
-                    .hover(format!("HUD {base} is running. {answer}"))
+                if self.awake(now) {
+                    StatusLine::new("Live in game", Tone::Good)
+                        .hover(format!("HUD {base} is running. {answer}"))
+                } else {
+                    StatusLine::new("Live in game, paused until your next HUD change", Tone::Weak)
+                        .hover(format!(
+                            "The game keeps your edits. DeadTune pauses the live connection a \
+                             minute after your last change and when you leave the HUD pages, so \
+                             it costs the game nothing. HUD {base} is running. {answer}"
+                        ))
+                }
             }
             LiveHud::Error(message) => StatusLine::new(message.clone(), Tone::Bad),
         })
@@ -510,6 +586,7 @@ impl LivePreview {
             return;
         }
         self.desired = layout.clone();
+        self.active_until = Some(now + IDLE);
         if self.on {
             self.not_live = live::coverage(layout);
         }
@@ -558,11 +635,11 @@ impl LivePreview {
         }
         let undo = std::mem::take(&mut session.undo);
         session.due = None;
-        let target = self.flash.as_ref().map_or(&self.desired, |f| &f.layout);
-        let rules = if undo {
-            live::rules(&baked.layout)
-        } else {
-            live::overrides(target, &baked.layout).map(|o| o.rules)
+        let rules = match &self.flash {
+            Some(flash) => live::overrides(&flash.layout, &baked.layout).map(|o| o.rules),
+            None if !self.editing => Ok(Vec::new()),
+            None if undo => live::rules(&baked.layout),
+            None => live::overrides(&self.desired, &baked.layout).map(|o| o.rules),
         };
         match rules {
             Ok(rules) => {
@@ -714,6 +791,7 @@ mod tests {
                 hello: hello.then(|| base(layout)),
                 base: Some(base(layout)),
                 last_poll: Some(now),
+                open: false,
                 acked: acked.to_vec(),
             },
             now,
@@ -984,6 +1062,119 @@ mod tests {
         assert_eq!(message(&post(p.tick(t1 + DEBOUNCE * 2))).kind, Kind::Full);
     }
 
+    fn secs(n: u64) -> Duration {
+        Duration::from_secs(n)
+    }
+
+    #[test]
+    fn the_page_is_awake_only_while_someone_edits_on_a_hud_page() {
+        let t0 = Instant::now();
+        let baked = moved(10);
+        let mut p = LivePreview::new(1);
+        p.toggle(true);
+        p.record(Some(&record_of(&baked, true)), None);
+        p.viewing(true, t0);
+        assert!(!p.awake(t0), "no game, nothing to wake");
+        let mut p = live_on(&baked, t0);
+        assert!(!p.awake(t0), "not on a HUD page");
+        p.viewing(true, t0);
+        assert!(p.awake(t0), "a HUD page opened");
+        p.viewing(true, t0 + secs(30));
+        assert!(
+            p.awake(
+                IDLE.checked_sub(Duration::from_millis(1))
+                    .map(|d| t0 + d)
+                    .unwrap()
+            )
+        );
+        assert!(!p.awake(t0 + IDLE), "a minute without edits");
+        let t1 = t0 + IDLE + secs(5);
+        p.edit(&moved(20), t1);
+        assert!(p.awake(t1), "an edit wakes it");
+        assert!(!p.awake(t1 + IDLE));
+        p.viewing(false, t1 + secs(1));
+        assert!(!p.awake(t1 + secs(1)), "left the HUD pages");
+        p.edit(&moved(30), t1 + secs(2));
+        assert!(!p.awake(t1 + secs(2)), "an edit elsewhere doesn't wake it");
+        p.viewing(true, t1 + secs(3));
+        assert!(p.awake(t1 + secs(3)), "back on a HUD page");
+        p.game(false, None, t1 + secs(4));
+        assert!(!p.awake(t1 + secs(4)), "the game closed");
+    }
+
+    #[test]
+    fn the_check_wakes_the_page_from_any_page() {
+        let t0 = Instant::now();
+        let baked = moved(10);
+        let mut p = live_on(&baked, t0);
+        assert!(p.flash(moved(99), t0));
+        assert!(p.awake(t0 + IDLE * 2), "the test runs");
+        p.end_flash(t0);
+        assert!(!p.awake(t0));
+        p.set_editing(false, t0);
+        assert!(p.flash(moved(99), t0));
+        assert!(p.awake(t0), "the check runs with live editing off too");
+    }
+
+    #[test]
+    fn live_editing_off_shows_the_baked_hud_at_once_and_on_brings_the_edits_back() {
+        let t0 = Instant::now();
+        let baked = moved(10);
+        let mut p = live_on(&baked, t0);
+        p.viewing(true, t0);
+        p.edit(&moved(30), t0);
+        let edit = post(p.tick(t0 + DEBOUNCE));
+        page(&mut p, &baked, t0, false, &[edit.seq]);
+        assert_eq!(p.applied_seq(), Some(edit.seq));
+
+        let t1 = t0 + secs(1);
+        p.set_editing(false, t1);
+        assert!(!p.editing());
+        assert!(!p.awake(t1), "asleep at once");
+        let off = post(p.tick(t1));
+        let m = message(&off);
+        assert_eq!(
+            (m.kind, m.rules.len()),
+            (Kind::Full, 0),
+            "nothing over the baked HUD"
+        );
+        page(&mut p, &baked, t1, false, &[off.seq]);
+        let line = p.status(&[], t1).unwrap();
+        assert!(line.text.starts_with("Live editing is off"), "{line:?}");
+
+        let t2 = t1 + secs(1);
+        p.edit(&moved(40), t2);
+        assert_eq!(p.tick(t2 + DEBOUNCE), None, "edits stay in DeadTune");
+        assert!(!p.awake(t2));
+
+        let t3 = t2 + secs(1);
+        p.set_editing(true, t3);
+        assert!(p.awake(t3));
+        let on = post(p.tick(t3));
+        assert!(
+            message(&on)
+                .rules
+                .iter()
+                .any(|r| r.value == "translateX(40px) translateY(0px)"),
+            "{:?}",
+            message(&on)
+        );
+        p.set_editing(true, t3);
+        assert_eq!(p.tick(t3), None, "on again is no change");
+    }
+
+    #[test]
+    fn status_says_when_the_preview_rests() {
+        let t0 = Instant::now();
+        let baked = moved(10);
+        let mut p = live_on(&baked, t0);
+        p.viewing(true, t0);
+        assert_eq!(p.status(&[], t0).unwrap().text, "Live in game");
+        let rest = p.status(&[], t0 + IDLE).unwrap();
+        assert!(rest.text.contains("paused"), "{rest:?}");
+        assert_eq!(rest.tone, Tone::Weak);
+    }
+
     #[test]
     fn toggling_off_while_live_clears_the_bridge() {
         let t0 = Instant::now();
@@ -1069,6 +1260,7 @@ mod tests {
             r"No word from the live script yet. DeadTune reads C:\Deadlock\game\citadel\console.log and its last line came 3 s ago."
         );
         page(&mut p, &baked, later, true, &[]);
+        p.viewing(true, later);
         assert_eq!(text(&p, &[], later).unwrap(), "Live in game");
     }
 

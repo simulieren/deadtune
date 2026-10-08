@@ -6,9 +6,12 @@
 <script>
 (function () {
     "use strict";
-    var PROTOCOL = "DTLIVE:v1";
+    var VERSION = "2";
+    var PROTOCOL = "DTLIVE:v" + VERSION;
     var KEY = "deadtune.live.v1";
     var query = new URLSearchParams(location.search);
+    // An older script can't read this page's titles; it would only load it again and again.
+    if (query.get("v") !== VERSION) { return; }
     var port = /^\d{1,5}$/.test(query.get("port") || "") ? query.get("port") : "47613";
     var base = /^[0-9a-f]{1,16}$/.test(query.get("base") || "") ? query.get("base") : "";
     var server = "http://127.0.0.1:" + port;
@@ -16,11 +19,14 @@
     // only the fragment. It is not acted on, and the script is not new.
     var hello = !location.hash;
     var since = 0;
+    var awake = false;
     var counter = Date.now() % 1000000;
     var queue = [];
+    var pumping = false;
     var lastStatus = "";
-    var delay = 150;
+    var delay = 1000;
     var recent = [];
+    var saved = null;
     var storage = storageWorks();
 
     function storageWorks() {
@@ -34,13 +40,16 @@
         }
     }
 
-    // One title per 40 ms, each distinct, so the game sees every one.
-    function show(text) { queue.push(text); }
+    // One title per 40 ms, each distinct, so the game sees every one; no timer runs while
+    // there is nothing to show.
+    function show(text) {
+        queue.push(text);
+        if (!pumping) { pumping = true; pump(); }
+    }
     function pump() {
-        if (queue.length) {
-            counter++;
-            document.title = PROTOCOL + " " + counter + " " + queue.shift();
-        }
+        if (!queue.length) { pumping = false; return; }
+        counter++;
+        document.title = PROTOCOL + " " + counter + " " + queue.shift();
         setTimeout(pump, 40);
     }
     function status(text) {
@@ -48,54 +57,85 @@
         lastStatus = text;
         show(text);
     }
+    function mode(next) {
+        if (next === awake) { return; }
+        awake = next;
+        show(awake ? "wake" : "sleep");
+    }
 
-    function poll() {
-        var url = server + "/live?since=" + since + "&base=" + base + (hello ? "&hello=1" : "");
+    // DeadTune holds each wait until it has a message, wakes or sleeps the page, or 20 s
+    // pass. A plain GET with no custom headers, so only the private network preflight
+    // goes ahead of it.
+    function wait() {
+        var url = server + "/wait?since=" + since + "&base=" + base + "&awake=" + (awake ? 1 : 0) + (hello ? "&hello=1" : "");
+        var asked = Date.now();
         fetch(url, { cache: "no-store" }).then(function (r) {
+            if (r.status !== 200 && r.status !== 204) { throw new Error("HTTP " + r.status); }
             hello = false;
-            delay = 150;
+            delay = 1000;
             status("fetch ok");
             return r.status === 200 ? r.json() : null;
         }).then(function (m) {
-            if (!m || typeof m.seq !== "number" || !Array.isArray(m.chunks)) { return; }
-            since = m.seq;
-            recent.push({ seq: m.seq, keep: Array.isArray(m.keep) ? m.keep : m.chunks });
-            if (recent.length > 8) { recent.shift(); }
-            m.chunks.forEach(function (c) { show(String(c)); });
+            if (m && typeof m.seq === "number" && Array.isArray(m.chunks)) {
+                since = m.seq;
+                recent.push({ seq: m.seq, chunks: m.chunks, keep: Array.isArray(m.keep) ? m.keep : m.chunks });
+                if (recent.length > 8) { recent.shift(); }
+                m.chunks.forEach(function (c) { show(String(c)); });
+            }
+            if (m && typeof m.applied === "number") { keep(m.applied); }
+            if (m && typeof m.awake === "boolean") { mode(m.awake); }
+            if (!m && awake) { show("beat"); }
+            setTimeout(wait, Date.now() - asked < 1000 && !m ? 1000 : 0);
         }).catch(function (e) {
             var why = e && e.message ? e.name + ": " + e.message : String(e);
             status("fetch blocked " + why.replace(/\s+/g, " ").slice(0, 120));
+            mode(false);
+            setTimeout(wait, delay);
             delay = Math.min(delay * 2, 5000);
-        }).then(function () {
-            setTimeout(poll, delay);
         });
     }
 
-    function save(keep) {
-        if (!storage) { return; }
-        try {
-            localStorage.setItem(KEY, JSON.stringify({ base: base, titles: keep, at: Date.now() }));
-        } catch (e) {}
+    // The override set the game shows after message `seq`, for the next game start.
+    function keep(seq) {
+        if (!storage || saved === seq) { return; }
+        recent.forEach(function (m) {
+            if (m.seq !== seq) { return; }
+            try {
+                localStorage.setItem(KEY, JSON.stringify({ base: base, titles: m.keep, at: Date.now() }));
+                saved = seq;
+            } catch (e) {}
+        });
     }
     function ack(seq) {
         if (isNaN(seq)) { return; }
         fetch(server + "/ack?seq=" + seq, { cache: "no-store" }).catch(function () {});
-        recent.forEach(function (m) { if (m.seq === seq) { save(m.keep); } });
+        keep(seq);
+    }
+    function need(seq, parts) {
+        recent.forEach(function (m) {
+            if (m.seq !== seq) { return; }
+            parts.split(",").forEach(function (i) {
+                var c = m.chunks[parseInt(i, 10) - 1];
+                if (c !== undefined) { show(String(c)); }
+            });
+        });
     }
     function restore() {
-        var saved = null;
-        try { saved = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) {}
-        if (!saved || saved.base !== base || !Array.isArray(saved.titles)) {
+        var stored = null;
+        try { stored = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) {}
+        if (!stored || stored.base !== base || !Array.isArray(stored.titles)) {
             show("restore none");
             return;
         }
-        saved.titles.forEach(function (t) { show("restore " + String(t)); });
+        stored.titles.forEach(function (t) { show("restore " + String(t)); });
     }
 
-    // The script asks through the fragment: `#<n>.ack.<seq>` or `#<n>.restore`.
+    // The script asks through the fragment: `#<n>.ack.<seq>`, `#<n>.need.<seq>.<i,j>` or
+    // `#<n>.restore`.
     window.addEventListener("hashchange", function () {
         var parts = location.hash.slice(1).split(".");
         if (parts[1] === "ack") { ack(parseInt(parts[2], 10)); }
+        if (parts[1] === "need") { need(parseInt(parts[2], 10), parts[3] || ""); }
         if (parts[1] === "restore") { restore(); }
     });
 
@@ -103,7 +143,6 @@
         if ("serviceWorker" in navigator) { navigator.serviceWorker.register("sw.js").catch(function () {}); }
     } catch (e) {}
     show("ready storage=" + (storage ? "ok" : "no"));
-    pump();
-    poll();
+    wait();
 })();
 </script>

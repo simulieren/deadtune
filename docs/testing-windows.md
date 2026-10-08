@@ -201,7 +201,12 @@ The rows go into the game's own `popup_settings.vxml_c`, rebuilt as a text layou
 
 Press **Check live preview** on the HUD page. If it isn't green, press **Copy report** and paste the whole block (it is also saved under `<data>\reports\live-hud-<time>.txt`; **Open folder** shows it). If the card offers **Restart Deadlock**, press it and check again once the game is back.
 
-- [ ] **LH-1 Check live preview**: Apply a HUD edit, close Deadlock, press Launch in DeadTune, get into the hideout or a match, then press **Check live preview**. No key to press: the minimap grows by half for about 5 s, then DeadTune asks whether it got bigger. Answer honestly.
+First update DeadTune, press **Apply** and let the HUD go in when Deadlock closes: a HUD built by v0.27 carries the old live script, which the new bridge page ignores.
+
+- [ ] **LH-1 Check live preview**: Apply a HUD edit, close Deadlock, press Launch in DeadTune, get into the hideout or a match, then press **Check live preview**. No key to press: the minimap grows by half for about 5 s, then DeadTune asks whether it got bigger. Answer honestly. The card's row "The live connection is ..." counts wakes, sleeps and waits; note them.
+- [ ] **LH-2 Drag the minimap**: with the game in a window or on a second screen, open the HUD page in DeadTune and drag the minimap. It follows in game within about a second. Note your FPS (`cl_showfps 1`) while you drag.
+- [ ] **LH-3 FPS recovers**: leave the HUD page (open Overview, or minimise DeadTune) and play for a minute. FPS should be back to what it is with DeadTune closed; note both numbers. Staying on the HUD page without touching anything for a minute should do the same: the line reads "Live in game, paused until your next HUD change". DeadTune can't read the game's FPS itself, so these numbers come from you.
+- [ ] **LH-4 Live editing off mid-game**: on the HUD page press **Live editing: On** so it reads Off. Within about a second the game shows the HUD from your last Apply (the minimap you dragged jumps back). Press it again: your edits come back. Neither needs Apply or a restart. Close DeadTune with editing on and check that FPS stays normal.
 
 ### 8. Benchmark
 - [ ] **P0-7**: capture 3 identical 60 s runs with PresentMon, import each in Advanced > Bench. Variance under 3%? Note which CSV columns your PresentMon version writes (`MsBetweenPresents` or `FrameTime`).

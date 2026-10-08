@@ -35,6 +35,7 @@ pub mod resource;
 pub mod searchpaths;
 pub mod topbar;
 pub mod vpk;
+pub mod web_probe;
 
 pub use elements::{ElementId, ElementSpec};
 pub use ingame::IngameSettings;

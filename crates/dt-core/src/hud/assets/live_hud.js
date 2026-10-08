@@ -327,7 +327,32 @@
         echo(line);
     }
 
+    // Can the web panel load a page from this PC? DeadTune serves one on 127.0.0.1; the
+    // page answers through its title, which arrives as an HTMLTitle event.
+    function webProbe() {
+        var urls = [
+            ["ip", "http://127.0.0.1:" + CONFIG.webPort + "/probe?k=ip"],
+            ["host", "http://localhost:" + CONFIG.webPort + "/probe?k=host"],
+            ["data", "data:text/html,<title>DTLIVE data ok</title>"]
+        ];
+        for (var i = 0; i < urls.length; i++) {
+            try {
+                var kind = urls[i][0];
+                var p = $.CreatePanel("CitadelHTMLPanel", ctx, "DtLiveWeb_" + kind);
+                if (!p) { say("web " + kind + " nopanel"); continue; }
+                p.hittest = false;
+                if (p.style) { p.style.width = "2px"; p.style.height = "2px"; p.style.opacity = "0.01"; }
+                $.RegisterEventHandler("HTMLTitle", p, (function (k) {
+                    return function (panel, title) { say("web " + k + " title=" + title); };
+                })(kind));
+                p.SetURL(urls[i][1]);
+                say("web " + kind + " requested");
+            } catch (e) { say("web " + urls[i][0] + " error " + e); }
+        }
+    }
+
     // The sliders read their ConVars as they come up, so the hello waits a moment.
+    $.Schedule(2.0, function () { try { webProbe(); } catch (e) { warn("error web " + e); } });
     $.Schedule(1.0, function () { greeted = true; hello(); });
     $.Schedule(CONFIG.poll, poll);
 })();

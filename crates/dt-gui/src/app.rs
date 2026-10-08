@@ -135,6 +135,7 @@ impl App {
         if let Ok(exe) = update::exe() {
             dt_core::update::cleanup(exe);
         }
+        let _ = dt_core::hud::web_probe::serve(crate::live_check::web_hits().clone());
         if let Screen::Main(state) = &mut self.screen
             && update::AVAILABLE
             && state.update.state == UpdateState::Idle

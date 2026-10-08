@@ -888,8 +888,10 @@ pub fn script(base: &str, dict: &[String]) -> String {
         .join(", ");
     let cfg = CFG_NAME.trim_end_matches(".cfg");
     format!(
-        "var DT_LIVE = {{ base: \"{base}\", baseWords: [{hi}, {lo}], ctl: \"{}\", ctlMax: {}, probe: \"{PROBE_ID}\", data: [{data}], max: {WORD_MAX}, dict: [{dict}], cfg: \"{cfg}\", poll: {POLL_SECS}, pull: {PULL_SECS}, pullTimeout: {PULL_TIMEOUT_SECS} }};\n{SCRIPT}",
-        CTL.id, CTL.max
+        "var DT_LIVE = {{ base: \"{base}\", baseWords: [{hi}, {lo}], ctl: \"{}\", ctlMax: {}, probe: \"{PROBE_ID}\", data: [{data}], max: {WORD_MAX}, dict: [{dict}], cfg: \"{cfg}\", poll: {POLL_SECS}, pull: {PULL_SECS}, pullTimeout: {PULL_TIMEOUT_SECS}, webPort: {} }};\n{SCRIPT}",
+        CTL.id,
+        CTL.max,
+        super::web_probe::PORT
     )
 }
 
@@ -1953,7 +1955,7 @@ mod tests {
         );
         assert!(text.contains("dict: [\"^transform^translateX(\", "));
         assert!(text.contains(
-            "cfg: \"deadtune_hud\", poll: 0.25, pull: 0.3, pullTimeout: 3 };\n(function () {"
+            "cfg: \"deadtune_hud\", poll: 0.25, pull: 0.3, pullTimeout: 3, webPort: 47613 };\n(function () {"
         ));
         assert!(
             !text.contains("GetSettingString("),

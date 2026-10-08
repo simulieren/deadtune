@@ -172,7 +172,8 @@ impl AppState {
     /// The checklist for `facts`, saved as a report.
     pub fn show_live_check(&mut self, facts: Facts) {
         let diagnosis = diagnose(&facts);
-        let report = live_check::report(&facts, &diagnosis, env!("CARGO_PKG_VERSION"));
+        let mut report = live_check::report(&facts, &diagnosis, env!("CARGO_PKG_VERSION"));
+        report.push_str(&web_probe_line());
         let saved = self.save_live_report(&report);
         self.live_check = LiveCheck::Done(Box::new(Done {
             facts,
@@ -197,6 +198,24 @@ impl AppState {
             .map(|_| dir.join(name))
             .map_err(|e| e.to_string())
     }
+}
+
+/// Requests the game's web panel made to DeadTune's page on 127.0.0.1, by probe kind.
+pub fn web_hits() -> &'static std::sync::Arc<std::sync::Mutex<Vec<String>>> {
+    static HITS: std::sync::OnceLock<std::sync::Arc<std::sync::Mutex<Vec<String>>>> =
+        std::sync::OnceLock::new();
+    HITS.get_or_init(Default::default)
+}
+
+fn web_probe_line() -> String {
+    let hits = web_hits().lock().map(|h| h.clone()).unwrap_or_default();
+    let count = |k: &str| hits.iter().filter(|h| *h == k).count();
+    format!(
+        "Web panel requests to DeadTune on 127.0.0.1:{}: ip={} localhost={}.\n",
+        dt_core::hud::web_probe::PORT,
+        count("ip"),
+        count("host")
+    )
 }
 
 #[cfg(test)]

@@ -513,8 +513,8 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
                     "The hidden sliders work: they show the values DeadTune set at launch",
                 ),
                 Sliders::Load => row(
-                    Tone::Good,
-                    "The hidden sliders load (Deadlock wasn't started through DeadTune, so they show the game's own values)",
+                    Tone::Bad,
+                    "The hidden sliders load but read 0, not the values DeadTune set at launch, so they don't follow settings in the HUD",
                 ),
                 Sliders::Some(n) => {
                     steps.push(Step::SendReport(

@@ -296,13 +296,6 @@
         out.push("kvf=" + has($.LoadKeyValuesFile));
         out.push("ld=" + has(ctx.BLoadLayoutFromString));
         out.push("cp=" + has($.CreatePanel));
-        var html = "0";
-        try {
-            var p = $.CreatePanel("CitadelHTMLPanel", ctx, "DtLiveHtmlProbe");
-            html = p ? (p.SetURL ? "1" : "p") : "0";
-            if (p && p.DeleteAsync) { p.DeleteAsync(0); }
-        } catch (e) { html = "e"; }
-        out.push("html=" + html);
         return out.join(" ");
     }
 
@@ -338,6 +331,7 @@
         for (var i = 0; i < urls.length; i++) {
             try {
                 var kind = urls[i][0];
+                say("web " + kind + " creating");
                 var p = $.CreatePanel("CitadelHTMLPanel", ctx, "DtLiveWeb_" + kind);
                 if (!p) { say("web " + kind + " nopanel"); continue; }
                 p.hittest = false;
@@ -353,6 +347,9 @@
 
     // The sliders read their ConVars as they come up, so the hello waits a moment.
     $.Schedule(2.0, function () { try { webProbe(); } catch (e) { warn("error web " + e); } });
+    [3, 10, 60].forEach(function (t) {
+        $.Schedule(t, function () { say("alive " + t + "s polls=" + Math.round(clock / CONFIG.poll)); });
+    });
     $.Schedule(1.0, function () { greeted = true; hello(); });
     $.Schedule(CONFIG.poll, poll);
 })();

@@ -76,8 +76,8 @@ git archive "$sha" | tar -x -C "$src"
 export CARGO_TARGET_DIR="$out/cargo"
 export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 export DEADTUNE_COMMIT="$sha"
-(cd "$src" && cargo build --release --target $target -p dt-gui -p dt-cli --features dt-gui/fetch,dt-cli/fetch \
-  && cargo build --release --target $target -p dt-core --example hud_build)
+(cd "$src" && cargo build --release --target $target -p dt-gui -p dt-cli -p dt-core \
+  --features dt-gui/fetch,dt-cli/fetch --bins --example hud_build)
 
 rel="$CARGO_TARGET_DIR/$target/release"
 stage="$out/stage"

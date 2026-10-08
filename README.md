@@ -95,6 +95,7 @@ A plain-language check of everything that affects your FPS, with what to do for 
 ### Testing and comparing
 
 - **Live changes** for settings the engine accepts at runtime, through an exec file bound to a key (default `F8`), the network console where it works, or the clipboard.
+- **Live HUD preview** (experimental): HUD edits show in the running game without a restart. The HUD script opens a small bridge page, `docs/bridge/` in this repo, served by GitHub Pages at simulieren.github.io/deadtune/bridge/; it talks only to DeadTune on 127.0.0.1. Idea from QOL Lock by Predi_i and BubbleGumXD.
 - **Apply and relaunch** for restart-only settings: DeadTune closes the game, writes the files and starts it again.
 - **Launch options** in the menu beside Launch: DirectX 11 or Vulkan, skip the intro video, the console window and your own extras, each checked against the options this game build actually knows.
 - **Benchmarks**: import PresentMon (Windows) or MangoHud (Linux) captures and compare average FPS, 1% and 0.1% lows between runs and profiles.

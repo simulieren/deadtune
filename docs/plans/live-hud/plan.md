@@ -1,90 +1,72 @@
 # Live HUD preview (restyle the running game's HUD without a restart)
 
-Status: second build, 2026-10-06. The first Windows launch (v0.17.0, section 2) proved the script loads and can run console commands, and that Panorama has no ConVar read API. This build reads ConVars through hidden sliders instead (section 3). The LH checks in `docs/testing-windows.md` section 7e settle what is left. Research: `research/hud/panorama-runtime.md`, `docs/plans/ingame-settings/plan.md`.
+Status: third design, 2026-10-08. The hidden-slider channel of the second design is dead (section 2), so messages now travel through the game's own web panel and a static bridge page on GitHub Pages (section 3). Check live preview (section 9) settles what is left on Windows. Research: `research/hud/panorama-runtime.md`, `docs/plans/ingame-settings/plan.md`.
+
+Credit: the web-panel bridge, the title and fragment channel, the restore at HUD load and the ready handshake follow ideas from QOL Lock 4.0.5 by Predi_i and BubbleGumXD (`github.com/civo7/QOLLOCK`, `docs/core/storage_bridge.md`). QOL Lock has no licence, so DeadTune takes only the ideas; every line here is our own.
 
 ## 1. The problem
 
 Two facts fix the shape of this feature:
 
 - The running game locks DeadTune's HUD pak (`pak77_dir.vpk`: "Access is denied (os error 5)" even as administrator), so nothing new can be shipped while the game runs.
-- Retail Panorama has no reload command (`find reload`, `find panorama`: nothing; `dump_panorama_events` lists only generic style events). A pak change is seen at the next game start.
+- Retail Panorama has no reload command (`find reload`, `find panorama`: nothing). A pak change is seen at the next game start.
 
-What Panorama does offer is `panel.style.<prop> = value` from a script that is already loaded, and every HUD edit DeadTune makes is a CSS rule, so a script shipped in the pak once can restyle the HUD at runtime if DeadTune can hand it the current rules.
+What Panorama does offer is `panel.style.<prop> = value` from a script that is already loaded, and every HUD edit DeadTune makes is a CSS rule, so a script shipped in the pak once can restyle the HUD at runtime if DeadTune can hand it the current rules. The hard part is the hand-over: a Panorama script can read neither a ConVar nor a file.
 
-## 2. Evidence from the first Windows launch
+## 2. Evidence from Windows
 
-Simon, 2026-10-06, v0.17.0, preview on, game launched through DeadTune, minimap edited. `console.log`:
+v0.17.0 (Simon, 2026-10-06): the script loads from the HUD pak and `$.DispatchEvent("CitadelConCommand", ...)` runs `exec` and `echo`, but every `exec` prints a console line and `GameInterfaceAPI.GetSettingString` does not exist.
 
-```
-[InputService] exec: couldn't exec '{}cfg/deadtune_hud.cfg', unable to read file   (about once a second)
-[Console] DEADTUNE_LIVE hello 285ebd44
-[InputService] exec: couldn't exec '{}cfg/deadtune_hud.cfg', unable to read file
-[Console] DEADTUNE_LIVE hello 285ebd44
-```
+v0.24 to v0.26 (Simon, 2026-10-07 and 08), all in the game's HUD:
 
-The normal bridge worked alongside (`execing deadtune_live`, then `[Console] "DeadTune: applied 1"`). What it proves:
-
-- The script loads from the HUD pak, and `$.DispatchEvent("CitadelConCommand", ...)` runs `exec` and `echo`.
-- The hello line had no ` tv_title=` part, so `GameInterfaceAPI.GetSettingString` does not exist in Deadlock. Channel (a) of the first design is dead.
-- Every `exec` prints a console line, so the old once-a-second exec spammed the log. Polling with `exec` is out.
-- DeadTune never wrote `cfg/deadtune_hud.cfg`: it only wrote the file once the state was "Live", and the HUD page stayed at "Looking for the live script in game...", so the hello never reached the state machine. A state-level test now feeds exactly these lines (`[Console] ` prefix, CRLF) from a real `console.log` through `AppState::poll_conlog` and gets "Live" (`state::tests::simons_console_log_makes_the_preview_live_and_edits_reach_the_cfg`), and the same lines through the v0.17.0 code also reach "Live", so the loss happened before the parser, in which file DeadTune tailed or when it read it. The root cause is not proven on the Mac. Two changes cover it: a hello read before DeadTune's first game poll now counts (it matters because the new script says hello only once), and a slow hello now shows which log file DeadTune reads and when its last line came, or that no log was found (section 5), so the next launch names the cause.
+- The script loads and its `$.Schedule` timers keep running (`alive 3s polls=3`, `alive 10s polls=29`). `$.Msg` lines reach `console.log` as `[PanoramaScript] ...`.
+- The hidden `CitadelSettingsSlider` channel is dead: all ten sliders load (`n=10`) but read 0, even after the boot cfg set their ConVars. `GameInterfaceAPI` does not exist at all.
+- `$.CreatePanel("CitadelHTMLPanel", ...)` works and `$.RegisterEventHandler("HTMLTitle", panel, fn(panel, title))` fires. `SetURL` to `http://127.0.0.1:47613/...`, `http://localhost:47613/...` and a `data:` URL all ended at title `about:blank`, and DeadTune's server saw no request. The game's 2026-10-01 update made `SetURL` HTTPS-only (QOL Lock used `javascript:` URLs before it and moved to an HTTPS page after).
+- Creating and at once deleting a `CitadelHTMLPanel` (the old hello probe) seemed to stop the script, so the script never deletes a panel.
 
 ## 3. Data channel
 
 ```mermaid
 flowchart LR
-  E[HUD edit in DeadTune] --> R[live::rules] --> M[live::Mailbox: words, seq, base]
-  M -->|cfg/deadtune_hud.cfg, or netcon| K[F8: exec deadtune_live; exec deadtune_hud]
-  K --> C[console sets tv_* ConVars]
-  C --> S[hidden CitadelSettingsSlider panels show the values]
-  S -->|read 4x a second, silent| J[live_hud.vjs_c]
-  J --> P[panel.style.prop = value]
-  J -->|echo DEADTUNE_LIVE| L[console.log] --> T[LivePreview in DeadTune]
+  E[HUD edit in DeadTune] --> R[live::rules] --> M[live::Mailbox: seq, base, full or patch]
+  M -->|Post: chunks + keep| B[web_bridge on 127.0.0.1:47613]
+  P[bridge page on github.io, in a 2 px CitadelHTMLPanel] -->|fetch /live every 150 ms| B
+  P -->|document.title per chunk| J[live_hud.vjs_c]
+  J --> S[panel.style.prop = value]
+  J -->|SetURL url#n.ack.seq| P -->|fetch /ack| B
+  J -->|$.Msg DEADTUNE_LIVE| L[console.log] --> T[LivePreview]
+  B --> T
 ```
 
 ### 3.1 Options weighed
 
-| Option | Write side | Read side | Verdict |
-|---|---|---|---|
-| (a) ConVars read through a JS API | Console | `GameInterfaceAPI.GetSettingString` | Dead: the API does not exist (section 2) |
-| (b) Hidden `CitadelSettingsSlider` panels bound to numeric ConVars | Console: netcon, or the bound key running `exec deadtune_hud` | The slider's `Value` text box from the DOM, like `ingame_settings.js` reads the FOV slider; silent | Chosen |
-| (c) A loose file the script loads (`BLoadLayout`, `$.LoadKeyValues`) | DeadTune writes under `game/citadel/panorama/` | Resource loads are cached by path; the hello reports whether `$.LoadKeyValues` exists (`kv=`) | Not pursued: caching unknown, writes into the game folder |
-| (d) The script polls `exec deadtune_hud` | DeadTune writes the cfg | The cfg sets ConVars | Out as a poll: one console line per exec (section 2). Kept as a pull: the script runs it only while a long message comes in |
-| (e) CEF bridge | DeadTune serves `http://127.0.0.1` | A hidden `CitadelHTMLPanel` loads an HTTPS page; Panorama to page by `SetURL(url#fragment)`, page to Panorama through `document.title` and the `HTMLTitle` event; the page fetches DeadTune on localhost | Plan option, not built. Idea from QOL Lock's notes (`github.com/civo7/QOLLOCK`, `docs/core/storage_bridge.md`; no licence, so ideas only, no code). It would push edits with no key press and no console line, but needs a hosted HTTPS page, a localhost server in DeadTune and an answer to whether the HUD may host a CEF panel at all. The hello reports `html=` (whether `$.CreatePanel("CitadelHTMLPanel", ...)` returns a panel with `SetURL`) so one launch says whether it is worth building |
+| Option | Verdict |
+|---|---|
+| (a) ConVars read through `GameInterfaceAPI` | Dead: the API does not exist |
+| (b) Hidden `CitadelSettingsSlider` panels bound to inert `tv_` ConVars | Dead: they load but read 0 (v0.24 to v0.26); removed |
+| (c) A loose file the script loads | Not pursued: caching unknown, writes into the game folder |
+| (d) The script runs `exec` to pull a cfg | Out: one console line per exec, and the cfg could only set ConVars nobody can read |
+| (e) Web panel and an HTTPS bridge page | Chosen. The game loads only HTTPS, so the page lives on GitHub Pages; the page may fetch `http://127.0.0.1` (a secure context to Chromium) with CORS and private network headers |
 
-### 3.2 The slots
+### 3.2 Pieces
 
-A slot is a hidden slider in `hud.vxml_c` after `#TopBar` (`live::slots_panel`: a 0x0 clipped transparent panel, plus one probe slider inside a collapsed panel), bound with `convar="..."` to a ConVar from `research/configs/OptimizationLock/cvarlist.txt`. Every slot is a SourceTV server setting of the engine in the player's own process: flags `release` only (not cheat, not dev-only, not archived, so nothing lands in `user_convars_*.vcfg`, not replicated, not `sv`), read only by a SourceTV server, which a client never runs. So any value, 0 included, does nothing. `slots_use_distinct_safe_convars` checks the flags against the dump and that every slot is a `tv_` setting.
-
-| Slot | ConVar | Default | Why it is safe |
-|---|---|---|---|
-| control | `tv_chattimelimit` | 0.2 | Spectator chat rate on a SourceTV server; a float, so it holds the 20-bit control word exactly |
-| data 0 | `tv_broadcast_spew_threshold` | 0.1 | Log threshold of a broadcasting server |
-| data 1 | `tv_maxclients` | 128 | Spectator limit of a SourceTV server |
-| data 2 | `tv_broadcast_keyframe_interval` | 3 | Keyframe rate to a broadcast relay |
-| data 3 | `tv_broadcast_keyframe_interval1` | 3 | Same, second relay |
-| data 4 | `tv_broadcast_startup_resend_interval` | 10 | Startup resend to a relay |
-| data 5 | `tv_broadcast_max_requests` | 20 | HTTP requests in flight while broadcasting |
-| data 6 | `tv_broadcast_max_requests1` | 20 | Same, second relay |
-| data 7 | `tv_chatgroupsize` | 0 | Spectator chat groups |
-| data 8 | `tv_maxrate` | 0 | Spectator bandwidth cap |
-| data 9 | `tv_timeout` | 20 | Spectator connection timeout |
-
-Rejected: `cl_change_callback_limit` (the WIP's first pick; at 0 it would warn about every change callback), `cl_error_report_time`, `tv_debug` (print to the console), `survey_*`, `citadel_fake_number_of_games_played`, `citadel_region_override`, the minimap and glow ConVars (visible effects), `tv_playcast_*` and `tv_window_size` (the client's own replay and broadcast viewer).
+- **Script** (`assets/live_hud.js`, config `var DT_LIVE = { base, page, port, protocol, poll, retry, retries }`). On load it creates one `CitadelHTMLPanel` (2 px, opacity 0.01, visible so Chromium's timers run, no hit test, never deleted), registers `HTMLTitle` and opens `https://simulieren.github.io/deadtune/bridge/?port=47613&base=<base>`. A second panel loads `http://127.0.0.1:47613/control` once as the control: its title in the log shows whether the game still refuses plain HTTP. It answers only through `$.Msg` (`DEADTUNE_LIVE ...`) and the URL fragment, never with a console command. One `hello <base> web=panel|nopanel` at load, `alive 10s` once, `web <report>` once per distinct page report, `<seq> ok <base>` per applied message, `<seq> wrongbase <base>`.
+- **Page** (`docs/bridge/index.html`, dependency-free, no requests anywhere but 127.0.0.1). Every title it sets is `DTLIVE:v1 <counter> <body>`; the counter makes each title distinct, so the script drops the repeats the panel delivers. Bodies: `ready storage=ok|no` (after testing `localStorage`), `fetch ok`, `fetch blocked <error>`, the message chunks, `restore dt1 ...` and `restore none`. It polls `/live?since=<seq>&base=<base>` every 150 ms (`&hello=1` on its first poll), backs off to 5 s while DeadTune is unreachable, and sets one title every 40 ms. `sw.js` keeps a copy of the page for when GitHub is unreachable (network first, so updates land at once).
+- **Server** (`hud::web_bridge`, 127.0.0.1 only, a thread per connection). `GET /live` answers JSON `{seq, chunks, keep}` for the latest message when its seq differs from `since`, else 204; a `hello=1` poll drops the posted message (it may be a patch for the last script) and tells the GUI. `GET /ack?seq=N` records an ack. `OPTIONS` answers the preflight. Every answer carries `Access-Control-Allow-Origin: https://simulieren.github.io`, `Access-Control-Allow-Private-Network: true`, methods and headers. `/live`, `/ack` and preflights from any other `Origin` (or none) get 403; only `/control`, a plain navigation, needs none. Counters (polls, page starts, delivered, acks, preflights, plain http loads, refused) go into the check's report.
+- **No per-session token.** The script is baked into the pak at Apply and can't learn a value DeadTune picks at start, and anything baked into the pak is readable by every local program. Browsers can't forge `Origin`, and only simulieren's own GitHub Pages carry that origin, so the `Origin` check is the guard.
 
 ### 3.3 Message format
 
-The control slot holds `seq << 10 | chunk` (10 bits each; chunk 0 is "no chunk"). Each data slot holds one 16-bit word. Chunk 1 starts with a header: chunk count, pull flag and kind (`full` replaces the script's override set, `patch` merges) in one word, the payload's byte length, and the pak's `base` in two words. The payload is records `selector^prop^value` joined by `~`, with `%`, `~`, `^`, control characters and non-ASCII percent-escaped, then compressed: every byte from 0x80 up names a fragment of a dictionary built from the pak's own rules, the element selectors and the live properties (`live::dictionary`), so one element drag fits one chunk. Both sides derive the dictionary from the compiled patch, and `base` hashes it, so they always agree.
+A message is the records `selector^prop^value` joined by `~`, each field percent-escaped (`%`, `~`, `^`, spaces, control characters and non-ASCII), so the payload is printable ASCII without spaces: a page title collapses whitespace. `live::titles` cuts it into chunks of 200 characters, each `dt1 <seq> <i>/<n> <base> full|patch <part>`; `full` replaces the script's override set, `patch` merges. The script joins the parts in order before decoding, keeps chunks per seq, ignores a seq it already applied, and answers a message for another base with `wrongbase`.
 
-`base` is eight hex digits of the sha256 of what the pak baked. The script ignores a message for another base and answers `DEADTUNE_LIVE <seq> wrongbase <its base>`. Overrides are absolute inline values; for every key the baked layout set and the desired one dropped, the message carries the property's vanilla reset (`live::RESETS`, `ui-scale` and `visibility` from `ELEMENTS`). The first message of every session is `full`, because the script may still hold an earlier DeadTune run's overrides.
+`base` is eight hex digits of the sha256 of the styles and layout edits the pak baked. The first message of every session, and of every new page, is `full`. Seq is never 0 (a new page asks for anything other than 0).
 
-### 3.4 Transport and console lines
+### 3.4 Handshake, acks and restore
 
-- DeadTune writes `cfg/deadtune_hud.cfg` (temp file and rename) whenever the preview is on and the game runs: empty when nothing waits, so the key never hits a missing file. Netcon, when it is the bridge, sets the slots directly too.
-- The boot cfg binds the live key to `exec deadtune_live; exec deadtune_hud` when the installed HUD pak carries the script, and sets every slot to a probe value (control 1024, data slot k to 1000 + k) so the hello shows whether the sliders read their ConVars.
-- Without netcon, chunk 1 of each message waits for a key press; the page says "Press F8 in game ...". The script then answers `got 1`, DeadTune writes chunk 2, and the script runs `exec deadtune_hud` every 0.3 s until the next chunk arrives, for at most 3 s after the last one. With netcon nothing is pulled.
-- Console lines: one hello a second after the script loads, one more each time the control slot shows chunk 0 under a new sequence (the hello on demand, `tv_chattimelimit 2048` by hand), one `got`/`ok` per chunk and one `execing deadtune_hud` per pull. Idle, nothing.
-- At session end (game closed, preview off, DeadTune exit) the cfg gets the slots' defaults. None of them is saved by the game, so a crash of DeadTune leaves nothing behind after the next game start.
+- **Ready.** The page's first title is `ready`. A title with another `DTLIVE:` version is an old cached page: the script loads it again with `&r=<n>`. With no `ready` after 20 s the watchdog loads it again, up to five loads in all.
+- **Fragments.** The script asks through `SetURL(url + "#<n>.ack.<seq>")` and `#<n>.restore`; only the fragment changes, so the page gets a `hashchange` and no reload. A fragment present when the page loads is never acted on (a reload never replays a request), and such a load sends no `hello`, so a game that reloads instead of firing `hashchange` can't loop.
+- **Acks** count from either path: the page's `/ack` and the console's `ok` line.
+- **Restore at HUD load.** With each message DeadTune posts `keep`, the whole override set as a `full` message under the same seq. When the script acks a seq the page saves its `keep` in `localStorage` (the game's browser profile keeps it across restarts). Right after `ready` the script asks for it; the page answers with `restore dt1 ...` chunks when the saved base matches, else `restore none`. A restore counts only while no message from DeadTune has started to arrive, so it never overwrites a newer edit. Live edits therefore survive a game restart until Apply bakes them, even before DeadTune is running.
 
 ## 4. Mapping: which edits go live
 
@@ -119,30 +101,29 @@ The script matches selectors itself with `FindChildTraverse`, `FindChildrenWithC
 
 ## 5. GUI
 
-State machine `LivePreview` (`crates/dt-gui/src/live_hud.rs`), one value in `AppState`. The line every HUD page shows comes from `LivePreview::status`:
+State machine `LivePreview` (`crates/dt-gui/src/live_hud.rs`), one value in `AppState`. Each frame `AppState::tick_live` hands it the bridge's news (`Bridge::take`: a page start, the page's base, the last poll, acks) and posts what `tick` returns (`Delivery::Post`, or `Delivery::Clear` when a session ends). The server wakes the window on a page start, an ack, or a page coming back. The line every HUD page shows comes from `LivePreview::status`:
 
 | State | Line | Enters on |
 |---|---|---|
 | `Off` | nothing | switch off, Vanilla (no pak), Ranked-safe (pak taken out) |
 | `NotInstalled` | "Apply to add the live script to your HUD; Deadlock loads it when it starts" | the installed pak lacks `HudFeature::LivePreview` |
 | `GameClosed` | "Live preview starts when Deadlock runs" | script installed, game not running |
-| `Stale` | "Deadlock is running the HUD from before your last Apply. Close Deadlock, then press Launch." (hover says why) | the game started before the pak was written, or a hello named another base |
-| `Waiting` | "Press F8 in game to connect the live preview" while chunk 1 waits for the key; else "Looking for the live script in game..." for 20 s, then which console log DeadTune reads and when its last line came, or that no log was found | game running, no hello yet |
-| `Live` | "Live in game", plus "Press F8 in game to show your latest edits" while a chunk waits; "Undo live changes" | a hello, `ok`, or `got` with the installed base |
-| `Error` | the message | a cfg write failed |
+| `Stale` | "Deadlock is running the HUD from before your last Apply. Close Deadlock, then press Launch." | the game started before the pak was written, or the script or page named another base |
+| `Waiting` | "Looking for the live script in game..." for 20 s; then "The live script runs, but its page hasn't reached DeadTune. Press Check live preview." when the log had a hello, else where the console log stands | game running, no page poll within 2 s |
+| `Live` | "Live in game"; "Undo live changes" | the script said hello (log or page) with the installed base and the page polled within 2 s |
+| `Error` | the message | the layout can't be read |
 
-While a HUD change waits for the game to close (`PendingPaks`), `NotInstalled`, `Stale` and `Waiting` read "Your last Apply waits until Deadlock closes. Close Deadlock, then press Launch." instead.
+A page start or a hello is a fresh script: the mailbox sends everything again as `full`. While a HUD change waits for the game to close (`PendingPaks`), `NotInstalled`, `Stale` and `Waiting` read "Your last Apply waits until Deadlock closes. Close Deadlock, then press Launch." instead. The boot cfg no longer binds anything for the HUD, and no `deadtune_hud.cfg` is written.
 
-The game poll has three states (`Unknown`, `Closed`, `Running`): a hello read before the first poll is kept, one read while the game is known closed is an old line. The switch is `HudLayout::live`, on unless the profile says `live = false` (profiles from before parse as on); Apply bakes the script only when the layout has a pak for other reasons. If the game's HUD root layout no longer takes the script, `install::plan` builds the rest without it.
-
-Screenshot lever: `DEADTUNE_FAKE_LIVE_HUD=off|not_installed|closed|waiting|waiting_long|waiting_key|stale|stale_base|live|live_key|error`.
+Screenshot lever: `DEADTUNE_FAKE_LIVE_HUD=off|not_installed|closed|waiting|waiting_long|waiting_page|stale|stale_base|live|error`.
 
 ## 6. Tests
 
-- `hud::live` (dt-core): codec round trips, dictionary and chunking, mailbox sequencing, slot safety against the cvarlist, live coverage of every element and generator, the script and slots in the stand-in HUD layout.
-- `the_script_reads_the_sliders_quietly_and_applies_a_pulled_message` runs the real script in Node against a stand-in for Panorama (`crates/dt-core/tests/fixtures/live_hud_sim.js`, sliders showing German-formatted numbers): one hello with the probe values, no command in a minute idle, a 23-chunk message pulled and applied to the panels' styles, quiet again, and a hello on demand. Skipped where Node is missing.
-- `live_hud` (dt-gui): every transition, the debounce, the key wait and the status lines. `state::tests`: Simon's log lines end to end, on in an edited HUD and off in Vanilla and Ranked-safe.
-- `install`: a HUD root layout the script cannot join leaves only the script out.
+- `hud::live` (dt-core): codec round trips, chunking and reassembly in any order, a trimmed title, mailbox sequencing, replacement, timeout and `keep`, live coverage of every element and generator, the script in the stand-in HUD layout.
+- `hud::web_bridge`: request parsing, CORS and private network headers on every answer, the `Origin` guard, JSON, a page start dropping the posted patch, acks, a real server on 127.0.0.1.
+- `tests/live_bridge.rs`: the real script and the real page in Node (`tests/fixtures/live_hud_sim.js`: a `CitadelHTMLPanel` that loads only https, delivers every title twice and turns fragment-only `SetURL` into `hashchange`) against DeadTune's real server and a thread playing the window. Edits reach the panels applied once each with no console command; saved edits come back without DeadTune; a restore gives way to a newer message, also one that arrives late; a page reloaded with a fragment neither replays it nor says hello; a page that never loads is retried five times. Skipped where Node is missing.
+- `live_hud` (dt-gui): every transition with page news, the debounce, either ack path, the status lines. `state::tests`: a console hello, a page start, the posted full message, the ack and an edit's patch through `AppState`.
+- `hud::live_check`: every sample's next step, the page without a console log, a blocked fetch, a busy port, the report's counters.
 
 ## 7. Windows checks
 
@@ -152,18 +133,23 @@ Screenshot lever: `DEADTUNE_FAKE_LIVE_HUD=off|not_installed|closed|waiting|waiti
 
 | Unknown | Probe | If it fails |
 |---|---|---|
-| A hidden slider in the HUD shows its ConVar | The check's report: hello reports `ctl=1024 d=1000,...` | try the collapsed probe (`col=`), a visible 1 px slider, or option (e) |
-| A slider follows later console changes | The check's report: "Sliders follow DeadTune's changes" (the test message's `got`/`ok`) | netcon only, or option (e) |
-| An integer `tv_` ConVar clamps a word | The report's hello: a `d=` value differs from 1000 + k | swap that slot for another from section 3.2 |
+| The game's browser lets a github.io page fetch `http://127.0.0.1` | Report row "The bridge page reaches DeadTune", `web fetch ok` or `web fetch blocked <error>`, the server's preflight count | try `https://` on 127.0.0.1 with a local certificate, or a WebSocket |
+| HTMLTitle keeps up with a title every 40 ms | `alive 10s ... titles=` against the chunks sent; the test minimap applies | slow the pump |
+| A fragment-only `SetURL` keeps the page (no reload) | Server acks against the console's `ok` lines | rely on the console's `ok` |
+| `localStorage` persists in the game's browser profile | `web ready storage=ok`, then `web restored <seq>` after a restart | none needed; the preview still works |
 | Inline resets (`wash-color`, `visibility`) clear | Undo live changes, by eye | shrink `RESETS` |
 | The script survives game states | Check live preview after a match or the hideout | move the include to a layout that stays loaded |
 
 ## 9. Check live preview
 
-Simon is the only tester and the preview failed in ways only `console.log` could tell, so the check does the reading. One button on every HUD page (next to the live line) and in System check.
+Simon is the only tester, so the check does the reading. One button on every HUD page (next to the live line) and in System check.
 
-1. **Visible test.** When a session runs (`Waiting` or `Live`), DeadTune sends `live_check::test_layout` in place of the profile's layout (`LivePreview::flash`): the minimap at 150%, its bottom-right origin pulled 160 px left and 80 px up. With the key bridge the card says "Press F8 in game now". When the script's `ok` for that message arrives the card counts 5 s ("Look at your minimap now"), the layout goes back and it asks "Did the minimap get bigger for a few seconds?". Yes is green. No, or no `ok` within 20 s, goes to the diagnosis. With no session the diagnosis runs at once.
-2. **Diagnosis.** `hud::live_check::diagnose` is pure over `Facts`: game running and its start time, the newest console log candidate read whole (the session starts at the last `DEADTUNE_BOOT`), DeadTune's pak read back (`read_pak`: the script's baked base and how many of the eleven sliders `hud.vxml_c` holds), whether a HUD change is pending, the bridge, and the test (its seq and the player's answer). It returns rows (good, warn, bad, skipped) and one `Step`, the highest-priority problem: turn the preview on, start the game, Apply, close and Launch (stale pak, pending pak, no console log this session, wrong base), send the report (script error, no hello, sliders missing, test applied but not seen), try again with the key. The test message doubles as the slider probe: it sets `tv_chattimelimit`, and a `got`/`ok` for its seq means the sliders follow DeadTune's changes.
-3. **Report.** `live_check::report` is the checklist, the next step, every DeadTune line of the session (last 200), the error lines and the last 50 lines. Copy report puts it on the clipboard; it is always saved to `<data>/reports/live-hud-<time>.txt` (Open folder). On Windows a close-and-Launch step offers Restart Deadlock (`views::restart_game`, the Apply + relaunch flow).
+1. **Visible test.** When a session runs, DeadTune sends `live_check::test_layout` in place of the profile's layout (`LivePreview::flash`): the minimap at 150%, pulled toward the centre. When the script applies that message (page ack or console `ok`) the card counts 5 s, the layout goes back and it asks "Did the minimap get bigger for a few seconds?". Yes is green. No, or no ack within 20 s, goes to the diagnosis. With no session the diagnosis runs at once.
+2. **Diagnosis.** `hud::live_check::diagnose` is pure over `Facts`: game running and its start time, the newest console log read whole (the session starts at the last `DEADTUNE_BOOT`), the pak read back (the script's base), a pending HUD change, the server's facts (`WebFacts`: listening or why not, counters, last poll, the page's base, recent acks) and the test. Rows: game running; console log (a warning only, when the page reaches DeadTune anyway); the HUD carries the script; the game runs that HUD; the script runs (hello in the log, or the page); the bridge page loaded in game (`web ready`, whether it can keep edits, every `web` report as detail, the control load's title among them); the page reaches DeadTune (the server's count, or the browser's error, or the busy port); script errors; the minimap test. The one next step: turn on, start the game, Apply, close and Launch, send the report with a plain reason (script didn't start, no web panel, page didn't load, fetch blocked, port busy, applied but not seen), or try again.
+3. **Report.** `live_check::report` is the checklist, the next step, the server's counters, every DeadTune line of the session (last 200), the error lines and the last 50 lines. Copy report puts it on the clipboard; it is always saved to `<data>/reports/live-hud-<time>.txt`.
 
-Error lines are lines naming our script, `DtLive` panels or the HUD layout together with an error word, never our own `DEADTUNE_` lines. Samples for every situation (`live_check::sample`) back the tests and the screenshot lever `DEADTUNE_FAKE_LIVE_CHECK`; `scripts/live-check-shots.sh` renders them all.
+Samples for every situation (`live_check::SAMPLES`) back the tests and the screenshot lever `DEADTUNE_FAKE_LIVE_CHECK`; `scripts/live-check-shots.sh` renders them all.
+
+## 10. Next
+
+The same bridge can save the in-game settings rows (`docs/plans/ingame-settings/plan.md`) the moment they change, as QOL Lock does for its settings menu. Not now: the HUD preview comes first.

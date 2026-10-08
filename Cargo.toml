@@ -25,7 +25,7 @@ opt-level = 1
 [profile.release]
 opt-level = "z"
 lto = "fat"
-codegen-units = 1
+codegen-units = 16
 panic = "abort"
 strip = true
 

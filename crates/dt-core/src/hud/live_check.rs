@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use super::install::ADDON_FILE;
-use super::live::{self, CTL, DATA, HUD_LAYOUT, LiveLine, OWN_SCRIPT, SEQ_MOD};
-use super::{inject, vpk::VpkDir};
+use super::live::{self, LiveLine, OWN_SCRIPT};
+use super::vpk::VpkDir;
+use super::web_bridge::{Counters, PORT};
 use crate::bridge::ack::BOOT;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,17 +40,19 @@ pub enum PakFacts {
         written: Option<SystemTime>,
         /// The base baked into the live script, when the pak carries it.
         script_base: Option<String>,
-        /// How many of the hidden sliders the pak's HUD layout holds.
-        sliders: usize,
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BridgeFacts {
-    Netcon,
-    /// The exec-file bridge: the player presses this key in game.
-    Key(String),
-    Clipboard,
+/// What DeadTune's server on 127.0.0.1 saw of the bridge page (`web_bridge`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WebFacts {
+    /// The port DeadTune listens on, or why it couldn't.
+    pub listening: Option<Result<u16, String>>,
+    pub counters: Counters,
+    pub last_poll_ago: Option<Duration>,
+    /// The HUD the page's script was built for.
+    pub base: Option<String>,
+    pub recent_acks: Vec<u32>,
 }
 
 /// The visible test: DeadTune sent a bigger minimap through the live channel.
@@ -72,7 +75,7 @@ pub struct Facts {
     pub pak: PakFacts,
     /// A HUD change waits for the game to close.
     pub pending_hud: bool,
-    pub bridge: BridgeFacts,
+    pub web: WebFacts,
     pub test: TestFacts,
 }
 
@@ -101,11 +104,7 @@ pub enum Step {
     Apply,
     /// The game runs an older HUD, or was started without its console log.
     CloseAndLaunch,
-    /// The test message never reached the script; with the exec-file bridge the key was
-    /// probably not pressed.
-    TryAgain {
-        key: Option<String>,
-    },
+    TryAgain,
     SendReport(String),
 }
 
@@ -124,10 +123,10 @@ impl Step {
             Step::CloseAndLaunch => {
                 "Close Deadlock completely, then press Launch in DeadTune.".into()
             }
-            Step::TryAgain { key: Some(key) } => format!(
-                "Press Check live preview again and press {key} in game while the countdown runs."
-            ),
-            Step::TryAgain { key: None } => "Press Check live preview again.".into(),
+            Step::TryAgain => {
+                "Wait until you are in a match or the hideout, then press Check live preview again."
+                    .into()
+            }
             Step::SendReport(why) => format!("{why} Press Copy report and paste it to us."),
         }
     }
@@ -136,74 +135,6 @@ impl Step {
     pub fn restarts(&self) -> bool {
         matches!(self, Step::CloseAndLaunch)
     }
-}
-
-/// The script's hello line, read into plain facts.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Hello {
-    pub base: String,
-    pub ctl: Option<u32>,
-    pub data: Vec<u32>,
-    /// Hidden data sliders the script found in the HUD.
-    pub found: Option<usize>,
-    pub api: Option<String>,
-    pub html: Option<String>,
-    pub line: String,
-}
-
-impl Hello {
-    fn parse(line: &str) -> Option<Hello> {
-        let Some(LiveLine::Hello { base, probes }) = live::parse_line(line) else {
-            return None;
-        };
-        let field = |key: &str| {
-            probes
-                .split_whitespace()
-                .find_map(|kv| kv.strip_prefix(key)?.strip_prefix('='))
-        };
-        Some(Hello {
-            base,
-            ctl: field("ctl").and_then(|v| v.parse().ok()),
-            data: field("d")
-                .map(|v| v.split(',').filter_map(|w| w.parse().ok()).collect())
-                .unwrap_or_default(),
-            found: field("n").and_then(|v| v.parse().ok()),
-            api: field("api").map(str::to_string),
-            html: field("html").map(str::to_string),
-            line: line.trim().to_string(),
-        })
-    }
-
-    fn sliders(&self) -> Sliders {
-        let all = self.found == Some(DATA.len()) && self.ctl.is_some();
-        let probe: Vec<u32> = (0..DATA.len() as u32).map(|k| 1000 + k).collect();
-        match (all, self.found) {
-            (true, _) if self.ctl == Some(1 << 10) && self.data == probe => Sliders::ShowProbe,
-            (true, _) => Sliders::Load,
-            (false, Some(0)) | (false, None) => Sliders::Missing,
-            (false, Some(n)) => Sliders::Some(n),
-        }
-    }
-
-    /// The hello's other probes in words.
-    fn extras(&self) -> String {
-        let api = match self.api.as_deref() {
-            Some("missing") | None => "the game has no settings API for scripts (expected)",
-            Some(_) => "the game has a settings API for scripts",
-        };
-        let html = match self.html.as_deref() {
-            Some("1") => "web panels are available",
-            _ => "web panels are not available",
-        };
-        format!("HUD {}; {api}; {html}.", self.base)
-    }
-}
-
-enum Sliders {
-    ShowProbe,
-    Load,
-    Some(usize),
-    Missing,
 }
 
 /// What the game said in the console log since it started.
@@ -227,20 +158,42 @@ impl Session {
         }
     }
 
-    pub fn hellos(&self) -> Vec<Hello> {
-        self.lines.iter().filter_map(|l| Hello::parse(l)).collect()
+    fn live_lines(&self) -> impl Iterator<Item = (LiveLine, &String)> {
+        self.lines
+            .iter()
+            .filter_map(|l| live::parse_line(l).map(|line| (line, l)))
+    }
+
+    /// The script's hello lines: its base and the line itself.
+    pub fn hellos(&self) -> Vec<(String, String)> {
+        self.live_lines()
+            .filter_map(|(line, raw)| match line {
+                LiveLine::Hello { base, .. } => Some((base, raw.trim().to_string())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// What the web panel reported, each report once, in order.
+    pub fn web(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for (line, _) in self.live_lines() {
+            if let LiveLine::Web(text) = line
+                && !out.contains(&text)
+            {
+                out.push(text);
+            }
+        }
+        out
     }
 
     /// The script's answer to message `seq`.
     fn answer(&self, seq: u32) -> Option<LiveLine> {
-        self.lines
-            .iter()
-            .filter_map(|l| live::parse_line(l))
+        self.live_lines()
+            .map(|(line, _)| line)
             .filter(|line| match line {
-                LiveLine::Ok { seq: s, .. }
-                | LiveLine::Got { seq: s, .. }
-                | LiveLine::WrongBase { seq: s, .. } => *s % SEQ_MOD == seq % SEQ_MOD,
-                LiveLine::Hello { .. } => false,
+                LiveLine::Ok { seq: s, .. } | LiveLine::WrongBase { seq: s, .. } => *s == seq,
+                LiveLine::Hello { .. } | LiveLine::Web(_) => false,
             })
             .max_by_key(|line| matches!(line, LiveLine::Ok { .. }))
     }
@@ -292,7 +245,11 @@ impl Diagnosis {
 }
 
 fn ago(now: SystemTime, then: SystemTime) -> String {
-    let secs = now.duration_since(then).unwrap_or_default().as_secs();
+    secs_ago(now.duration_since(then).unwrap_or_default())
+}
+
+fn secs_ago(d: Duration) -> String {
+    let secs = d.as_secs();
     match secs {
         0..=89 => format!("{secs} s ago"),
         90..=5399 => format!("{} min ago", (secs + 30) / 60),
@@ -317,6 +274,30 @@ fn with(mut r: Row, detail: impl Into<String>) -> Row {
 /// before a launch through DeadTune.
 const START_SLACK: Duration = Duration::from_secs(1);
 
+/// The web panel's own reports, read from the script's lines.
+struct PageReports {
+    ready: Option<String>,
+    blocked: Option<String>,
+    no_panel: bool,
+    all: Vec<String>,
+}
+
+impl PageReports {
+    fn of(web: Vec<String>) -> PageReports {
+        PageReports {
+            ready: web
+                .iter()
+                .find_map(|w| w.strip_prefix("ready").map(|r| r.trim().to_string())),
+            blocked: web.iter().rev().find_map(|w| {
+                w.strip_prefix("fetch blocked")
+                    .map(|r| r.trim().to_string())
+            }),
+            no_panel: web.iter().any(|w| w.starts_with("nopanel")),
+            all: web,
+        }
+    }
+}
+
 pub fn diagnose(f: &Facts) -> Diagnosis {
     let mut rows = Vec::new();
     let mut steps: Vec<Step> = Vec::new();
@@ -324,6 +305,7 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
         GameFacts::Running { started } => Some(*started),
         GameFacts::Closed => None,
     };
+    let polls = f.web.counters.polls;
     if !f.preview_on {
         steps.push(Step::TurnOn);
     }
@@ -340,16 +322,19 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
         }
     });
 
+    // Without the console log the preview still works through the page; only the script's
+    // own report is missing then.
+    let no_log_tone = if polls > 0 { Tone::Warn } else { Tone::Bad };
     let started = running.flatten();
     let session = match &f.log {
         LogFacts::NotFound { looked } => {
             let looked: Vec<String> = looked.iter().map(|p| p.display().to_string()).collect();
-            if running.is_some() {
+            if running.is_some() && polls == 0 {
                 steps.push(Step::CloseAndLaunch);
             }
             rows.push(with(
                 row(
-                    Tone::Bad,
+                    no_log_tone,
                     "No console log found. Deadlock writes one only when started through DeadTune's Launch (it adds -condebug).",
                 ),
                 format!("Looked for:\n{}", looked.join("\n")),
@@ -365,9 +350,11 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
             let stale_log =
                 matches!((started, modified), (Some(s), Some(m)) if *m + START_SLACK < s);
             if stale_log {
-                steps.push(Step::CloseAndLaunch);
+                if polls == 0 {
+                    steps.push(Step::CloseAndLaunch);
+                }
                 rows.push(row(
-                    Tone::Bad,
+                    no_log_tone,
                     format!(
                         "This game isn't writing a console log: {} last changed {when}, before Deadlock started",
                         path.display()
@@ -402,28 +389,17 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
             ));
             None
         }
-        PakFacts::Read {
-            script_base,
-            sliders,
-            ..
-        } => {
-            match (script_base, *sliders) {
-                (Some(base), n) if n == DATA.len() + 1 => rows.push(row(
+        PakFacts::Read { script_base, .. } => {
+            match script_base {
+                Some(base) => rows.push(row(
                     Tone::Good,
-                    format!("The installed HUD carries the live script and the hidden sliders (HUD {base})"),
+                    format!("The installed HUD carries the live script (HUD {base})"),
                 )),
-                (Some(base), n) => {
-                    steps.push(Step::Apply);
-                    rows.push(row(
-                        Tone::Bad,
-                        format!("The installed HUD carries the live script (HUD {base}) but only {n} of {} hidden sliders", DATA.len() + 1),
-                    ))
-                }
-                (None, _) if f.pending_hud => rows.push(row(
+                None if f.pending_hud => rows.push(row(
                     Tone::Warn,
                     "The installed HUD has no live script yet; your waiting change adds it",
                 )),
-                (None, _) => {
+                None => {
                     steps.push(Step::Apply);
                     rows.push(row(Tone::Bad, "The installed HUD has no live script"))
                 }
@@ -443,17 +419,22 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
     }
 
     let hellos = session.as_ref().map(Session::hellos).unwrap_or_default();
+    let game_base = hellos
+        .last()
+        .map(|(base, _)| base.clone())
+        .or_else(|| f.web.base.clone());
     let written = match &f.pak {
         PakFacts::Read { written, .. } => *written,
         _ => None,
     };
     let older = matches!((started, written), (Some(s), Some(w)) if s + START_SLACK < w);
-    let other_base = match (hellos.last(), &disk_base) {
-        (Some(h), Some(base)) if h.base != *base => Some(h.base.clone()),
+    let other_base = match (&game_base, &disk_base) {
+        (Some(game), Some(disk)) if game != disk => Some(game.clone()),
         _ => None,
     };
+    let stale = older || other_base.is_some() || f.pending_hud;
     if running.is_some() {
-        rows.push(if older || other_base.is_some() || f.pending_hud {
+        rows.push(if stale {
             steps.push(Step::CloseAndLaunch);
             let why = match (&other_base, older, started, written) {
                 (Some(other), _, _, _) => format!(
@@ -478,13 +459,22 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
         });
     }
 
+    let can_run = disk_base.is_some() && running.is_some() && !stale;
     let errors = session.as_ref().map(Session::errors).unwrap_or_default();
-    match (&session, hellos.first()) {
-        (None, _) => rows.push(row(
+    let script_runs = !hellos.is_empty() || f.web.counters.hellos > 0 || polls > 0;
+    match (script_runs, &session) {
+        (true, _) => {
+            let detail = hellos.first().map_or(
+                "Seen through the bridge page; no console log line.".to_string(),
+                |(_, line)| line.clone(),
+            );
+            rows.push(with(row(Tone::Good, "The live script is running"), detail));
+        }
+        (false, None) => rows.push(row(
             Tone::Skip,
             "Whether the live script started: not checked",
         )),
-        (Some(s), None) => {
+        (false, Some(s)) => {
             let scope = if s.from_boot {
                 "since Deadlock started"
             } else {
@@ -494,7 +484,7 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
                 Tone::Bad,
                 format!("The live script didn't say hello {scope}, so it isn't running"),
             ));
-            if disk_base.is_some() && running.is_some() {
+            if can_run {
                 steps.push(Step::SendReport(if errors.is_empty() {
                     "The live script didn't start, and the game logged no error about it.".into()
                 } else {
@@ -502,41 +492,106 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
                 }));
             }
         }
-        (Some(_), Some(first)) => {
-            rows.push(with(
-                row(Tone::Good, "The live script is running"),
-                format!("{}\n{}", first.extras(), first.line),
-            ));
-            rows.push(match first.sliders() {
-                Sliders::ShowProbe => row(
-                    Tone::Good,
-                    "The hidden sliders work: they show the values DeadTune set at launch",
-                ),
-                Sliders::Load => row(
-                    Tone::Bad,
-                    "The hidden sliders load but read 0, not the values DeadTune set at launch, so they don't follow settings in the HUD",
-                ),
-                Sliders::Some(n) => {
-                    steps.push(Step::SendReport(
-                        "Some of the hidden sliders don't load in this game version.".into(),
-                    ));
-                    row(
-                        Tone::Bad,
-                        format!(
-                            "Only {n} of {} hidden sliders load in the game",
-                            DATA.len()
-                        ),
-                    )
-                }
-                Sliders::Missing => {
-                    steps.push(Step::SendReport(
-                        "The hidden sliders don't load in this game version.".into(),
-                    ));
-                    row(Tone::Bad, "The hidden sliders don't load in the game")
-                }
-            });
-        }
     }
+
+    let page = PageReports::of(session.as_ref().map(Session::web).unwrap_or_default());
+    let page_detail = (!page.all.is_empty()).then(|| page.all.join("\n"));
+    let attach = |r: Row| match &page_detail {
+        Some(d) => with(r, d.clone()),
+        None => r,
+    };
+    let page_loaded = page.ready.is_some() || polls > 0;
+    rows.push(attach(match (&page.ready, page.no_panel) {
+        (Some(ready), _) => {
+            let storage = if ready.contains("storage=ok") {
+                "it can keep your live edits for the next game start"
+            } else {
+                "it can't keep your live edits for the next game start"
+            };
+            row(
+                Tone::Good,
+                format!("DeadTune's bridge page loaded in game; {storage}"),
+            )
+        }
+        (None, _) if polls > 0 => row(
+            Tone::Good,
+            "DeadTune's bridge page loaded in game (it reached DeadTune)",
+        ),
+        (None, true) => {
+            if can_run {
+                steps.push(Step::SendReport(
+                    "The game wouldn't make a web panel for the live script.".into(),
+                ));
+            }
+            row(
+                Tone::Bad,
+                "The game wouldn't make a web panel, so the bridge page can't load",
+            )
+        }
+        (None, false) if script_runs => {
+            if can_run {
+                steps.push(Step::SendReport(
+                    "The game didn't load DeadTune's bridge page from GitHub.".into(),
+                ));
+            }
+            row(
+                Tone::Bad,
+                "DeadTune's bridge page didn't load in game. Check that this PC can open simulieren.github.io in a browser.",
+            )
+        }
+        (None, false) => row(Tone::Skip, "Whether the bridge page loaded: not checked"),
+    }));
+
+    let server = match &f.web.listening {
+        Some(Ok(port)) => format!("DeadTune listens on 127.0.0.1:{port}"),
+        Some(Err(why)) => format!("DeadTune couldn't listen on 127.0.0.1:{PORT}: {why}"),
+        None => "DeadTune's server didn't start".to_string(),
+    };
+    rows.push(match (&f.web.listening, polls) {
+        (_, n) if n > 0 => with(
+            row(
+                Tone::Good,
+                format!(
+                    "The bridge page reaches DeadTune ({n} request{}, last {})",
+                    plural(n as usize),
+                    f.web.last_poll_ago.map_or("unknown".into(), secs_ago)
+                ),
+            ),
+            server,
+        ),
+        (Some(Err(_)), _) => {
+            steps.push(Step::SendReport(format!(
+                "Another program holds port {PORT}. Close other DeadTune windows, then start DeadTune again."
+            )));
+            row(Tone::Bad, server)
+        }
+        _ if page.blocked.is_some() => {
+            if can_run {
+                steps.push(Step::SendReport(
+                    "The bridge page loaded but the game's browser won't let it reach DeadTune."
+                        .into(),
+                ));
+            }
+            with(
+                row(
+                    Tone::Bad,
+                    format!(
+                        "The bridge page can't reach DeadTune: {}",
+                        page.blocked.clone().unwrap_or_default()
+                    ),
+                ),
+                server,
+            )
+        }
+        _ if page_loaded => with(
+            row(Tone::Bad, "The bridge page hasn't reached DeadTune yet"),
+            server,
+        ),
+        _ => with(
+            row(Tone::Skip, "Whether the bridge page reaches DeadTune: not checked"),
+            server,
+        ),
+    });
 
     rows.push(match (errors.len(), &session) {
         (_, None) => row(Tone::Skip, "Script errors in the console log: not checked"),
@@ -562,63 +617,41 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
     });
 
     match &f.test {
-        TestFacts::NotRun => rows.push(row(
-            Tone::Skip,
-            "Sliders follow DeadTune's changes: not tested",
-        )),
+        TestFacts::NotRun => rows.push(row(Tone::Skip, "Minimap test: not run")),
         TestFacts::Sent { seq, saw } => {
             let answer = session.as_ref().and_then(|s| s.answer(*seq));
-            let set = format!("DeadTune set {} to message {seq}", CTL.convar);
-            match &answer {
-                Some(LiveLine::Ok { .. }) | Some(LiveLine::Got { .. }) => rows.push(with(
-                    row(Tone::Good, "Sliders follow DeadTune's changes: yes"),
-                    set,
+            let applied =
+                f.web.recent_acks.contains(seq) || matches!(answer, Some(LiveLine::Ok { .. }));
+            let sent = format!("DeadTune sent it as message {seq}");
+            match (&answer, applied) {
+                (_, true) => rows.push(with(
+                    row(Tone::Good, "The script applied the bigger minimap"),
+                    sent,
                 )),
-                Some(LiveLine::WrongBase { base, .. }) => {
+                (Some(LiveLine::WrongBase { base, .. }), false) => {
                     steps.push(Step::CloseAndLaunch);
                     rows.push(with(
                         row(
                             Tone::Bad,
-                            format!("The script got the test, but it belongs to HUD {base}, an older one"),
+                            format!("The script got the bigger minimap, but it belongs to HUD {base}, an older one"),
                         ),
-                        set,
+                        sent,
                     ))
                 }
                 _ => {
-                    let key = match &f.bridge {
-                        BridgeFacts::Key(k) => Some(k.clone()),
-                        _ => None,
-                    };
-                    if !hellos.is_empty() {
-                        steps.push(match &key {
-                            Some(_) => Step::TryAgain { key: key.clone() },
-                            None => Step::SendReport(
-                                "The live script runs but doesn't follow DeadTune's changes."
-                                    .into(),
-                            ),
-                        });
+                    if polls > 0 {
+                        steps.push(Step::TryAgain);
                     }
-                    let why = match &key {
-                        Some(k) => format!(
-                            " (with the {k} key bridge the game reads it only when you press {k})"
-                        ),
-                        None => String::new(),
-                    };
                     rows.push(with(
-                        row(
-                            Tone::Bad,
-                            format!(
-                                "Sliders follow DeadTune's changes: no answer from the script{why}"
-                            ),
-                        ),
-                        set,
+                        row(Tone::Bad, "The bigger minimap never reached the script"),
+                        sent,
                     ))
                 }
             }
             match saw {
                 Some(true) => rows.push(row(Tone::Good, "You saw the minimap get bigger")),
                 Some(false) => {
-                    if matches!(answer, Some(LiveLine::Ok { .. })) {
+                    if applied {
                         steps.push(Step::SendReport(
                             "The script got the bigger minimap but the HUD didn't change.".into(),
                         ));
@@ -644,7 +677,7 @@ pub fn diagnose(f: &Facts) -> Diagnosis {
             .into_iter()
             .min_by_key(priority)
             .unwrap_or(match &f.test {
-                TestFacts::NotRun => Step::TryAgain { key: None },
+                TestFacts::NotRun => Step::TryAgain,
                 TestFacts::Sent { .. } => {
                     Step::SendReport("Everything DeadTune can see looks right.".into())
                 }
@@ -660,7 +693,7 @@ fn priority(step: &Step) -> u8 {
         Step::Apply => 2,
         Step::CloseAndLaunch => 3,
         Step::SendReport(_) => 4,
-        Step::TryAgain { .. } => 5,
+        Step::TryAgain => 5,
         Step::Works => 6,
     }
 }
@@ -669,8 +702,8 @@ fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
 }
 
-/// Plain text for Copy report: the checklist, the next step, then the console log lines
-/// that matter.
+/// Plain text for Copy report: the checklist, the next step, the server's counters, then
+/// the console log lines that matter.
 pub fn report(f: &Facts, d: &Diagnosis, version: &str) -> String {
     let mut out = format!("DeadTune {version} live preview check\n\n");
     for r in &d.rows {
@@ -687,16 +720,31 @@ pub fn report(f: &Facts, d: &Diagnosis, version: &str) -> String {
     }
     out.push_str(&format!("\nNext step: {}\n", d.step.text()));
     out.push_str(&format!(
-        "\nBridge: {:?}. Preview on: {}. HUD change waiting: {}. Test: {:?}.\n",
-        f.bridge, f.preview_on, f.pending_hud, f.test
+        "\nPreview on: {}. HUD change waiting: {}. Test: {:?}.\n",
+        f.preview_on, f.pending_hud, f.test
+    ));
+    let c = &f.web.counters;
+    out.push_str(&format!(
+        "Bridge server: {:?}; polls {}, page starts {}, messages delivered {}, acks {}, preflights {}, plain http loads {}, refused {}, other {}; last poll {}; page HUD {}; recent acks {:?}.\n",
+        f.web.listening,
+        c.polls,
+        c.hellos,
+        c.delivered,
+        c.acks,
+        c.preflights,
+        c.controls,
+        c.refused,
+        c.other,
+        f.web.last_poll_ago.map_or("never".into(), secs_ago),
+        f.web.base.as_deref().unwrap_or("unknown"),
+        f.web.recent_acks
     ));
     match &f.pak {
         PakFacts::Read {
             written,
             script_base,
-            sliders,
         } => out.push_str(&format!(
-            "HUD file: script {}, {sliders} sliders, written {}.\n",
+            "HUD file: script {}, written {}.\n",
             script_base.as_deref().unwrap_or("none"),
             written.map_or("unknown".into(), |w| ago(f.now, w))
         )),
@@ -771,8 +819,8 @@ fn read_tail(path: &Path, from: u64) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
-/// DeadTune's HUD pak in `addons_dir`: whether it carries the live script, which base the
-/// script was built for, and how many hidden sliders its HUD layout holds.
+/// DeadTune's HUD pak in `addons_dir`: whether it carries the live script and which base
+/// the script was built for.
 pub fn read_pak(addons_dir: &Path) -> PakFacts {
     let path = addons_dir.join(ADDON_FILE);
     let written = match std::fs::metadata(&path) {
@@ -788,20 +836,9 @@ pub fn read_pak(addons_dir: &Path) -> PakFacts {
         .read(OWN_SCRIPT)
         .ok()
         .and_then(|bytes| script_base(&String::from_utf8_lossy(&bytes)));
-    let sliders = pak
-        .read(HUD_LAYOUT)
-        .ok()
-        .and_then(|bytes| inject::layout_text(&bytes).ok())
-        .map_or(0, |xml| {
-            std::iter::once(CTL.id)
-                .chain(DATA.iter().map(|s| s.id))
-                .filter(|id| xml.contains(&format!("\"{id}\"")))
-                .count()
-        });
     PakFacts::Read {
         written,
         script_base,
-        sliders,
     }
 }
 
@@ -835,61 +872,120 @@ pub fn test_layout(layout: &super::HudLayout) -> super::HudLayout {
     out
 }
 
-/// Facts for one situation the check tells apart, for the screenshot lever and tests:
-/// `works`, `old_pak`, `pending`, `no_condebug`, `script_error`, `no_sliders`, `sliders`,
-/// `not_followed`, `not_seen`.
+/// The names `sample` knows.
+pub const SAMPLES: &[&str] = &[
+    "works",
+    "old_pak",
+    "pending",
+    "no_condebug",
+    "script_error",
+    "no_page",
+    "fetch_blocked",
+    "port_busy",
+    "not_followed",
+    "not_seen",
+];
+
+/// Facts for one situation the check tells apart, for the screenshot lever and tests; the
+/// names are `SAMPLES`.
 pub fn sample(kind: &str) -> Option<Facts> {
     let at = |secs: u64| SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000 + secs);
     let base = "1a2b3c4d";
-    let probe: Vec<String> = (1000..1000 + DATA.len()).map(|k| k.to_string()).collect();
-    let hello = |ctl: &str, d: &str, n: usize| {
-        format!(
-            "[Console] DEADTUNE_LIVE hello {base} ctl={ctl} raw=1024/0.001 col={ctl} d={d} n={n} api=missing kv=1 kvf=0 ld=1 cp=1 html=0"
-        )
-    };
-    let good = hello("1024", &probe.join(","), DATA.len());
-    let ok = format!("[Console] DEADTUNE_LIVE 300 ok {base}");
-    let key_lines = [
-        "[InputService] execing deadtune_live",
-        "[Console] \"DeadTune: applied 1\"",
-        "[InputService] execing deadtune_hud",
-    ];
+    let say = |text: &str| format!("[PanoramaScript] DEADTUNE_LIVE {text}");
+    let hello = say(&format!("hello {base} web=panel"));
+    let ready = say("web ready storage=ok");
+    let fetch_ok = say("web fetch ok");
+    let control = say("web control title=about:blank");
+    let ok = say(&format!("300 ok {base}"));
     let mut lines: Vec<String> = vec![
-        "[Console] DEADTUNE_BOOT 0.19.0".into(),
+        "[Console] DEADTUNE_BOOT 0.27.0".into(),
         "[Panorama] Loading layout panorama/layout/hud.xml".into(),
     ];
+    let reached = WebFacts {
+        listening: Some(Ok(PORT)),
+        counters: Counters {
+            polls: 412,
+            hellos: 1,
+            delivered: 3,
+            acks: 3,
+            preflights: 1,
+            ..Counters::default()
+        },
+        last_poll_ago: Some(Duration::from_millis(200)),
+        base: Some(base.into()),
+        recent_acks: vec![298, 299, 300],
+    };
+    let unreached = WebFacts {
+        listening: Some(Ok(PORT)),
+        ..WebFacts::default()
+    };
+    let mut web = reached.clone();
     let mut test = TestFacts::NotRun;
     let mut written = at(50);
     let mut modified = at(590);
     let mut pending_hud = false;
     let mut script_base = Some(base.to_string());
     let sent = |saw| TestFacts::Sent { seq: 300, saw };
+    let healthy = [hello.clone(), ready.clone(), fetch_ok, control.clone()];
     match kind {
         "works" => {
-            lines.extend([good, ok]);
+            lines.extend(healthy);
+            lines.push(ok);
             test = sent(Some(true));
         }
         "old_pak" => {
-            lines.extend(key_lines.map(String::from));
             written = at(300);
+            web = unreached;
         }
         "pending" => {
-            lines.extend(key_lines.map(String::from));
             pending_hud = true;
             script_base = None;
+            web = unreached;
         }
-        "no_condebug" => modified = at(10),
-        "script_error" => lines.push(
-            "[Panorama] JS error: panorama/scripts/deadtune/live_hud.vjs_c:12: ReferenceError: DT_LIVE is not defined".into(),
-        ),
-        "no_sliders" => lines.push(hello("null", &["0"; DATA.len()].join(","), 0)),
-        "sliders" => lines.push(good),
+        "no_condebug" => {
+            modified = at(10);
+            web = unreached;
+        }
+        "script_error" => {
+            lines.push(
+                "[Panorama] JS error: panorama/scripts/deadtune/live_hud.vjs_c:12: ReferenceError: DT_LIVE is not defined".into(),
+            );
+            web = unreached;
+        }
+        "no_page" => {
+            lines.extend([hello, control, say("web retry 1")]);
+            web = unreached;
+        }
+        "fetch_blocked" => {
+            lines.extend([
+                hello,
+                ready,
+                say("web fetch blocked TypeError: Failed to fetch"),
+                control,
+            ]);
+            web = unreached;
+        }
+        "port_busy" => {
+            lines.extend([
+                hello,
+                ready,
+                say("web fetch blocked TypeError: Failed to fetch"),
+            ]);
+            web = WebFacts {
+                listening: Some(Err(
+                    "Only one usage of each socket address is normally permitted. (os error 10048)"
+                        .into(),
+                )),
+                ..WebFacts::default()
+            };
+        }
         "not_followed" => {
-            lines.push(good);
+            lines.extend(healthy);
+            web.recent_acks = vec![298, 299];
             test = sent(None);
         }
         "not_seen" => {
-            lines.extend([good, ok]);
+            lines.extend(healthy);
             test = sent(Some(false));
         }
         _ => return None,
@@ -910,10 +1006,9 @@ pub fn sample(kind: &str) -> Option<Facts> {
         pak: PakFacts::Read {
             written: Some(written),
             script_base,
-            sliders: DATA.len() + 1,
         },
         pending_hud,
-        bridge: BridgeFacts::Key("F8".into()),
+        web,
         test,
     })
 }
@@ -934,39 +1029,36 @@ mod tests {
         assert!(
             matches!(step("script_error"), Step::SendReport(w) if w.contains("failed to load"))
         );
-        assert!(matches!(step("no_sliders"), Step::SendReport(w) if w.contains("sliders")));
-        assert_eq!(step("sliders"), Step::TryAgain { key: None });
-        assert_eq!(
-            step("not_followed"),
-            Step::TryAgain {
-                key: Some("F8".into())
-            }
+        assert!(matches!(step("no_page"), Step::SendReport(w) if w.contains("bridge page")));
+        assert!(
+            matches!(step("fetch_blocked"), Step::SendReport(w) if w.contains("won't let it reach"))
         );
+        assert!(matches!(step("port_busy"), Step::SendReport(w) if w.contains("port 47613")));
+        assert_eq!(step("not_followed"), Step::TryAgain);
         assert!(matches!(step("not_seen"), Step::SendReport(w) if w.contains("didn't change")));
         assert_eq!(sample("nonsense"), None);
+        for name in SAMPLES {
+            assert!(sample(name).is_some(), "{name}");
+        }
     }
 
     fn t(secs: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000 + secs)
     }
 
-    fn hello(base: &str, ctl: &str, d: &str, n: usize) -> String {
-        format!(
-            "[Console] DEADTUNE_LIVE hello {base} ctl={ctl} raw=1024/0.001 col={ctl} d={d} n={n} api=missing kv=1 kvf=0 ld=1 cp=1 html=0\r"
-        )
+    fn say(text: &str) -> String {
+        format!("[PanoramaScript] DEADTUNE_LIVE {text}\r")
     }
 
-    fn probe_d() -> String {
-        (1000..1010)
-            .map(|k| k.to_string())
-            .collect::<Vec<_>>()
-            .join(",")
+    fn hello(base: &str) -> String {
+        say(&format!("hello {base} web=panel"))
     }
 
     fn log(lines: &[&str]) -> String {
-        let mut text = String::from("[Engine] older session\r\n[Console] DEADTUNE_BOOT 0.17.0\r\n");
-        text.push_str("[Console] DEADTUNE_LIVE hello deadbeef ctl=1024 d=1 n=10\r\n");
-        text.push_str("[Console] DEADTUNE_BOOT 0.18.0\r\n");
+        let mut text = String::from("[Engine] older session\r\n[Console] DEADTUNE_BOOT 0.25.0\r\n");
+        text.push_str("[PanoramaScript] DEADTUNE_LIVE hello deadbeef web=panel\r\n");
+        text.push_str("[PanoramaScript] DEADTUNE_LIVE web ready storage=no\r\n");
+        text.push_str("[Console] DEADTUNE_BOOT 0.27.0\r\n");
         for l in lines {
             text.push_str(l);
             text.push('\n');
@@ -974,7 +1066,22 @@ mod tests {
         text
     }
 
-    /// A healthy session: game started after the pak, logging, script said hello.
+    fn reached(polls: u64, acks: &[u32]) -> WebFacts {
+        WebFacts {
+            listening: Some(Ok(PORT)),
+            counters: Counters {
+                polls,
+                hellos: 1,
+                acks: acks.len() as u64,
+                ..Counters::default()
+            },
+            last_poll_ago: Some(Duration::from_millis(300)),
+            base: Some(BASE.into()),
+            recent_acks: acks.to_vec(),
+        }
+    }
+
+    /// A healthy session: game started after the pak, logging, nothing reached DeadTune.
     fn facts(lines: &[&str]) -> Facts {
         Facts {
             now: t(600),
@@ -990,10 +1097,12 @@ mod tests {
             pak: PakFacts::Read {
                 written: Some(t(50)),
                 script_base: Some(BASE.into()),
-                sliders: DATA.len() + 1,
             },
             pending_hud: false,
-            bridge: BridgeFacts::Key("F8".into()),
+            web: WebFacts {
+                listening: Some(Ok(PORT)),
+                ..WebFacts::default()
+            },
             test: TestFacts::NotRun,
         }
     }
@@ -1009,9 +1118,13 @@ mod tests {
     }
 
     #[test]
-    fn hello_with_sliders_and_a_followed_probe_works_once_the_player_saw_it() {
-        let h = hello(BASE, "1024", &probe_d(), 10);
-        let mut f = facts(&[&h, "[Console] DEADTUNE_LIVE 300 ok 1a2b3c4d"]);
+    fn a_page_that_reaches_deadtune_and_a_seen_test_works() {
+        let mut f = facts(&[
+            &hello(BASE),
+            &say("web ready storage=ok"),
+            &say("web fetch ok"),
+        ]);
+        f.web = reached(40, &[300]);
         f.test = TestFacts::Sent {
             seq: 300,
             saw: Some(true),
@@ -1019,17 +1132,17 @@ mod tests {
         let d = diagnose(&f);
         assert_eq!(d.step, Step::Works, "{:#?}", texts(&d));
         assert!(has(&d, Tone::Good, "The live script is running"));
-        assert!(has(&d, Tone::Good, "The hidden sliders work"));
         assert!(has(
             &d,
             Tone::Good,
-            "Sliders follow DeadTune's changes: yes"
+            "bridge page loaded in game; it can keep your live edits"
         ));
         assert!(has(
             &d,
             Tone::Good,
-            "Deadlock loaded the HUD that is on disk"
+            "The bridge page reaches DeadTune (40 requests"
         ));
+        assert!(has(&d, Tone::Good, "The script applied the bigger minimap"));
         assert!(
             d.rows.iter().all(|r| r.tone == Tone::Good),
             "{:#?}",
@@ -1038,16 +1151,29 @@ mod tests {
     }
 
     #[test]
-    fn simons_log_without_a_hello_on_an_old_pak_says_close_and_launch() {
-        let mut f = facts(&[
-            "[InputService] execing deadtune_live",
-            "[Console] \"DeadTune: applied 1\"",
-            "[InputService] execing deadtune_hud",
-        ]);
+    fn the_page_works_without_a_console_log() {
+        let mut f = facts(&[]);
+        f.log = LogFacts::NotFound {
+            looked: vec![PathBuf::from("console.log")],
+        };
+        f.web = reached(40, &[300]);
+        f.test = TestFacts::Sent {
+            seq: 300,
+            saw: Some(true),
+        };
+        let d = diagnose(&f);
+        assert_eq!(d.step, Step::Works, "{:#?}", texts(&d));
+        assert!(has(&d, Tone::Warn, "No console log found"));
+        assert!(has(&d, Tone::Good, "The live script is running"));
+        assert!(has(&d, Tone::Good, "it reached DeadTune"));
+    }
+
+    #[test]
+    fn simons_old_pak_says_close_and_launch() {
+        let mut f = facts(&[]);
         f.pak = PakFacts::Read {
             written: Some(t(300)),
             script_base: Some(BASE.into()),
-            sliders: DATA.len() + 1,
         };
         let d = diagnose(&f);
         assert_eq!(d.step, Step::CloseAndLaunch);
@@ -1062,10 +1188,6 @@ mod tests {
             Tone::Bad,
             "didn't say hello since Deadlock started"
         ));
-        assert_eq!(
-            d.step.text(),
-            "Close Deadlock completely, then press Launch in DeadTune."
-        );
     }
 
     #[test]
@@ -1075,7 +1197,6 @@ mod tests {
         f.pak = PakFacts::Read {
             written: Some(t(50)),
             script_base: None,
-            sliders: 0,
         };
         let d = diagnose(&f);
         assert_eq!(
@@ -1088,7 +1209,7 @@ mod tests {
     }
 
     #[test]
-    fn a_game_without_condebug_says_close_and_launch() {
+    fn a_game_without_condebug_or_page_says_close_and_launch() {
         let mut f = facts(&[]);
         f.log = LogFacts::Found {
             path: PathBuf::from("console.log"),
@@ -1099,13 +1220,6 @@ mod tests {
         assert_eq!(d.step, Step::CloseAndLaunch);
         assert!(has(&d, Tone::Bad, "isn't writing a console log"));
         assert!(has(&d, Tone::Skip, "started: not checked"));
-
-        f.log = LogFacts::NotFound {
-            looked: vec![PathBuf::from("console.log")],
-        };
-        let d = diagnose(&f);
-        assert_eq!(d.step, Step::CloseAndLaunch);
-        assert!(has(&d, Tone::Bad, "No console log found"));
     }
 
     #[test]
@@ -1115,78 +1229,101 @@ mod tests {
         assert_eq!(d.errors, [err]);
         assert!(has(&d, Tone::Bad, "1 error line about the HUD"));
         assert!(matches!(&d.step, Step::SendReport(why) if why.contains("failed to load")));
-        let row = d
+    }
+
+    #[test]
+    fn a_script_without_its_page_asks_for_the_report() {
+        let d = diagnose(&facts(&[
+            &hello(BASE),
+            &say("web control title=about:blank"),
+        ]));
+        assert!(has(&d, Tone::Good, "The live script is running"));
+        assert!(has(&d, Tone::Bad, "bridge page didn't load in game"));
+        let page = d
             .rows
             .iter()
-            .find(|r| r.text.contains("error line"))
+            .find(|r| r.text.contains("bridge page didn't"))
             .unwrap();
-        assert_eq!(row.detail.as_deref(), Some(err));
+        assert_eq!(page.detail.as_deref(), Some("control title=about:blank"));
+        assert!(matches!(&d.step, Step::SendReport(why) if why.contains("bridge page")));
+        let d = diagnose(&facts(&[&hello(BASE), &say("web nopanel")]));
+        assert!(has(&d, Tone::Bad, "wouldn't make a web panel"));
     }
 
     #[test]
-    fn hello_without_sliders_asks_for_the_report() {
-        let h = hello(BASE, "null", "0,0,0,0,0,0,0,0,0,0", 0);
-        let d = diagnose(&facts(&[&h]));
-        assert!(has(&d, Tone::Good, "The live script is running"));
-        assert!(has(&d, Tone::Bad, "hidden sliders don't load"));
-        assert!(matches!(&d.step, Step::SendReport(why) if why.contains("sliders")));
+    fn a_blocked_fetch_names_the_browsers_reason() {
+        let d = diagnose(&facts(&[
+            &hello(BASE),
+            &say("web ready storage=ok"),
+            &say("web fetch blocked TypeError: Failed to fetch"),
+        ]));
+        assert!(has(&d, Tone::Good, "bridge page loaded in game"));
+        assert!(has(
+            &d,
+            Tone::Bad,
+            "can't reach DeadTune: TypeError: Failed to fetch"
+        ));
+        assert!(matches!(&d.step, Step::SendReport(why) if why.contains("won't let it reach")));
     }
 
     #[test]
-    fn hello_with_sliders_and_no_test_yet_suggests_running_it() {
-        let h = hello(BASE, "1024", &probe_d(), 10);
-        let d = diagnose(&facts(&[&h]));
-        assert!(has(&d, Tone::Good, "hidden sliders work"));
-        assert!(has(&d, Tone::Skip, "not tested"));
-        assert_eq!(d.step, Step::TryAgain { key: None });
+    fn a_busy_port_says_so() {
+        let mut f = facts(&[&hello(BASE), &say("web ready storage=ok")]);
+        f.web.listening = Some(Err("address in use".into()));
+        let d = diagnose(&f);
+        assert!(has(
+            &d,
+            Tone::Bad,
+            "couldn't listen on 127.0.0.1:47613: address in use"
+        ));
+        assert!(
+            matches!(&d.step, Step::SendReport(why) if why.contains("Close other DeadTune windows"))
+        );
     }
 
     #[test]
-    fn a_probe_without_an_answer_asks_for_the_key_press() {
-        let h = hello(BASE, "1024", &probe_d(), 10);
-        let mut f = facts(&[&h]);
+    fn a_test_the_script_never_got_says_try_again() {
+        let mut f = facts(&[&hello(BASE), &say("web ready storage=ok")]);
+        f.web = reached(40, &[299]);
+        f.test = TestFacts::Sent {
+            seq: 300,
+            saw: None,
+        };
+        let d = diagnose(&f);
+        assert!(has(&d, Tone::Bad, "never reached the script"));
+        assert_eq!(d.step, Step::TryAgain);
+    }
+
+    #[test]
+    fn a_console_ok_counts_as_applied_and_unseen_asks_for_the_report() {
+        let mut f = facts(&[
+            &hello(BASE),
+            &say("web ready storage=ok"),
+            &say(&format!("300 ok {BASE}")),
+        ]);
+        f.web = reached(40, &[]);
         f.test = TestFacts::Sent {
             seq: 300,
             saw: Some(false),
         };
         let d = diagnose(&f);
-        assert!(has(
-            &d,
-            Tone::Bad,
-            "no answer from the script (with the F8 key bridge"
-        ));
-        assert_eq!(
-            d.step,
-            Step::TryAgain {
-                key: Some("F8".into())
-            }
-        );
-        f.bridge = BridgeFacts::Netcon;
-        assert!(matches!(diagnose(&f).step, Step::SendReport(_)));
-    }
-
-    #[test]
-    fn a_followed_probe_the_player_did_not_see_asks_for_the_report() {
-        let h = hello(BASE, "1024", &probe_d(), 10);
-        let mut f = facts(&[&h, "[Console] DEADTUNE_LIVE 300 ok 1a2b3c4d"]);
-        f.test = TestFacts::Sent {
-            seq: 300 + SEQ_MOD,
-            saw: Some(false),
-        };
-        let d = diagnose(&f);
-        assert!(
-            has(&d, Tone::Good, "follow DeadTune's changes: yes"),
-            "seq compares modulo the slot's 10 bits"
-        );
+        assert!(has(&d, Tone::Good, "The script applied the bigger minimap"));
         assert!(matches!(&d.step, Step::SendReport(why) if why.contains("didn't change")));
     }
 
     #[test]
     fn a_hello_from_another_hud_is_stale() {
-        let h = hello("0badf00d", "1024", &probe_d(), 10);
-        let d = diagnose(&facts(&[&h]));
+        let d = diagnose(&facts(&[&hello("0badf00d")]));
         assert_eq!(d.step, Step::CloseAndLaunch);
         assert!(has(&d, Tone::Bad, "the script in game says HUD 0badf00d"));
+        let mut f = facts(&[]);
+        f.web = reached(3, &[]);
+        f.web.base = Some("0badf00d".into());
+        assert_eq!(
+            diagnose(&f).step,
+            Step::CloseAndLaunch,
+            "the page names the HUD too"
+        );
     }
 
     #[test]
@@ -1202,39 +1339,43 @@ mod tests {
     }
 
     #[test]
-    fn report_carries_the_checklist_and_the_log_lines() {
-        let h = hello(BASE, "1024", &probe_d(), 10);
-        let f = facts(&[
-            &h,
-            "[InputService] execing deadtune_hud",
-            "[Panorama] other",
-        ]);
+    fn report_carries_the_checklist_the_counters_and_the_log_lines() {
+        let f = sample("fetch_blocked").unwrap();
         let d = diagnose(&f);
-        let text = report(&f, &d, "0.19.0");
-        assert!(text.starts_with("DeadTune 0.19.0 live preview check"));
+        let text = report(&f, &d, "0.27.0");
+        assert!(text.starts_with("DeadTune 0.27.0 live preview check"));
         assert!(text.contains("[ok]   The live script is running"));
         assert!(text.contains("Next step: "));
-        assert!(text.contains("DEADTUNE_LIVE hello 1a2b3c4d"));
         assert!(
-            !text.contains("hello deadbeef"),
+            text.contains("Bridge server: Some(Ok(47613)); polls 0, page starts 0"),
+            "{text}"
+        );
+        assert!(text.contains("DEADTUNE_LIVE web fetch blocked TypeError: Failed to fetch"));
+        assert!(text.contains("--- last 50 lines ---\n[Console] DEADTUNE_BOOT 0.27.0"));
+        let old = report(&facts(&[]), &diagnose(&facts(&[])), "x");
+        assert!(
+            !old.contains("hello deadbeef"),
             "an older session stays out"
         );
-        assert!(text.contains("--- last 50 lines ---\n[Console] DEADTUNE_BOOT 0.18.0"));
     }
 
     #[test]
     fn reads_the_installed_pak_back() {
         use super::super::layout::HudLayout;
+        use super::super::{inject, live::HUD_LAYOUT};
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(read_pak(dir.path()), PakFacts::Missing);
         let layout = test_layout(&HudLayout::default());
         let base = live::base_id(&layout).unwrap();
-        let script = live::script(&base, &live::dictionary(&layout).unwrap());
-        let mut hud = live::stand_in_layout();
-        hud.children.push(live::slots_panel());
         let mut files = std::collections::BTreeMap::new();
-        files.insert(OWN_SCRIPT.to_string(), inject::script_resource(&script));
-        files.insert(HUD_LAYOUT.to_string(), inject::compiled_layout(&hud));
+        files.insert(
+            OWN_SCRIPT.to_string(),
+            inject::script_resource(&live::script(&base)),
+        );
+        files.insert(
+            HUD_LAYOUT.to_string(),
+            inject::compiled_layout(&live::stand_in_layout()),
+        );
         std::fs::write(
             dir.path().join(ADDON_FILE),
             super::super::vpk::write(&files),
@@ -1243,11 +1384,9 @@ mod tests {
         match read_pak(dir.path()) {
             PakFacts::Read {
                 script_base,
-                sliders,
                 written,
             } => {
                 assert_eq!(script_base, Some(base));
-                assert_eq!(sliders, DATA.len() + 1);
                 assert!(written.is_some());
             }
             other => panic!("{other:?}"),

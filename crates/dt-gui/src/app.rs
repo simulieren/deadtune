@@ -50,6 +50,8 @@ pub struct App {
     game_poll: Option<Receiver<(bool, Option<SystemTime>)>>,
     screenshot: Option<Screenshot>,
     away: Away,
+    /// Shared with the open game's state; served on 127.0.0.1 for the live HUD's page.
+    web: dt_core::hud::web_bridge::Bridge,
 }
 
 /// How long the window can sit unfocused (behind the game) before DeadTune gives memory
@@ -114,6 +116,7 @@ impl App {
             saved_settings,
             game_poll: None,
             away: Away::default(),
+            web: Default::default(),
             screenshot: screenshot.map(|path| Screenshot {
                 path,
                 frames: 0,
@@ -135,7 +138,12 @@ impl App {
         if let Ok(exe) = update::exe() {
             dt_core::update::cleanup(exe);
         }
-        let _ = dt_core::hud::web_probe::serve(crate::live_check::web_hits().clone());
+        let wake = ctx.clone();
+        let _ = dt_core::hud::web_bridge::serve(
+            self.web.clone(),
+            dt_core::hud::web_bridge::PORT,
+            move || wake.request_repaint(),
+        );
         if let Screen::Main(state) = &mut self.screen
             && update::AVAILABLE
             && state.update.state == UpdateState::Idle
@@ -158,6 +166,7 @@ impl App {
         });
         match opened {
             Ok(mut state) => {
+                state.web = self.web.clone();
                 if let Some(status) = state.sync_ingame() {
                     state.status = Some(status);
                 }
@@ -362,8 +371,8 @@ impl App {
                     state.observe_game(true, None);
                 }
                 // `DEADTUNE_FAKE_LIVE_HUD=off|not_installed|closed|waiting|waiting_long|
-                // waiting_key|stale|stale_base|live|live_key|error` puts the HUD pages' live
-                // preview line in that state.
+                // waiting_page|stale|stale_base|live|error` puts the HUD pages' live preview
+                // line in that state.
                 if let Ok(kind) = std::env::var("DEADTUNE_FAKE_LIVE_HUD") {
                     fake_live_hud(&mut state, &kind);
                 }
@@ -540,6 +549,8 @@ impl App {
         }
         if state.live_hud.busy() {
             ctx.request_repaint_after(Duration::from_millis(50));
+        } else if state.live_hud.connected() {
+            ctx.request_repaint_after(Duration::from_secs(1));
         }
         state.tick_live_check(Instant::now());
         if state.live_check.active() {
@@ -843,18 +854,16 @@ fn fake_live_hud(state: &mut AppState, kind: &str) {
         acked: Some(now - Duration::from_secs(2)),
         undone: false,
     };
-    let (fake, key) = match kind {
+    let long = LiveHud::Waiting {
+        since: now - Duration::from_secs(30),
+    };
+    let (fake, heard) = match kind {
         "off" => (LiveHud::Off, false),
         "not_installed" => (LiveHud::NotInstalled, false),
         "closed" => (LiveHud::GameClosed, false),
         "waiting" => (LiveHud::Waiting { since: now }, false),
-        "waiting_long" => (
-            LiveHud::Waiting {
-                since: now - Duration::from_secs(30),
-            },
-            false,
-        ),
-        "waiting_key" => (LiveHud::Waiting { since: now }, true),
+        "waiting_long" => (long, false),
+        "waiting_page" => (long, true),
         "stale" => (LiveHud::Stale { base: None }, false),
         "stale_base" => (
             LiveHud::Stale {
@@ -862,16 +871,15 @@ fn fake_live_hud(state: &mut AppState, kind: &str) {
             },
             false,
         ),
-        "live" => (live, false),
-        "live_key" => (live, true),
+        "live" => (live, true),
         "error" => (
-            LiveHud::Error(r"Couldn't write cfg\deadtune_hud.cfg: Access is denied".into()),
+            LiveHud::Error("The live preview can't read this layout: bad CSS".into()),
             false,
         ),
         _ => return,
     };
     state.set_live_preview(fake != LiveHud::Off);
-    state.live_hud.inject(fake, key);
+    state.live_hud.inject(fake, heard.then_some("1a2b3c4d"));
 }
 
 fn fake_push(state: &mut AppState, kind: &str) {
@@ -972,11 +980,5 @@ impl eframe::App for App {
         }
         self.rest(&ctx, frame_start, minimized, focused);
         self.screenshot(&ctx);
-    }
-
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        if let Screen::Main(state) = &mut self.screen {
-            state.on_exit();
-        }
     }
 }

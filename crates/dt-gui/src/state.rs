@@ -45,7 +45,7 @@ use dt_core::profile::{self, BaseRef, ConVarEdits, Profile};
 use dt_core::watch::{self, Change, Watcher};
 
 use crate::bench::{self, BenchState};
-use crate::live::{BridgeKind, BridgeTarget, LivePush, PushOutcome};
+use crate::live::{BridgeTarget, LivePush, PushOutcome};
 use crate::live_hud::{Delivery, LivePreview};
 use crate::profiles;
 use crate::relaunch::Relaunch;
@@ -722,6 +722,8 @@ pub struct AppState {
     pending_paks_check: bool,
     /// The live HUD preview (`crate::live_hud`).
     pub live_hud: LivePreview,
+    /// What the live HUD's bridge page and DeadTune share (`web_bridge`); the app serves it.
+    pub web: dt_core::hud::web_bridge::Bridge,
     /// "Check live preview" (`crate::live_check`).
     pub live_check: crate::live_check::LiveCheck,
     /// When the running game's process started, from the last game poll.
@@ -871,6 +873,7 @@ impl AppState {
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .map_or(0, |d| d.as_secs() as u32),
             ),
+            web: Default::default(),
             live_check: Default::default(),
             game_started: None,
         };
@@ -2424,41 +2427,17 @@ impl AppState {
         Ok(applied)
     }
 
-    /// Sends what is due from slider drags and the live HUD preview.
+    /// Sends what is due from slider drags, and hands the live HUD preview the bridge
+    /// page's news and the page its next message.
     pub fn tick_live(&mut self, now: Instant) -> Option<Result<PushOutcome, String>> {
-        let pull = self.settings.bridge != BridgeKind::Netcon;
-        if let Some(delivery) = self.live_hud.tick(now, pull) {
-            self.deliver_live_hud(delivery);
+        self.live_hud.page(self.web.take(), now);
+        match self.live_hud.tick(now) {
+            Some(Delivery::Post(post)) => self.web.post(post),
+            Some(Delivery::Clear) => self.web.clear(),
+            None => {}
         }
         let cmds = self.live_push.take_due(now)?;
         Some(self.send(&cmds))
-    }
-
-    /// Everything goes into `deadtune_hud.cfg`, which the bound key and the script's own
-    /// pulls run; netcon, when on, sets the slots directly. The script's `DEADTUNE_LIVE`
-    /// lines are the answer, so there is no ack trailer.
-    fn deliver_live_hud(&mut self, delivery: Delivery) {
-        let cmds = match delivery {
-            Delivery::Chunk(batch) => batch.cmds,
-            Delivery::Restore(cmds) => cmds,
-            Delivery::Blank => Vec::new(),
-        };
-        if let Err(e) = live_hud_cfg(&self.paths, &cmds) {
-            self.live_hud.fail(e);
-            return;
-        }
-        if cmds.is_empty() {
-            return;
-        }
-        if self.settings.bridge == BridgeKind::Netcon
-            && let Ok(Some(mut bridge)) = self.bridge_target().open()
-            && let Ok(lines) = cmds
-                .iter()
-                .map(ConsoleCmd::to_line)
-                .collect::<Result<Vec<_>, _>>()
-        {
-            let _ = bridge.send(&lines);
-        }
     }
 
     /// Turns the live HUD preview on or off; Apply bakes the script into the HUD pak.
@@ -2469,11 +2448,7 @@ impl AppState {
 
     /// The live HUD preview's line for the HUD pages.
     pub fn live_hud_status(&self) -> Option<crate::live_hud::StatusLine> {
-        self.live_hud.status(
-            &self.settings.bind_key,
-            &self.conlog.report(),
-            Instant::now(),
-        )
+        self.live_hud.status(&self.conlog.report(), Instant::now())
     }
 
     pub(crate) fn conlog_paths(&self) -> Vec<PathBuf> {
@@ -2482,13 +2457,6 @@ impl AppState {
 
     pub fn undo_live_hud(&mut self) {
         self.live_hud.undo();
-    }
-
-    /// DeadTune is closing: the game's mailbox ConVars go back to their defaults.
-    pub fn on_exit(&mut self) {
-        if let Some(cmds) = self.live_hud.exit_cmds() {
-            let _ = live_hud_cfg(&self.paths, &cmds);
-        }
     }
 
     /// Pushes through the bridge and starts following the reply in the console log.
@@ -2559,7 +2527,6 @@ impl AppState {
             bind_key: self.settings.bind_key.clone(),
             live,
             version: env!("CARGO_PKG_VERSION").into(),
-            live_hud: self.live_hud.script_installed() && !self.without_addons(),
         }
     }
 
@@ -2815,12 +2782,6 @@ impl AppState {
             self.on_changes(&changes);
         }
     }
-}
-
-fn live_hud_cfg(paths: &GamePaths, cmds: &[ConsoleCmd]) -> Result<(), String> {
-    use dt_core::hud::live;
-    live::write_cfg(&paths.cfg_dir, cmds)
-        .map_err(|e| format!("Couldn't write cfg\\{}: {e}", live::CFG_NAME))
 }
 
 fn trial_started_message(changed: &[Pak]) -> String {
@@ -3221,10 +3182,11 @@ mod tests {
     }
 
     #[test]
-    fn simons_console_log_makes_the_preview_live_and_edits_reach_the_cfg() {
+    fn the_bridge_page_makes_the_preview_live_and_edits_reach_it() {
         use crate::live_hud::LiveHud;
         use dt_core::hud::install::{InstallRecord, RECORD_FILE};
         use dt_core::hud::live;
+        use dt_core::hud::web_bridge::{PAGE_ORIGIN, Request};
         use std::io::Write;
 
         let (_dir, mut state) = state();
@@ -3259,57 +3221,66 @@ mod tests {
         state.observe_game(true, None);
         let base = live::base_id(&baked).unwrap();
         let log = state.paths.citadel_dir.join("console.log");
-        let append = |text: &str| {
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log)
-                .unwrap()
-                .write_all(text.as_bytes())
-                .unwrap();
-        };
-        let exec_error =
-            "[InputService] exec: couldn't exec '{}cfg/deadtune_hud.cfg', unable to read file\r\n";
-        append(&format!(
-            "{exec_error}[Console] DEADTUNE_LIVE hello {base}\r\n{exec_error}[Console] DEADTUNE_LIVE hello {base}\r\n"
-        ));
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap()
+            .write_all(
+                format!("[PanoramaScript] DEADTUNE_LIVE hello {base} web=panel\r\n").as_bytes(),
+            )
+            .unwrap();
         let t0 = Instant::now();
         state.poll_conlog(t0);
         assert!(
-            matches!(state.live_hud.state(), LiveHud::Live { .. }),
-            "{:?}",
+            matches!(state.live_hud.state(), LiveHud::Waiting { .. }),
+            "the script runs, its page hasn't polled: {:?}",
             state.live_hud.state()
         );
         assert!(state.write_boot_cfg().is_ok());
         let boot = std::fs::read_to_string(state.paths.cfg_dir.join("deadtune_boot.cfg")).unwrap();
         assert!(
-            boot.contains("exec deadtune_live; exec deadtune_hud"),
-            "{boot}"
+            !boot.contains("deadtune_hud"),
+            "no live cfg any more: {boot}"
         );
 
-        let cfg = state.paths.cfg_dir.join(live::CFG_NAME);
-        state.tick_live(t0);
-        assert_eq!(
-            std::fs::read_to_string(&cfg).unwrap(),
-            "",
-            "the cfg exists as soon as the game runs, so the key never fails"
-        );
-        state.tick_live(t0);
-        let seq_of = |text: &str| -> u32 {
-            let first = text.lines().next().unwrap();
-            let value = first
-                .strip_prefix(&format!("{} \"", live::CTL.convar))
-                .and_then(|v| v.strip_suffix('"'))
-                .unwrap_or_else(|| panic!("{text}"));
-            value.parse::<u32>().unwrap() >> 10
+        let poll = |state: &AppState, since: u32, hello: bool, now: Instant| {
+            let (r, _) = state.web.respond(
+                &Request::Live {
+                    since,
+                    base: Some(base.clone()),
+                    hello,
+                },
+                Some(PAGE_ORIGIN),
+                now,
+            );
+            (r.status == 200).then(|| {
+                let post = state.web.posted().unwrap();
+                assert!(
+                    r.body.contains(&format!("\"seq\":{}", post.seq)),
+                    "{}",
+                    r.body
+                );
+                live::parse_titles(&post.titles).unwrap()
+            })
         };
-        let first = seq_of(&std::fs::read_to_string(&cfg).unwrap());
-        append(&format!("[Console] DEADTUNE_LIVE {first} ok {base}\r\n"));
-        let t1 = t0 + Duration::from_secs(1);
-        state.poll_conlog(t1);
+        assert_eq!(poll(&state, 0, true, t0), None, "the page opened");
+        state.tick_live(t0);
+        assert!(
+            matches!(state.live_hud.state(), LiveHud::Live { .. }),
+            "{:?}",
+            state.live_hud.state()
+        );
+        let first = poll(&state, 0, false, t0).expect("a full message waits");
+        assert_eq!(first.kind, live::Kind::Full);
+        state
+            .web
+            .respond(&Request::Ack { seq: first.seq }, Some(PAGE_ORIGIN), t0);
+        let t1 = t0 + Duration::from_millis(200);
+        state.tick_live(t1);
         assert!(matches!(
             state.live_hud.state(),
-            LiveHud::Live { seq: Some(s), .. } if *s == first
+            LiveHud::Live { seq: Some(s), .. } if *s == first.seq
         ));
 
         state.set_hud_element(
@@ -3320,37 +3291,19 @@ mod tests {
             },
         );
         state.tick_live(t1 + Duration::from_millis(200));
-        let text = std::fs::read_to_string(&cfg).unwrap();
-        let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines.len(), 1 + live::DATA.len(), "{text}");
-        let words: Vec<u32> = lines[1..]
-            .iter()
-            .zip(live::DATA)
-            .map(|(line, slot)| {
-                line.strip_prefix(&format!("{} \"", slot.convar))
-                    .and_then(|v| v.strip_suffix('"'))
-                    .unwrap_or_else(|| panic!("{line}"))
-                    .parse()
-                    .unwrap()
-            })
-            .collect();
-        let message = live::decode(&[words], &live::dictionary(&baked).unwrap()).unwrap();
+        let patch = poll(&state, first.seq, false, t1).expect("the edit waits for the page");
+        assert_eq!(patch.kind, live::Kind::Patch);
         assert!(
-            message
+            patch
                 .rules
                 .iter()
                 .any(|r| r.value == "translateX(40px) translateY(0px)"),
-            "{message:?}"
+            "{patch:?}"
         );
-        assert!(message.pull, "no netcon: the script pulls the rest itself");
 
         state.observe_game(false, None);
         state.tick_live(Instant::now());
-        let restored = std::fs::read_to_string(&cfg).unwrap();
-        assert!(
-            restored.starts_with(&format!("{} \"{}\"", live::CTL.convar, live::CTL.default)),
-            "{restored}"
-        );
+        assert_eq!(state.web.status().posted, None, "the game closed");
     }
 
     #[test]

@@ -6,15 +6,10 @@
     var CONFIG = DT_LIVE;
     var TOKEN = /#[\w-]+|\.[\w-]+|:not\(\.[\w-]+\)|[A-Za-z_][\w-]*/g;
     var ctx = $.GetContextPanel();
-    var held = null;
-    var applied = null;
-    var lastCtl = null;
     var rules = [];
     var styled = [];
     var clock = 0;
-    var pullUntil = -1;
-    var nextPull = 0;
-    var greeted = false;
+    var titles = 0;
 
     function valid(p) {
         try { return !!p && (!p.IsValid || p.IsValid()); } catch (e) { return false; }
@@ -46,10 +41,6 @@
     function hasClass(p, cls) {
         try { return !!(valid(p) && p.BHasClass && p.BHasClass(cls)); } catch (e) { return false; }
     }
-    function cmd(c) {
-        try { $.DispatchEvent("CitadelConCommand", c); } catch (e) {}
-    }
-    function echo(text) { cmd("echo DEADTUNE_LIVE " + text); }
     function unescape(s) {
         try { return decodeURIComponent(s); } catch (e) { return null; }
     }
@@ -57,48 +48,6 @@
         return prop.replace(/-([a-z0-9])/g, function (m, c) { return c.toUpperCase(); });
     }
 
-    // The stock slider control holds a text box ("Value") and a 0..1 slider ("Slider").
-    // Every slot holds a whole number, so separators of any locale are dropped with the rest.
-    function number(text) {
-        var digits = String(text).replace(/[^0-9]/g, "");
-        return digits === "" ? null : parseInt(digits, 10);
-    }
-    function slotText(row) {
-        var text = find(row, "Value");
-        try { return text ? String(text.text) : null; } catch (e) { return null; }
-    }
-    function slotSlider(row) {
-        var slider = find(row, "Slider");
-        try { return slider ? Number(slider.value) : null; } catch (e) { return null; }
-    }
-    function slotValue(id, max) {
-        var row = find(root(), id);
-        if (!row) { return null; }
-        var v = number(slotText(row) || "");
-        if (v === null) {
-            var s = slotSlider(row);
-            v = s === null || isNaN(s) ? null : s * max;
-        }
-        return v === null ? null : Math.round(v);
-    }
-    function readCtl() { return slotValue(CONFIG.ctl, CONFIG.ctlMax); }
-    function readData() {
-        var out = [];
-        for (var k = 0; k < CONFIG.data.length; k++) {
-            var v = slotValue(CONFIG.data[k], CONFIG.max);
-            out.push(v === null ? 0 : v);
-        }
-        return out;
-    }
-
-    function expand(bytes) {
-        var s = "";
-        for (var i = 0; i < bytes.length; i++) {
-            var b = bytes[i];
-            s += b >= 128 ? (CONFIG.dict[b - 128] || "") : String.fromCharCode(b);
-        }
-        return s;
-    }
     function compound(text) {
         var c = { id: null, tag: null, cls: [], not: [] };
         var tokens = text.match(TOKEN) || [];
@@ -195,19 +144,14 @@
         styled = want;
     }
 
-    function apply(msg) {
-        var words = [];
-        for (var i = 1; i <= msg.n; i++) { words = words.concat(msg.parts[i]); }
-        var bytes = [];
-        for (var w = 0; w < words.length; w++) { bytes.push(words[w] >> 8); bytes.push(words[w] & 255); }
-        var payload = expand(bytes.slice(0, msg.len));
+    function apply(payload, full) {
         var incoming = [];
         var records = payload === "" ? [] : payload.split("~");
         for (var r = 0; r < records.length; r++) {
             var rule = compile(records[r]);
             if (rule) { incoming.push(rule); }
         }
-        if (msg.full) { rules = incoming; return; }
+        if (full) { rules = incoming; return; }
         for (var j = 0; j < incoming.length; j++) {
             var at = -1;
             for (var k = 0; k < rules.length; k++) { if (rules[k].key === incoming[j].key) { at = k; break; } }
@@ -215,96 +159,138 @@
         }
     }
 
-    // The control slot changes once per chunk: sequence in the high bits, chunk number in
-    // the low ten (zero is no chunk). Chunk 1 opens with the chunk count, the pull flag and
-    // the kind, the payload length and the base.
-    // Chunk 0 under a new sequence asks for a hello, so a console line can check the read.
-    function receive() {
-        var ctl = readCtl();
-        if (ctl === null || ctl === lastCtl) { return; }
-        lastCtl = ctl;
-        var seq = ctl >> 10, i = ctl & 1023;
-        if (i === 0) {
-            if (greeted) { hello(); }
-            return;
-        }
-        if (seq === applied) { return; }
-        var words = readData();
-        if (!held || held.seq !== seq) { held = { seq: seq, n: 0, parts: {}, count: 0, pull: false, full: false, len: 0, base: null }; }
-        if (held.parts[i] !== undefined) { return; }
-        if (i === 1) {
-            held.n = words[0] >> 2;
-            held.pull = (words[0] & 2) === 2;
-            held.full = (words[0] & 1) === 1;
-            held.len = words[1];
-            held.base = words[2] === CONFIG.baseWords[0] && words[3] === CONFIG.baseWords[1];
-            held.parts[1] = words.slice(4);
+    // The web channel. The game's web panel loads only HTTPS pages, so it opens DeadTune's
+    // page on GitHub Pages, which fetches messages from DeadTune on 127.0.0.1 and hands
+    // them over as titles. Requests go back through the URL's fragment, which changes no
+    // page. The panel stays tiny, nearly transparent and visible, so the page's timers
+    // run, and it is never deleted.
+    var web = null;
+    var url = null;
+    var ready = false;
+    var opened = 0;
+    var asked = 0;
+    var applied = null;
+    var liveSeen = false;
+    var held = null;
+    var recent = [];
+    var reported = {};
+
+    function report(text) {
+        if (reported[text]) { return; }
+        reported[text] = true;
+        say("web " + text);
+    }
+    function makePanel(id) {
+        var p = $.CreatePanel("CitadelHTMLPanel", ctx, id);
+        if (!p) { return null; }
+        try { p.hittest = false; } catch (e) {}
+        try { p.style.width = "2px"; p.style.height = "2px"; p.style.opacity = "0.01"; } catch (e) {}
+        return p;
+    }
+    function ask(verb, arg) {
+        if (!web || !url) { return; }
+        asked++;
+        try { web.SetURL(url + "#" + asked + "." + verb + (arg === undefined ? "" : "." + arg)); } catch (e) { report("seturl error " + e); }
+    }
+    function open() {
+        opened++;
+        ready = false;
+        url = CONFIG.page + "?port=" + CONFIG.port + "&base=" + CONFIG.base + (opened > 1 ? "&r=" + opened : "");
+        try { web.SetURL(url); } catch (e) { report("seturl error " + e); }
+    }
+    function watchdog() {
+        if (ready || opened >= CONFIG.retries) { return; }
+        report("retry " + opened);
+        open();
+        $.Schedule(CONFIG.retry, watchdog);
+    }
+
+    // One chunk of a message: `dt1 <seq> <i>/<n> <base> full|patch <payload part>`. A
+    // restored message, the page's copy of the last one applied, counts only while no
+    // message from DeadTune has started to arrive, so it never overwrites a newer edit.
+    function chunk(body, restore) {
+        var w = body.split(" ");
+        if (w.length < 5 || w[0] !== "dt1") { return; }
+        var seq = parseInt(w[1], 10);
+        var of = w[2].split("/");
+        var i = parseInt(of[0], 10), n = parseInt(of[1], 10);
+        if (isNaN(seq) || !(n >= 1 && i >= 1 && i <= n)) { return; }
+        if (restore) {
+            if (liveSeen) { return; }
         } else {
-            held.parts[i] = words;
+            liveSeen = true;
+            if (seq === applied) { return; }
         }
+        var key = (restore ? "r" : "l") + seq;
+        if (!held || held.key !== key) {
+            held = { key: key, seq: seq, n: n, parts: {}, count: 0, base: w[3], full: w[4] === "full", restore: restore };
+        }
+        if (held.parts[i] !== undefined) { return; }
+        held.parts[i] = w.length > 5 ? w.slice(5).join(" ") : "";
         held.count++;
-        if (held.base === false) {
-            echo(seq + " wrongbase " + CONFIG.base);
-            held = null;
-            pullUntil = -1;
+        if (held.count < held.n) { return; }
+        var msg = held;
+        held = null;
+        if (msg.base !== CONFIG.base) {
+            if (!msg.restore) { say(msg.seq + " wrongbase " + CONFIG.base); }
             return;
         }
-        if (held.n > 0 && held.count === held.n) {
-            apply(held);
-            applied = seq;
-            held = null;
-            pullUntil = -1;
-            echo(seq + " ok " + CONFIG.base);
+        var text = "";
+        for (var k = 1; k <= msg.n; k++) { text += msg.parts[k]; }
+        apply(text, msg.full);
+        if (msg.restore) { report("restored " + msg.seq); return; }
+        applied = msg.seq;
+        say(msg.seq + " ok " + CONFIG.base);
+        ask("ack", msg.seq);
+    }
+
+    // Titles can arrive twice; every one the page sets is distinct (a counter follows the
+    // protocol word), so a repeat is dropped.
+    function onTitle(panel, title) {
+        title = String(title);
+        if (title.indexOf("DTLIVE:") !== 0 || recent.indexOf(title) >= 0) { return; }
+        recent.push(title);
+        if (recent.length > 64) { recent.shift(); }
+        titles++;
+        if (title.indexOf(CONFIG.protocol + " ") !== 0) {
+            report("old page " + title.split(" ")[0]);
+            if (opened < CONFIG.retries) { open(); }
             return;
         }
-        echo(seq + " got " + held.count + " " + CONFIG.base);
-        if (held.pull) {
-            pullUntil = clock + CONFIG.pullTimeout;
-            nextPull = clock + CONFIG.pull;
+        var rest = title.slice(CONFIG.protocol.length + 1);
+        var body = rest.slice(rest.indexOf(" ") + 1);
+        if (body.indexOf("dt1 ") === 0) { chunk(body, false); return; }
+        if (body.indexOf("restore dt1 ") === 0) { chunk(body.slice(8), true); return; }
+        if (body.indexOf("ready") === 0) {
+            report(body);
+            if (!ready) { ready = true; ask("restore"); }
+            return;
         }
+        report(body);
     }
 
-    // Only while a pulled message is coming in does the script run the cfg itself; every
-    // exec prints a console line, so an idle HUD prints nothing.
-    function pull() {
-        if (pullUntil < 0 || clock < nextPull) { return; }
-        if (clock > pullUntil) { pullUntil = -1; return; }
-        cmd("exec " + CONFIG.cfg);
-        nextPull = clock + CONFIG.pull;
+    // A plain http:// page, which the game refused since its 2026-10-01 update; the check
+    // shows what this one did.
+    function control() {
+        var p = makePanel("DtLiveWebControl");
+        if (!p) { return; }
+        $.RegisterEventHandler("HTMLTitle", p, function (panel, title) { report("control title=" + title); });
+        p.SetURL("http://127.0.0.1:" + CONFIG.port + "/control");
     }
 
-    function probes() {
-        var top = root();
-        var out = [];
-        var ctlRow = find(top, CONFIG.ctl);
-        out.push("ctl=" + readCtl());
-        out.push("raw=" + (ctlRow ? slotText(ctlRow) + "/" + slotSlider(ctlRow) : "none"));
-        out.push("col=" + slotValue(CONFIG.probe, CONFIG.ctlMax));
-        out.push("d=" + readData().join(","));
-        var found = 0;
-        for (var k = 0; k < CONFIG.data.length; k++) { if (find(top, CONFIG.data[k])) { found++; } }
-        out.push("n=" + found);
-        var gi = "0";
-        try {
-            if (typeof GameInterfaceAPI !== "undefined") {
-                gi = "1" + (GameInterfaceAPI.GetSettingString ? "s" : "") + (GameInterfaceAPI.GetSettingValue ? "v" : "") + (GameInterfaceAPI.SetSettingValue ? "w" : "");
-            }
-        } catch (e) { gi = "e"; }
-        out.push("api=" + (gi === "0" ? "missing" : gi));
-        var has = function (f) { try { return typeof f === "function" ? "1" : "0"; } catch (e) { return "e"; } };
-        out.push("kv=" + has($.LoadKeyValues));
-        out.push("kvf=" + has($.LoadKeyValuesFile));
-        out.push("ld=" + has(ctx.BLoadLayoutFromString));
-        out.push("cp=" + has($.CreatePanel));
-        return out.join(" ");
+    function start() {
+        web = makePanel("DtLiveWeb");
+        if (!web) { report("nopanel"); return; }
+        $.RegisterEventHandler("HTMLTitle", web, onTitle);
+        open();
+        $.Schedule(CONFIG.retry, watchdog);
+        control();
     }
 
     var pollFailed = false;
     function poll() {
         clock += CONFIG.poll;
         try {
-            receive();
-            pull();
             if (rules.length || styled.length) { restyle(); }
         } catch (e) {
             if (!pollFailed) { pollFailed = true; warn("error poll " + e); }
@@ -312,44 +298,8 @@
         $.Schedule(CONFIG.poll, poll);
     }
 
-    function hello() {
-        var extra;
-        try { extra = probes(); } catch (e) { extra = "probe_error=" + encodeURIComponent(String(e)).slice(0, 80); }
-        var line = "hello " + CONFIG.base + " " + extra;
-        say(line);
-        echo(line);
-    }
-
-    // Can the web panel load a page from this PC? DeadTune serves one on 127.0.0.1; the
-    // page answers through its title, which arrives as an HTMLTitle event.
-    function webProbe() {
-        var urls = [
-            ["ip", "http://127.0.0.1:" + CONFIG.webPort + "/probe?k=ip"],
-            ["host", "http://localhost:" + CONFIG.webPort + "/probe?k=host"],
-            ["data", "data:text/html,<title>DTLIVE data ok</title>"]
-        ];
-        for (var i = 0; i < urls.length; i++) {
-            try {
-                var kind = urls[i][0];
-                say("web " + kind + " creating");
-                var p = $.CreatePanel("CitadelHTMLPanel", ctx, "DtLiveWeb_" + kind);
-                if (!p) { say("web " + kind + " nopanel"); continue; }
-                p.hittest = false;
-                if (p.style) { p.style.width = "2px"; p.style.height = "2px"; p.style.opacity = "0.01"; }
-                $.RegisterEventHandler("HTMLTitle", p, (function (k) {
-                    return function (panel, title) { say("web " + k + " title=" + title); };
-                })(kind));
-                p.SetURL(urls[i][1]);
-                say("web " + kind + " requested");
-            } catch (e) { say("web " + urls[i][0] + " error " + e); }
-        }
-    }
-
-    // The sliders read their ConVars as they come up, so the hello waits a moment.
-    $.Schedule(2.0, function () { try { webProbe(); } catch (e) { warn("error web " + e); } });
-    [3, 10, 60].forEach(function (t) {
-        $.Schedule(t, function () { say("alive " + t + "s polls=" + Math.round(clock / CONFIG.poll)); });
-    });
-    $.Schedule(1.0, function () { greeted = true; hello(); });
+    try { start(); } catch (e) { report("error " + e); }
+    say("hello " + CONFIG.base + " web=" + (web ? "panel" : "nopanel"));
+    $.Schedule(10, function () { say("alive 10s polls=" + Math.round(clock / CONFIG.poll) + " titles=" + titles); });
     $.Schedule(CONFIG.poll, poll);
 })();

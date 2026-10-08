@@ -6,18 +6,15 @@ use std::time::{Duration, Instant, SystemTime};
 
 use dt_core::hud::install;
 use dt_core::hud::layout::HudFeature;
-use dt_core::hud::live_check::{
-    self, BridgeFacts, Diagnosis, Facts, GameFacts, TestFacts, diagnose,
-};
+use dt_core::hud::live_check::{self, Diagnosis, Facts, GameFacts, TestFacts, WebFacts, diagnose};
 
-use crate::live::BridgeKind;
 use crate::live_hud::FlashState;
 use crate::state::AppState;
 
 /// How long the bigger minimap stays once the game shows it.
 pub const SHOW: Duration = Duration::from_secs(5);
 /// How long the check waits for the script to show it: long enough to switch to the
-/// game and press the key.
+/// game, which may hold its web panel's timers while it is in the background.
 pub const WAIT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Debug, Default)]
@@ -155,12 +152,21 @@ impl AppState {
             log: live_check::read_log(&logs),
             pak: live_check::read_pak(&install::addons_dir(&self.paths)),
             pending_hud: self.hud_waits(),
-            bridge: match self.settings.bridge {
-                BridgeKind::Netcon => BridgeFacts::Netcon,
-                BridgeKind::ExecFile => BridgeFacts::Key(self.settings.bind_key.clone()),
-                BridgeKind::Clipboard => BridgeFacts::Clipboard,
-            },
+            web: self.web_facts(),
             test,
+        }
+    }
+
+    fn web_facts(&self) -> WebFacts {
+        let status = self.web.status();
+        WebFacts {
+            listening: status.listening,
+            counters: status.counters,
+            last_poll_ago: status
+                .last_poll
+                .map(|t| Instant::now().saturating_duration_since(t)),
+            base: status.base,
+            recent_acks: status.recent_acks,
         }
     }
 
@@ -172,8 +178,7 @@ impl AppState {
     /// The checklist for `facts`, saved as a report.
     pub fn show_live_check(&mut self, facts: Facts) {
         let diagnosis = diagnose(&facts);
-        let mut report = live_check::report(&facts, &diagnosis, env!("CARGO_PKG_VERSION"));
-        report.push_str(&web_probe_line());
+        let report = live_check::report(&facts, &diagnosis, env!("CARGO_PKG_VERSION"));
         let saved = self.save_live_report(&report);
         self.live_check = LiveCheck::Done(Box::new(Done {
             facts,
@@ -198,24 +203,6 @@ impl AppState {
             .map(|_| dir.join(name))
             .map_err(|e| e.to_string())
     }
-}
-
-/// Requests the game's web panel made to DeadTune's page on 127.0.0.1, by probe kind.
-pub fn web_hits() -> &'static std::sync::Arc<std::sync::Mutex<Vec<String>>> {
-    static HITS: std::sync::OnceLock<std::sync::Arc<std::sync::Mutex<Vec<String>>>> =
-        std::sync::OnceLock::new();
-    HITS.get_or_init(Default::default)
-}
-
-fn web_probe_line() -> String {
-    let hits = web_hits().lock().map(|h| h.clone()).unwrap_or_default();
-    let count = |k: &str| hits.iter().filter(|h| *h == k).count();
-    format!(
-        "Web panel requests to DeadTune on 127.0.0.1:{}: ip={} localhost={}.\n",
-        dt_core::hud::web_probe::PORT,
-        count("ip"),
-        count("host")
-    )
 }
 
 #[cfg(test)]

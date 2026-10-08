@@ -1,4 +1,109 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>DTLIVE placeholder</title>
-<p>DeadTune live HUD bridge. Loaded only inside Deadlock by DeadTune's HUD script; it talks to DeadTune on 127.0.0.1 and nowhere else.</p>
+<meta name="viewport" content="width=device-width">
+<title>DeadTune live HUD bridge</title>
+<p>DeadTune's live HUD bridge. Deadlock opens this page in a hidden panel when DeadTune's HUD script runs; it talks to DeadTune on this PC (127.0.0.1) and nowhere else. It does nothing in a normal browser.</p>
+<script>
+(function () {
+    "use strict";
+    var PROTOCOL = "DTLIVE:v1";
+    var KEY = "deadtune.live.v1";
+    var query = new URLSearchParams(location.search);
+    var port = /^\d{1,5}$/.test(query.get("port") || "") ? query.get("port") : "47613";
+    var base = /^[0-9a-f]{1,16}$/.test(query.get("base") || "") ? query.get("base") : "";
+    var server = "http://127.0.0.1:" + port;
+    // A fragment at load means the game reloaded the page for an ack instead of changing
+    // only the fragment. It is not acted on, and the script is not new.
+    var hello = !location.hash;
+    var since = 0;
+    var counter = Date.now() % 1000000;
+    var queue = [];
+    var lastStatus = "";
+    var delay = 150;
+    var recent = [];
+    var storage = storageWorks();
+
+    function storageWorks() {
+        try {
+            localStorage.setItem(KEY + ".test", "1");
+            var ok = localStorage.getItem(KEY + ".test") === "1";
+            localStorage.removeItem(KEY + ".test");
+            return ok;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // One title per 40 ms, each distinct, so the game sees every one.
+    function show(text) { queue.push(text); }
+    function pump() {
+        if (queue.length) {
+            counter++;
+            document.title = PROTOCOL + " " + counter + " " + queue.shift();
+        }
+        setTimeout(pump, 40);
+    }
+    function status(text) {
+        if (text === lastStatus) { return; }
+        lastStatus = text;
+        show(text);
+    }
+
+    function poll() {
+        var url = server + "/live?since=" + since + "&base=" + base + (hello ? "&hello=1" : "");
+        fetch(url, { cache: "no-store" }).then(function (r) {
+            hello = false;
+            delay = 150;
+            status("fetch ok");
+            return r.status === 200 ? r.json() : null;
+        }).then(function (m) {
+            if (!m || typeof m.seq !== "number" || !Array.isArray(m.chunks)) { return; }
+            since = m.seq;
+            recent.push({ seq: m.seq, keep: Array.isArray(m.keep) ? m.keep : m.chunks });
+            if (recent.length > 8) { recent.shift(); }
+            m.chunks.forEach(function (c) { show(String(c)); });
+        }).catch(function (e) {
+            var why = e && e.message ? e.name + ": " + e.message : String(e);
+            status("fetch blocked " + why.replace(/\s+/g, " ").slice(0, 120));
+            delay = Math.min(delay * 2, 5000);
+        }).then(function () {
+            setTimeout(poll, delay);
+        });
+    }
+
+    function save(keep) {
+        if (!storage) { return; }
+        try {
+            localStorage.setItem(KEY, JSON.stringify({ base: base, titles: keep, at: Date.now() }));
+        } catch (e) {}
+    }
+    function ack(seq) {
+        if (isNaN(seq)) { return; }
+        fetch(server + "/ack?seq=" + seq, { cache: "no-store" }).catch(function () {});
+        recent.forEach(function (m) { if (m.seq === seq) { save(m.keep); } });
+    }
+    function restore() {
+        var saved = null;
+        try { saved = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) {}
+        if (!saved || saved.base !== base || !Array.isArray(saved.titles)) {
+            show("restore none");
+            return;
+        }
+        saved.titles.forEach(function (t) { show("restore " + String(t)); });
+    }
+
+    // The script asks through the fragment: `#<n>.ack.<seq>` or `#<n>.restore`.
+    window.addEventListener("hashchange", function () {
+        var parts = location.hash.slice(1).split(".");
+        if (parts[1] === "ack") { ack(parseInt(parts[2], 10)); }
+        if (parts[1] === "restore") { restore(); }
+    });
+
+    try {
+        if ("serviceWorker" in navigator) { navigator.serviceWorker.register("sw.js").catch(function () {}); }
+    } catch (e) {}
+    show("ready storage=" + (storage ? "ok" : "no"));
+    pump();
+    poll();
+})();
+</script>

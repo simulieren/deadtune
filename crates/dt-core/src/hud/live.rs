@@ -2,142 +2,39 @@
 //!
 //! The running game locks the HUD pak and Panorama has no reload, so the pak ships one
 //! script of ours (`assets/live_hud.js`) that sets `panel.style.<prop>` from rules DeadTune
-//! hands it. Panorama JS cannot read a ConVar, but a `CitadelSettingsSlider` bound to one
-//! shows its value, so the pak also carries hidden sliders (`SLOTS`) on harmless numeric
-//! ConVars: a control slot (sequence and chunk number) and data slots (16-bit words). DeadTune
-//! sets them through the console (netcon, or the bound key running `exec deadtune_hud`); the
-//! script reads the sliders four times a second, which prints nothing. Every message carries
-//! the `base` of the pak the game runs, so overrides are always relative to what the pak
-//! baked. Design: docs/plans/live-hud/plan.md.
+//! hands it. Panorama JS can read neither a ConVar nor a file, so the script opens a hidden
+//! web panel on DeadTune's bridge page (`docs/bridge/`, served by GitHub Pages), which
+//! fetches each message from DeadTune on 127.0.0.1 (`web_bridge`) and hands it over as
+//! title changes. Every message carries the `base` of the pak the game runs, so overrides
+//! are always relative to what the pak baked. Design: docs/plans/live-hud/plan.md.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
 use super::css;
 use super::elements::ELEMENTS;
-use super::inject::{Anchor, Element, LayoutEdit};
+use super::inject::{Element, LayoutEdit};
 use super::layout::{self, HudFeature, HudLayout, HudPatch, LayoutError};
-use crate::bridge::{BridgeError, ConsoleCmd, execfile};
+use super::web_bridge;
 
 pub const LIVE: &str = "DEADTUNE_LIVE";
-
-/// A hidden slider in the HUD bound to a ConVar nothing on a client reads. All are SourceTV
-/// server settings of the engine in the player's own game process: `release`, not archived
-/// (nothing lands in `user_convars_*.vcfg`), not cheat, not dev-only, not replicated, and
-/// read only by a SourceTV server a client never runs, so any value, 0 included, is inert.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Slot {
-    pub convar: &'static str,
-    /// The game's default, set back at the end of a session.
-    pub default: &'static str,
-    pub max: u32,
-    /// The slider panel's id in the HUD layout.
-    pub id: &'static str,
-}
-
-/// Sequence (10 bits) and chunk number (10 bits); chunk 0 means "no chunk".
-pub const CTL: Slot = Slot {
-    convar: "tv_chattimelimit",
-    default: "0.2",
-    max: (1 << 20) - 1,
-    id: "DtLiveCtl",
-};
-/// One 16-bit word each.
-pub const DATA: [Slot; 10] = [
-    Slot {
-        convar: "tv_broadcast_spew_threshold",
-        default: "0.1",
-        max: WORD_MAX,
-        id: "DtLiveD0",
-    },
-    Slot {
-        convar: "tv_maxclients",
-        default: "128",
-        max: WORD_MAX,
-        id: "DtLiveD1",
-    },
-    Slot {
-        convar: "tv_broadcast_keyframe_interval",
-        default: "3",
-        max: WORD_MAX,
-        id: "DtLiveD2",
-    },
-    Slot {
-        convar: "tv_broadcast_keyframe_interval1",
-        default: "3",
-        max: WORD_MAX,
-        id: "DtLiveD3",
-    },
-    Slot {
-        convar: "tv_broadcast_startup_resend_interval",
-        default: "10",
-        max: WORD_MAX,
-        id: "DtLiveD4",
-    },
-    Slot {
-        convar: "tv_broadcast_max_requests",
-        default: "20",
-        max: WORD_MAX,
-        id: "DtLiveD5",
-    },
-    Slot {
-        convar: "tv_broadcast_max_requests1",
-        default: "20",
-        max: WORD_MAX,
-        id: "DtLiveD6",
-    },
-    Slot {
-        convar: "tv_chatgroupsize",
-        default: "0",
-        max: WORD_MAX,
-        id: "DtLiveD7",
-    },
-    Slot {
-        convar: "tv_maxrate",
-        default: "0",
-        max: WORD_MAX,
-        id: "DtLiveD8",
-    },
-    Slot {
-        convar: "tv_timeout",
-        default: "20",
-        max: WORD_MAX,
-        id: "DtLiveD9",
-    },
-];
-pub const WORD_MAX: u32 = u16::MAX as u32;
-/// A second slider on the control ConVar inside a collapsed panel, so one hello line tells
-/// whether a collapsed slider still follows its ConVar.
-pub const PROBE_ID: &str = "DtLiveProbe";
-pub const SLOTS_ID: &str = "DtLive";
-/// The panel in the game's `hud.vxml_c` our slots go after.
-const SLOTS_ANCHOR: &str = "TopBar";
-/// Words of chunk 1 taken by the header: count and kind, byte length, base (two words).
-const HEADER_WORDS: usize = 4;
-const SEQ_BITS: u32 = 10;
-pub const SEQ_MOD: u32 = 1 << SEQ_BITS;
-const CHUNK_MASK: u32 = (1 << 10) - 1;
-/// Dictionary tokens are bytes from this value up; the payload itself is ASCII below it.
-const TOKEN_BASE: usize = 0x80;
-const TOKENS: usize = 0x100 - TOKEN_BASE;
-
-/// How long a chunk may wait for the script's answer before the message is sent again.
-/// Longer than a pull round trip (the script execs every `PULL_SECS`, DeadTune reads the
-/// log four times a second) plus the console log's delay.
+/// First word of every message chunk the page hands the script.
+const FORMAT: &str = "dt1";
+/// Payload characters per chunk; the page sets one title per chunk.
+pub const CHUNK_CHARS: usize = 200;
+/// How long a message may wait for the script's ack before it goes again as a full one.
 pub const TIMEOUT: Duration = Duration::from_secs(3);
-/// The script reads the sliders this often.
+/// The script re-matches its rules this often, so panels created later get their style.
 pub const POLL_SECS: f64 = 0.25;
-/// While a message with the pull flag is coming in, the script execs the cfg this often.
-pub const PULL_SECS: f64 = 0.3;
-/// The script stops pulling this long after the last chunk it received.
-pub const PULL_TIMEOUT_SECS: f64 = 3.0;
-pub const CFG_NAME: &str = "deadtune_hud.cfg";
+/// The script opens the bridge page again when it hasn't said ready after this long, up to
+/// `RETRIES` loads in all.
+pub const RETRY_SECS: f64 = 20.0;
+pub const RETRIES: u32 = 5;
 pub const OWN_SCRIPT: &str = "panorama/scripts/deadtune/live_hud.vjs_c";
-/// The HUD root layout; our script goes into its `<scripts>`, the slots after `#TopBar`.
+/// The HUD root layout; our script goes into its `<scripts>`.
 pub const HUD_LAYOUT: &str = "panorama/layout/hud.vxml_c";
 const SCRIPT: &str = include_str!("assets/live_hud.js");
 
@@ -182,44 +79,6 @@ pub const RESETS: &[(&str, &str)] = &[
     ("visibility", "visible"),
 ];
 
-/// Payload fragments every pak's dictionary starts with, most common first.
-const FRAGMENTS: &[&str] = &[
-    "^transform^translateX(",
-    "px) translateY(",
-    "px)",
-    "^opacity^0.",
-    "^opacity^",
-    "^ui-scale^",
-    "^visibility^collapse",
-    "^visibility^visible",
-    "^pre-transform-scale2d^",
-    "^transform-origin^",
-    "^wash-color^#",
-    "^background-color^",
-    "^saturation^",
-    "^brightness^",
-    "^contrast^",
-    "^hue-rotation^",
-    "^width^",
-    "^height^",
-    "^font-size^",
-    "^color^#",
-    "^border-radius^",
-    "^margin",
-    "~#",
-    "#hud_minimap ",
-    ".map_button",
-    "#BackgroundImage",
-    ".HealthVisible",
-    "rgba(",
-    "none",
-    "100%",
-    "deg",
-    "px~",
-    "%~",
-    "scale(",
-];
-
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LiveRule {
     pub selector: String,
@@ -259,8 +118,6 @@ pub struct Message {
     pub seq: u32,
     pub base: String,
     pub kind: Kind,
-    /// The script fetches the rest of the message by running `exec deadtune_hud` itself.
-    pub pull: bool,
     pub rules: Vec<LiveRule>,
 }
 
@@ -268,19 +125,15 @@ pub struct Message {
 pub enum CodecError {
     #[error("no chunks")]
     Empty,
-    #[error("chunk {0} is not {1} words")]
-    Width(usize, usize),
-    #[error("chunk 1 is missing")]
-    NoHeader,
     #[error("chunk {0} of {1} is missing")]
     Missing(usize, usize),
+    #[error("bad chunk: {0}")]
+    Chunk(String),
     #[error("bad record: {0}")]
     Record(String),
-    #[error("payload is not text")]
-    Text,
 }
 
-/// What the script echoes into the console log.
+/// What the script writes into the console log.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LiveLine {
     Hello {
@@ -296,12 +149,9 @@ pub enum LiveLine {
         seq: u32,
         base: String,
     },
-    /// Part of a long message arrived: `have` of its chunks so far.
-    Got {
-        seq: u32,
-        have: usize,
-        base: String,
-    },
+    /// What the web panel reported: `ready storage=ok`, `fetch ok`, `fetch blocked <why>`,
+    /// `control <title>`, `retry <n>`, `nopanel`, ...
+    Web(String),
 }
 
 /// Why a declaration is not live.
@@ -529,8 +379,7 @@ pub fn overrides(desired: &HudLayout, baked: &HudLayout) -> Result<Overrides, La
     Ok(out)
 }
 
-/// Eight hex digits naming the rules a pak bakes and the dictionary its script carries,
-/// the same with the live switch on or off.
+/// Eight hex digits naming the rules a pak bakes, the same with the live switch on or off.
 pub fn base_id(layout: &HudLayout) -> Result<String, LayoutError> {
     let without = HudLayout {
         live: false,
@@ -548,9 +397,6 @@ fn patch_base(patch: &HudPatch) -> String {
     for (path, edit) in &patch.layouts {
         hash.update(format!("{path}\0{edit:?}\0"));
     }
-    for token in patch_dictionary(patch) {
-        hash.update(format!("{token}\0"));
-    }
     hash.finalize()[..4]
         .iter()
         .fold(String::new(), |mut out, b| {
@@ -559,11 +405,11 @@ fn patch_base(patch: &HudPatch) -> String {
         })
 }
 
-/// Kept as is in a field; `%`, the record separators `~` and `^`, control characters and
-/// anything outside ASCII are `%XX` per UTF-8 byte, so the payload is ASCII below the
-/// dictionary's token range.
+/// Kept as is in a field; `%`, the record separators `~` and `^`, spaces (a page title
+/// collapses them), control characters and anything outside ASCII are `%XX` per UTF-8
+/// byte, so the payload is printable ASCII without spaces.
 fn plain(c: char) -> bool {
-    c.is_ascii_graphic() && !"%~^".contains(c) || c == ' '
+    c.is_ascii_graphic() && !"%~^".contains(c)
 }
 
 fn escape(field: &str) -> String {
@@ -631,195 +477,97 @@ fn parse_payload(text: &str) -> Result<Vec<LiveRule>, CodecError> {
         .collect()
 }
 
-/// The payload fragments a pak's script expands from one byte each: `FRAGMENTS`, every
-/// element selector, every live property, then what the pak's own rules use. Deterministic
-/// from the compiled patch, so DeadTune and the script agree on it through `base_id`.
-fn patch_dictionary(patch: &HudPatch) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut add = |token: &str| {
-        if token.len() >= 2 && token.is_ascii() && !out.iter().any(|t| t == token) {
-            out.push(token.to_string());
-        }
+fn kind_word(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Full => "full",
+        Kind::Patch => "patch",
+    }
+}
+
+/// The message as the chunks the bridge page sets as titles, in order:
+/// `dt1 <seq> <i>/<n> <base> full|patch <payload part>`. The payload has no spaces, so it
+/// splits anywhere; the script joins the parts before decoding them.
+pub fn titles(msg: &Message) -> Vec<String> {
+    let chars: Vec<char> = payload(&msg.rules).chars().collect();
+    let parts: Vec<String> = if chars.is_empty() {
+        vec![String::new()]
+    } else {
+        chars
+            .chunks(CHUNK_CHARS)
+            .map(|c| c.iter().collect())
+            .collect()
     };
-    for f in FRAGMENTS {
-        add(f);
-    }
-    for e in ELEMENTS {
-        for part in e.selector.split(',') {
-            add(part.trim());
-        }
-    }
-    for p in LIVE_PROPS {
-        add(&format!("^{p}^"));
-    }
-    if let Ok((baked, _)) = split(patch) {
-        for r in &baked {
-            add(&escape(&r.selector));
-        }
-        for r in &baked {
-            add(&escape(&r.value));
-        }
-    }
-    out.truncate(TOKENS);
-    out
-}
-
-/// The dictionary the script of a pak that baked `layout` carries.
-pub fn dictionary(layout: &HudLayout) -> Result<Vec<String>, LayoutError> {
-    let without = HudLayout {
-        live: false,
-        ..layout.clone()
-    };
-    Ok(patch_dictionary(&layout::compile(&without)?))
-}
-
-/// The payload as bytes: ASCII as is, dictionary tokens as one byte each (longest match).
-fn compress(text: &str, dict: &[String]) -> Vec<u8> {
-    let mut by_len: Vec<(usize, &str)> = dict.iter().map(String::as_str).enumerate().collect();
-    by_len.sort_by_key(|(i, t)| (std::cmp::Reverse(t.len()), *i));
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match by_len
-            .iter()
-            .find(|(_, t)| bytes[i..].starts_with(t.as_bytes()))
-        {
-            Some((id, t)) => {
-                out.push((TOKEN_BASE + id) as u8);
-                i += t.len();
-            }
-            None => {
-                out.push(bytes[i]);
-                i += 1;
-            }
-        }
-    }
-    out
-}
-
-fn expand(bytes: &[u8], dict: &[String]) -> Result<String, CodecError> {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        if (b as usize) < TOKEN_BASE {
-            out.push(b as char);
-        } else {
-            out.push_str(dict.get(b as usize - TOKEN_BASE).ok_or(CodecError::Text)?);
-        }
-    }
-    Ok(out)
-}
-
-fn base_words(base: &str) -> (u32, u32) {
-    let n = u32::from_str_radix(base, 16).unwrap_or(0);
-    (n >> 16, n & WORD_MAX)
-}
-
-/// The message as chunks of `DATA.len()` words. Chunk 1 starts with the header: chunk
-/// count, pull flag and kind in one word, the payload's byte length, the base in two.
-pub fn encode(msg: &Message, dict: &[String]) -> Vec<Vec<u32>> {
-    let bytes = compress(&payload(&msg.rules), dict);
-    let (hi, lo) = base_words(&msg.base);
-    let mut words = vec![0, bytes.len() as u32, hi, lo];
-    for pair in bytes.chunks(2) {
-        words.push(u32::from(pair[0]) << 8 | u32::from(*pair.get(1).unwrap_or(&0)));
-    }
-    let mut chunks: Vec<Vec<u32>> = words.chunks(DATA.len()).map(<[u32]>::to_vec).collect();
-    for chunk in &mut chunks {
-        chunk.resize(DATA.len(), 0);
-    }
-    let kind = u32::from(msg.kind == Kind::Full);
-    chunks[0][0] = (chunks.len() as u32) << 2 | u32::from(msg.pull) << 1 | kind;
-    chunks
-}
-
-/// The message the chunks carry, in order; what the script does in game.
-pub fn decode(chunks: &[Vec<u32>], dict: &[String]) -> Result<Message, CodecError> {
-    let first = chunks.first().ok_or(CodecError::Empty)?;
-    if let Some(bad) = chunks.iter().position(|c| c.len() != DATA.len()) {
-        return Err(CodecError::Width(bad + 1, DATA.len()));
-    }
-    if first.len() < HEADER_WORDS {
-        return Err(CodecError::NoHeader);
-    }
-    let n = (first[0] >> 2) as usize;
-    if n == 0 {
-        return Err(CodecError::NoHeader);
-    }
-    if chunks.len() < n {
-        return Err(CodecError::Missing(chunks.len() + 1, n));
-    }
-    let len = first[1] as usize;
-    let base = format!("{:04x}{:04x}", first[2], first[3]);
-    let mut bytes = Vec::with_capacity(len);
-    for word in first[HEADER_WORDS..]
+    let n = parts.len();
+    let kind = kind_word(msg.kind);
+    parts
         .iter()
-        .chain(chunks[1..n].iter().flatten())
-    {
-        bytes.push((word >> 8) as u8);
-        bytes.push((word & 0xff) as u8);
-    }
-    bytes.truncate(len);
-    let text = expand(&bytes, dict)?;
-    // The sequence travels in the control slot, not in the words.
-    Ok(Message {
-        seq: 0,
-        base,
-        kind: if first[0] & 1 == 1 {
-            Kind::Full
-        } else {
-            Kind::Patch
-        },
-        pull: first[0] & 2 == 2,
-        rules: parse_payload(&text)?,
-    })
-}
-
-/// The slot settings that put chunk `i` (1-based) of message `seq` in front of the script.
-pub fn chunk_cmds(seq: u32, i: usize, words: &[u32]) -> Vec<ConsoleCmd> {
-    let mut out = vec![ConsoleCmd {
-        name: CTL.convar.to_string(),
-        value: ((seq % SEQ_MOD) << 10 | i as u32 & CHUNK_MASK).to_string(),
-    }];
-    out.extend(DATA.iter().enumerate().map(|(k, slot)| ConsoleCmd {
-        name: slot.convar.to_string(),
-        value: words.get(k).copied().unwrap_or(0).to_string(),
-    }));
-    out
-}
-
-/// Every slot back to the game's default, for the end of a session.
-pub fn reset_cmds() -> Vec<ConsoleCmd> {
-    std::iter::once(&CTL)
-        .chain(DATA.iter())
-        .map(|slot| ConsoleCmd {
-            name: slot.convar.to_string(),
-            value: slot.default.to_string(),
+        .enumerate()
+        .map(|(i, part)| {
+            format!(
+                "{FORMAT} {} {}/{n} {} {kind} {part}",
+                msg.seq,
+                i + 1,
+                msg.base
+            )
         })
         .collect()
 }
 
-/// Distinct values for every slot, set at game start so the script's hello line shows
-/// which sliders read their ConVar: the control slot as sequence 1, chunk 0 (no chunk),
-/// data slot `k` as `1000 + k`.
-pub fn probe_cmds() -> Vec<ConsoleCmd> {
-    let mut out = vec![ConsoleCmd {
-        name: CTL.convar.to_string(),
-        value: (1 << 10).to_string(),
-    }];
-    out.extend(DATA.iter().enumerate().map(|(k, slot)| ConsoleCmd {
-        name: slot.convar.to_string(),
-        value: (1000 + k).to_string(),
-    }));
-    out
+/// One chunk read back: seq, part number, part count, base, kind and the payload part.
+fn parse_title(title: &str) -> Option<(u32, usize, usize, String, Kind, String)> {
+    let mut w = title.trim().splitn(6, ' ');
+    if w.next()? != FORMAT {
+        return None;
+    }
+    let seq = w.next()?.parse().ok()?;
+    let (i, n) = w.next()?.split_once('/')?;
+    let (i, n): (usize, usize) = (i.parse().ok()?, n.parse().ok()?);
+    if !(1..=n).contains(&i) {
+        return None;
+    }
+    let base = w.next()?.to_string();
+    let kind = match w.next()? {
+        "full" => Kind::Full,
+        "patch" => Kind::Patch,
+        _ => return None,
+    };
+    Some((seq, i, n, base, kind, w.next().unwrap_or("").to_string()))
 }
 
-/// The console line that makes the game read `CFG_NAME`, by bare name like the script's.
-pub fn exec_line() -> String {
-    format!("exec {}", CFG_NAME.trim_end_matches(".cfg"))
+/// The message `titles` carry, in any order; what the script does in game. A chunk may
+/// have lost its trailing space, as the browser trims titles.
+pub fn parse_titles(titles: &[String]) -> Result<Message, CodecError> {
+    let mut head: Option<(u32, String, Kind)> = None;
+    let mut parts: Vec<Option<String>> = Vec::new();
+    for title in titles {
+        let bad = || CodecError::Chunk(title.clone());
+        let (seq, i, n, base, kind, part) = parse_title(title).ok_or_else(bad)?;
+        match &head {
+            None => {
+                head = Some((seq, base, kind));
+                parts = vec![None; n];
+            }
+            Some(h) if *h != (seq, base, kind) || parts.len() != n => return Err(bad()),
+            Some(_) => {}
+        }
+        parts[i - 1] = Some(part);
+    }
+    let (seq, base, kind) = head.ok_or(CodecError::Empty)?;
+    let n = parts.len();
+    let text = parts
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| p.ok_or(CodecError::Missing(i + 1, n)))
+        .collect::<Result<String, _>>()?;
+    Ok(Message {
+        seq,
+        base,
+        kind,
+        rules: parse_payload(&text)?,
+    })
 }
 
-/// A line the script echoed, tolerant of whatever the log puts before the marker.
+/// A line the script wrote, tolerant of whatever the log puts before the marker.
 pub fn parse_line(line: &str) -> Option<LiveLine> {
     let at = line.find(LIVE)?;
     let rest = line[at + LIVE.len()..].trim();
@@ -829,6 +577,10 @@ pub fn parse_line(line: &str) -> Option<LiveLine> {
         let base = words.next()?.to_string();
         let probes = rest[rest.find(&base)? + base.len()..].trim().to_string();
         return Some(LiveLine::Hello { base, probes });
+    }
+    if first == "web" {
+        let text = rest["web".len()..].trim();
+        return (!text.is_empty()).then(|| LiveLine::Web(text.to_string()));
     }
     let seq = first.parse().ok()?;
     match words.next()? {
@@ -840,23 +592,8 @@ pub fn parse_line(line: &str) -> Option<LiveLine> {
             seq,
             base: words.next()?.to_string(),
         }),
-        "got" => Some(LiveLine::Got {
-            seq,
-            have: words.next()?.parse().ok()?,
-            base: words.next()?.to_string(),
-        }),
         _ => None,
     }
-}
-
-/// Writes `cmds` as the file `exec deadtune_hud` reads; no commands empties it, which is a
-/// harmless exec.
-pub fn write_cfg(cfg_dir: &Path, cmds: &[ConsoleCmd]) -> Result<(), BridgeError> {
-    let lines: Vec<String> = cmds
-        .iter()
-        .map(ConsoleCmd::to_line)
-        .collect::<Result<_, _>>()?;
-    Ok(execfile::write_cfg(cfg_dir, CFG_NAME, &lines)?)
 }
 
 fn js_string(text: &str) -> String {
@@ -877,76 +614,24 @@ fn js_string(text: &str) -> String {
     out
 }
 
-/// Our script for a pak whose rules hash to `base` and whose dictionary is `dict`.
-pub fn script(base: &str, dict: &[String]) -> String {
-    let (hi, lo) = base_words(base);
-    let data = DATA.map(|s| js_string(s.id)).join(", ");
-    let dict = dict
-        .iter()
-        .map(|t| js_string(t))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let cfg = CFG_NAME.trim_end_matches(".cfg");
+/// Our script for a pak whose rules hash to `base`.
+pub fn script(base: &str) -> String {
     format!(
-        "var DT_LIVE = {{ base: \"{base}\", baseWords: [{hi}, {lo}], ctl: \"{}\", ctlMax: {}, probe: \"{PROBE_ID}\", data: [{data}], max: {WORD_MAX}, dict: [{dict}], cfg: \"{cfg}\", poll: {POLL_SECS}, pull: {PULL_SECS}, pullTimeout: {PULL_TIMEOUT_SECS}, webPort: {} }};\n{SCRIPT}",
-        CTL.id,
-        CTL.max,
-        super::web_probe::PORT
+        "var DT_LIVE = {{ base: \"{base}\", page: {}, port: {}, protocol: {}, poll: {POLL_SECS}, retry: {RETRY_SECS}, retries: {RETRIES} }};\n{SCRIPT}",
+        js_string(web_bridge::PAGE_URL),
+        web_bridge::PORT,
+        js_string(web_bridge::PROTOCOL)
     )
 }
 
-fn slider(slot: &Slot) -> Element {
-    Element::new("CitadelSettingsSlider")
-        .attr("id", slot.id)
-        .attr("class", "VideoPreview")
-        .attr("convar", slot.convar)
-        .attr("min", "0")
-        .attr("max", &slot.max.to_string())
-        .attr("snap", "1")
-        .attr("percentage", "false")
-        .attr("displayprecision", "0")
-        .attr("text", slot.id)
-        .attr("textentry", "true")
-}
-
-/// The hidden sliders: a clipped, transparent panel that takes no room, plus one slider
-/// on the control ConVar inside a collapsed panel for the hello line's probe.
-pub fn slots_panel() -> Element {
-    let mut panel = Element::new("Panel")
-        .attr("id", SLOTS_ID)
-        .attr("hittest", "false")
-        .attr("hittestchildren", "false")
-        .attr(
-            "style",
-            "width: 0px; height: 0px; overflow: clip; opacity: 0;",
-        )
-        .child(slider(&CTL));
-    for slot in &DATA {
-        panel = panel.child(slider(slot));
-    }
-    let probe = Slot {
-        id: PROBE_ID,
-        ..CTL
-    };
-    panel.child(
-        Element::new("Panel")
-            .attr("id", "DtLiveCollapsed")
-            .attr("style", "visibility: collapse;")
-            .child(slider(&probe)),
-    )
-}
-
-/// Adds the script and the slots to a patch compiled without them.
+/// Adds the script to a patch compiled without it.
 pub(crate) fn add_to(patch: &mut HudPatch) {
     let base = patch_base(patch);
-    let dict = patch_dictionary(patch);
     let edit: &mut LayoutEdit = patch.layouts.entry(HUD_LAYOUT.to_string()).or_default();
     edit.script_includes.push(format!("s2r://{OWN_SCRIPT}"));
-    edit.panels
-        .push((Anchor::After(SLOTS_ANCHOR.into()), slots_panel()));
     patch
         .own_files
-        .insert(OWN_SCRIPT.to_string(), script(&base, &dict));
+        .insert(OWN_SCRIPT.to_string(), script(&base));
 }
 
 /// A stand-in for the game's HUD layout, for tests and the fake install.
@@ -962,15 +647,14 @@ pub fn stand_in_layout() -> Element {
         )
 }
 
-/// One chunk to deliver: its slot settings, and whether it opens a message the bound key
-/// has to carry (`exec deadtune_hud` goes through the bridge once per key press).
+/// One message for the bridge page: the chunks to show now, and the chunks of the whole
+/// override set the game shows once the script applies them, which the page keeps so the
+/// next game start can restore it before DeadTune is back.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Batch {
+pub struct Post {
     pub seq: u32,
-    pub i: usize,
-    pub n: usize,
-    pub cmds: Vec<ConsoleCmd>,
-    pub needs_key: bool,
+    pub titles: Vec<String>,
+    pub keep: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -978,45 +662,36 @@ struct Flight {
     seq: u32,
     /// The override set the script shows once it applies this message.
     target: Vec<LiveRule>,
-    chunks: Vec<Vec<u32>>,
-    /// Chunks handed out so far.
-    sent: usize,
-    /// Chunks the script reported holding.
-    received: usize,
     at: Instant,
 }
 
-/// One message in flight at a time, one chunk per batch. It keeps the override set the game
-/// should show (`desired`) and the set the script last acknowledged (`applied`), so it
-/// decides itself between a patch and a full message, and a lost message is made good by
-/// sending everything again. Pure: the caller delivers the batches and feeds back the
-/// script's lines.
+/// One message in flight at a time. It keeps the override set the game should show
+/// (`desired`) and the set the script last acknowledged (`applied`), so it decides itself
+/// between a patch and a full message, and a message left unacknowledged for `TIMEOUT`
+/// goes again as a full one. Pure: the caller hands the posts to the bridge and feeds back
+/// the script's acks.
 #[derive(Clone, Debug)]
 pub struct Mailbox {
     base: String,
-    dict: Vec<String>,
     next_seq: u32,
     desired: Vec<LiveRule>,
     applied: Option<Vec<LiveRule>>,
     flight: Option<Flight>,
-    /// A chunk 1 went out through the bound key and the game has not run it yet.
-    key_pending: bool,
 }
 
 impl Mailbox {
     /// `first_seq` should differ between DeadTune runs (seed it from the clock): the script
-    /// ignores a message whose seq it applied last.
-    pub fn new(base: &str, dict: Vec<String>, first_seq: u32) -> Mailbox {
+    /// ignores a message whose seq it applied last. Seq 0 is never used; a new page asks
+    /// for anything newer than 0.
+    pub fn new(base: &str, first_seq: u32) -> Mailbox {
         Mailbox {
             base: base.to_string(),
-            dict,
-            next_seq: first_seq % SEQ_MOD,
+            next_seq: first_seq.max(1),
             desired: Vec::new(),
-            // The script may still hold an earlier DeadTune run's overrides, so the first
-            // message replaces whatever it has.
+            // The script may hold an earlier run's overrides, restored or live, so the
+            // first message replaces whatever it has.
             applied: None,
             flight: None,
-            key_pending: false,
         }
     }
 
@@ -1024,43 +699,25 @@ impl Mailbox {
         &self.base
     }
 
-    /// The override set the game should show from now on, and the first batch when one
-    /// can go. A message the script has not started reading is replaced outright.
-    pub fn send(&mut self, desired: Vec<LiveRule>, now: Instant, pull: bool) -> Option<Batch> {
+    /// The override set the game should show from now on, and the message for it. It
+    /// replaces the one in flight: the page only ever hands over the latest.
+    pub fn send(&mut self, desired: Vec<LiveRule>, now: Instant) -> Option<Post> {
         self.desired = desired;
-        if self.flight.as_ref().is_some_and(|f| f.received == 0) {
-            self.flight = None;
-        }
-        self.poll(now, pull)
+        self.flight = None;
+        self.poll(now)
     }
 
-    /// The script loaded again (a hello while live): it shows the baked HUD now.
+    /// The script loaded again: it shows the baked HUD, or what the page restored.
     pub fn reload(&mut self) {
         self.applied = None;
         self.flight = None;
     }
 
-    /// The next batch to deliver, if any: the next chunk once the script holds the last
-    /// one, or the next message once the last is acked. With `pull` the game reads chunk 1
-    /// only when the player presses the bound key, so it waits as long as it takes; a chunk
-    /// left unanswered for `TIMEOUT` after the script started reading makes the whole
-    /// message go again.
-    pub fn poll(&mut self, now: Instant, pull: bool) -> Option<Batch> {
-        if let Some(flight) = &mut self.flight {
-            if flight.received == flight.sent && flight.sent < flight.chunks.len() {
-                let i = flight.sent + 1;
-                flight.sent = i;
-                flight.at = now;
-                return Some(Batch {
-                    seq: flight.seq,
-                    i,
-                    n: flight.chunks.len(),
-                    cmds: chunk_cmds(flight.seq, i, &flight.chunks[i - 1]),
-                    needs_key: false,
-                });
-            }
-            let stalled = now.duration_since(flight.at) >= TIMEOUT;
-            if !stalled || (pull && flight.received == 0) {
+    /// The next message to post, if any: the change since the last acknowledged one, or
+    /// everything again once a message went unanswered for `TIMEOUT`.
+    pub fn poll(&mut self, now: Instant) -> Option<Post> {
+        if let Some(flight) = &self.flight {
+            if now.saturating_duration_since(flight.at) < TIMEOUT {
                 return None;
             }
             self.flight = None;
@@ -1086,64 +743,37 @@ impl Mailbox {
             _ => (Kind::Full, self.desired.clone()),
         };
         let seq = self.next_seq;
-        self.next_seq = (seq + 1) % SEQ_MOD;
-        let chunks = encode(
-            &Message {
-                seq,
-                base: self.base.clone(),
-                kind,
-                pull,
-                rules,
-            },
-            &self.dict,
-        );
-        let batch = Batch {
-            seq,
-            i: 1,
-            n: chunks.len(),
-            cmds: chunk_cmds(seq, 1, &chunks[0]),
-            needs_key: pull && !self.key_pending,
-        };
-        self.key_pending = pull;
+        self.next_seq = seq.wrapping_add(1).max(1);
         self.flight = Some(Flight {
             seq,
             target: self.desired.clone(),
-            chunks,
-            sent: 1,
-            received: 0,
             at: now,
         });
-        Some(batch)
+        let message = |kind, rules| {
+            titles(&Message {
+                seq,
+                base: self.base.clone(),
+                kind,
+                rules,
+            })
+        };
+        Some(Post {
+            seq,
+            keep: message(Kind::Full, self.desired.clone()),
+            titles: message(kind, rules),
+        })
     }
 
     /// The script applied message `seq`.
     pub fn ack(&mut self, seq: u32) {
-        self.key_pending = false;
         if let Some(flight) = self.flight.take_if(|f| f.seq == seq) {
             self.applied = Some(flight.target);
         }
     }
 
-    /// The script holds `have` chunks of message `seq`.
-    pub fn got(&mut self, seq: u32, have: usize) {
-        self.key_pending = false;
-        if let Some(flight) = self.flight.as_mut().filter(|f| f.seq == seq) {
-            flight.received = flight.received.max(have);
-        }
-    }
-
-    /// The script saw a message of ours; whatever it said, the key was pressed.
-    pub fn heard(&mut self) {
-        self.key_pending = false;
-    }
-
     /// A message is in flight or waiting to go.
     pub fn pending(&self) -> bool {
         self.flight.is_some() || self.applied.as_ref() != Some(&self.desired)
-    }
-
-    pub fn key_pending(&self) -> bool {
-        self.key_pending
     }
 }
 
@@ -1173,7 +803,6 @@ mod tests {
             seq,
             base: "0badf00d".into(),
             kind,
-            pull: false,
             rules,
         }
     }
@@ -1188,10 +817,6 @@ mod tests {
                 )
             })
             .collect()
-    }
-
-    fn dict() -> Vec<String> {
-        dictionary(&HudLayout::default()).unwrap()
     }
 
     fn element_layout(edits: &[(crate::hud::ElementId, ElementEdit)]) -> HudLayout {
@@ -1223,325 +848,145 @@ mod tests {
         assert_eq!(text.matches('~').count(), 1, "{text}");
         assert_eq!(text.matches('^').count(), 4, "{text}");
         assert!(text.is_ascii());
-        for c in ['\r', '\n', 'ü', '\t'] {
+        for c in [' ', '\r', '\n', 'ü', '\t'] {
             assert!(!text.contains(c), "{c:?} in {text}");
         }
-        let chunks = encode(&m, &dict());
-        let got = decode(&chunks, &dict()).unwrap();
+        assert_eq!(parse_titles(&titles(&m)).unwrap(), m);
+        let empty = msg(8, Kind::Full, Vec::new());
+        let t = titles(&empty);
+        assert_eq!(t, ["dt1 8 1/1 0badf00d full "]);
         assert_eq!(
-            (got.kind, got.base.as_str(), got.rules),
-            (m.kind, "0badf00d", m.rules)
+            parse_titles(&[t[0].trim_end().to_string()]).unwrap(),
+            empty,
+            "the browser trims a title's trailing space"
         );
-        let empty = Message {
-            pull: true,
-            ..msg(8, Kind::Full, Vec::new())
-        };
-        let chunks = encode(&empty, &dict());
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(
-            chunks[0][..HEADER_WORDS],
-            [1 << 2 | 2 | 1, 0, 0x0bad, 0xf00d]
-        );
-        assert!(chunks[0][HEADER_WORDS..].iter().all(|w| *w == 0));
-        let got = decode(&chunks, &dict()).unwrap();
-        assert_eq!((got.kind, got.pull, got.rules.len()), (Kind::Full, true, 0));
     }
 
     #[test]
-    fn the_dictionary_makes_one_element_edit_one_chunk() {
-        let d = dict();
-        assert!(d.len() <= TOKENS, "{}", d.len());
-        assert!(d.iter().all(|t| t.len() >= 2 && t.is_ascii()));
-        assert_eq!(d[0], FRAGMENTS[0]);
-        assert!(d.contains(&"#minimap_persp".to_string()));
-        assert!(d.contains(&"^opacity^".to_string()));
+    fn one_element_edit_is_one_title() {
         let drag = rules(&moved(-560)).unwrap();
         assert_eq!(drag.len(), 1, "{drag:?}");
-        let chunks = encode(&msg(1, Kind::Patch, drag.clone()), &d);
-        assert_eq!(chunks.len(), 1, "{:?}", payload(&drag));
-        let bytes = compress(&payload(&drag), &d);
-        assert!(bytes.len() <= 12, "{bytes:?}");
-        assert_eq!(expand(&bytes, &d).unwrap(), payload(&drag));
-        let plain = compress("zq", &d);
-        assert_eq!(plain, b"zq");
+        let t = titles(&msg(1, Kind::Patch, drag.clone()));
+        assert_eq!(t.len(), 1, "{t:?}");
+        assert_eq!(parse_titles(&t).unwrap().rules, drag);
     }
 
     #[test]
-    fn a_paks_own_rules_join_its_dictionary_and_change_the_base() {
-        let mut l = HudLayout::default();
-        l.extra_css
-            .insert(HUD_STYLE.into(), "#SomethingNew{opacity:0.123;}".into());
-        let d = dictionary(&l).unwrap();
-        assert!(d.contains(&"#SomethingNew".to_string()), "{d:?}");
-        assert!(d.contains(&"0.123".to_string()), "{d:?}");
-        assert_ne!(
-            base_id(&l).unwrap(),
-            base_id(&HudLayout::default()).unwrap()
-        );
-    }
-
-    #[test]
-    fn long_messages_split_into_chunks_that_reassemble_in_order() {
+    fn long_messages_split_into_titles_that_reassemble_in_any_order() {
         let m = msg(41, Kind::Full, many(30));
-        let chunks = encode(&m, &dict());
-        assert!(chunks.len() > 3, "{}", chunks.len());
-        assert_eq!(chunks[0][0] >> 2, chunks.len() as u32);
-        for c in &chunks {
-            assert_eq!(c.len(), DATA.len());
-            assert!(c.iter().all(|w| *w <= WORD_MAX));
-        }
-        assert_eq!(decode(&chunks, &dict()).unwrap().rules, m.rules);
-        assert_eq!(
-            decode(&chunks[..2], &dict()),
-            Err(CodecError::Missing(3, chunks.len()))
-        );
-        assert_eq!(decode(&[], &dict()), Err(CodecError::Empty));
-        assert_eq!(
-            decode(&[vec![0; 3]], &dict()),
-            Err(CodecError::Width(1, DATA.len()))
-        );
-    }
-
-    #[test]
-    fn chunk_cmds_set_the_control_then_every_data_slot() {
-        let got = chunk_cmds(1023, 2, &[7, 65535]);
-        assert_eq!(got.len(), 1 + DATA.len());
-        assert_eq!(got[0].name, CTL.convar);
-        assert_eq!(got[0].value, (1023 << 10 | 2).to_string());
-        assert_eq!(got[1].value, "7");
-        assert_eq!(got[2].value, "65535");
-        assert!(got[3..].iter().all(|c| c.value == "0"));
-        assert_eq!(chunk_cmds(1024, 1, &[])[0].value, "1", "seq wraps to 0");
-        for c in &got {
-            c.to_line().expect("the console takes every slot");
-        }
-        let resets = reset_cmds();
-        assert_eq!(resets[0].to_line().unwrap(), "tv_chattimelimit \"0.2\"");
-        assert_eq!(
-            resets[1].to_line().unwrap(),
-            "tv_broadcast_spew_threshold \"0.1\""
-        );
-        assert_eq!(resets.len(), 1 + DATA.len());
-        let probes = probe_cmds();
-        assert_eq!(probes[0].value, "1024", "sequence 1, no chunk");
-        assert_eq!(probes[1].value, "1000");
-        assert_eq!(probes[10].value, "1009");
-        assert_eq!(exec_line(), "exec deadtune_hud");
-    }
-
-    #[test]
-    fn slots_use_distinct_safe_convars() {
-        let names: BTreeSet<&str> = std::iter::once(CTL.convar)
-            .chain(DATA.iter().map(|s| s.convar))
-            .collect();
-        assert_eq!(names.len(), 1 + DATA.len());
-        let list = include_str!("../../../../research/configs/OptimizationLock/cvarlist.txt");
-        for name in names {
-            let row = list
-                .lines()
-                .find(|l| l.starts_with(&format!("{name} | ")))
-                .unwrap_or_else(|| panic!("{name} is not in the cvarlist"));
-            let flags: Vec<&str> = row.split(" | ").nth(1).unwrap().split(", ").collect();
-            for bad in ["devonly", "cheat", "hidden", "a", "sv", "rep", "per_user"] {
-                assert!(!flags.contains(&bad), "{name} is {flags:?}");
-            }
-            assert!(flags.contains(&"release"), "{name} is {flags:?}");
+        let mut t = titles(&m);
+        assert!(t.len() > 3, "{}", t.len());
+        for (i, title) in t.iter().enumerate() {
             assert!(
-                name.starts_with("tv_"),
-                "{name}: only SourceTV server settings are sure to do nothing on a client, \
-                 at any value including 0"
+                title.starts_with(&format!("dt1 41 {}/{} 0badf00d full ", i + 1, t.len())),
+                "{title}"
             );
+            assert!(title.len() <= CHUNK_CHARS + 40, "{title}");
+            assert!(!title.contains("  "), "a title collapses double spaces");
         }
+        t.reverse();
+        assert_eq!(parse_titles(&t).unwrap(), m);
+        assert_eq!(parse_titles(&t[..2]), Err(CodecError::Missing(1, t.len())));
+        assert_eq!(parse_titles(&[]), Err(CodecError::Empty));
+        assert!(matches!(
+            parse_titles(&["DTLIVE ready".to_string()]),
+            Err(CodecError::Chunk(_))
+        ));
+        let other = titles(&msg(42, Kind::Full, many(30)));
+        assert!(
+            matches!(
+                parse_titles(&[t[0].clone(), other[1].clone()]),
+                Err(CodecError::Chunk(_))
+            ),
+            "chunks of two messages don't mix"
+        );
+        assert!(matches!(
+            parse_titles(&["dt1 41 3/2 0badf00d full x".to_string()]),
+            Err(CodecError::Chunk(_))
+        ));
     }
 
     #[test]
     fn mailbox_keeps_one_message_in_flight_until_the_ack() {
         let t0 = Instant::now();
         let ms = |n| t0 + Duration::from_millis(n);
-        let mut mb = Mailbox::new("0badf00d", dict(), 5);
+        let mut mb = Mailbox::new("0badf00d", 5);
         assert!(mb.pending(), "a new session owes the script a full message");
-        let first = mb
-            .send(vec![rule("#TopBar", "opacity", "0.5")], t0, false)
-            .unwrap();
+        let a = rule("#TopBar", "opacity", "0.5");
+        let first = mb.send(vec![a.clone()], t0).unwrap();
+        assert_eq!(first.seq, 5);
+        assert_eq!(parse_titles(&first.titles).unwrap().kind, Kind::Full);
         assert_eq!(
-            (first.seq, first.i, first.n, first.needs_key),
-            (5, 1, 1, false)
+            first.keep, first.titles,
+            "a full message is what the page keeps"
         );
-        assert_eq!(decode(&[words(&first)], &dict()).unwrap().kind, Kind::Full);
-        assert!(mb.pending());
         assert_eq!(
-            mb.poll(ms(500), false),
+            mb.poll(ms(500)),
             None,
             "nothing more until the script answers"
         );
         mb.ack(4);
-        assert_eq!(
-            mb.poll(ms(600), false),
-            None,
-            "an old seq does not free the slot"
-        );
+        assert!(mb.pending(), "an old seq is no answer");
         mb.ack(5);
-        assert_eq!(
-            mb.poll(ms(700), false),
-            None,
-            "desired is what the script shows"
-        );
         assert!(!mb.pending());
-        let second = mb
+        assert_eq!(mb.poll(ms(600)), None, "nothing changed");
+        let b = rule("#Chat", "opacity", "0.2");
+        let second = mb.send(vec![a.clone(), b.clone()], ms(700)).unwrap();
+        assert_eq!(second.seq, 6);
+        let patch = parse_titles(&second.titles).unwrap();
+        assert_eq!((patch.kind, patch.rules), (Kind::Patch, vec![b.clone()]));
+        let keep = parse_titles(&second.keep).unwrap();
+        assert_eq!(
+            (keep.seq, keep.kind, keep.rules),
+            (6, Kind::Full, vec![a, b]),
+            "the page keeps the whole set under the same seq"
+        );
+    }
+
+    #[test]
+    fn mailbox_replaces_the_message_in_flight_and_resends_after_the_timeout() {
+        let t0 = Instant::now();
+        let mut mb = Mailbox::new("0badf00d", 5);
+        mb.send(vec![rule("#TopBar", "opacity", "0.5")], t0)
+            .unwrap();
+        let newer = mb
             .send(
-                vec![
-                    rule("#TopBar", "opacity", "0.5"),
-                    rule("#Chat", "opacity", "0"),
-                ],
-                ms(800),
-                false,
+                vec![rule("#TopBar", "opacity", "0.6")],
+                t0 + Duration::from_millis(10),
             )
             .unwrap();
-        assert_eq!(second.seq, 6);
-        let m = decode(&[words(&second)], &dict()).unwrap();
-        assert_eq!(m.kind, Kind::Patch);
-        assert_eq!(m.rules, [rule("#Chat", "opacity", "0")], "only the change");
-        mb.ack(6);
-        let third = mb
-            .send(vec![rule("#Chat", "opacity", "0")], ms(900), false)
-            .unwrap();
-        let m = decode(&[words(&third)], &dict()).unwrap();
-        assert_eq!(m.kind, Kind::Full, "a dropped key needs a full message");
-        assert_eq!(m.rules, [rule("#Chat", "opacity", "0")]);
-    }
-
-    fn words(batch: &Batch) -> Vec<u32> {
-        batch.cmds[1..]
-            .iter()
-            .map(|c| c.value.parse().unwrap())
-            .collect()
-    }
-
-    #[test]
-    fn mailbox_replaces_an_unread_message_and_queues_behind_a_read_one() {
-        let t0 = Instant::now();
-        let mut mb = Mailbox::new("0badf00d", dict(), 1);
-        mb.send(vec![rule("#A", "opacity", "1")], t0, false)
-            .unwrap();
-        let replaced = mb
-            .send(vec![rule("#B", "opacity", "0.1")], t0, false)
-            .expect("unread chunk 1 is replaced at once");
-        assert_eq!(replaced.seq, 2);
-        mb.got(2, 1);
-        assert_eq!(
-            mb.send(vec![rule("#C", "opacity", "0.3")], t0, false),
-            None,
-            "the script is reading, so the next waits"
-        );
-        mb.ack(2);
-        let next = mb.poll(t0, false).unwrap();
-        let m = decode(&[words(&next)], &dict()).unwrap();
-        assert_eq!(m.kind, Kind::Full);
-        assert_eq!(m.rules, [rule("#C", "opacity", "0.3")]);
-    }
-
-    #[test]
-    fn mailbox_sends_long_messages_chunk_by_chunk() {
-        let t0 = Instant::now();
-        let ms = |n| t0 + Duration::from_millis(n);
-        let mut mb = Mailbox::new("0badf00d", dict(), 9);
-        let first = mb.send(many(30), t0, false).unwrap();
-        let n = first.n;
-        assert!(n > 3, "{n}");
-        assert_eq!(mb.poll(ms(100), false), None);
-        mb.got(9, 1);
-        let second = mb.poll(ms(200), false).unwrap();
-        assert_eq!((second.seq, second.i), (9, 2));
-        assert_eq!(mb.poll(ms(300), false), None, "chunk 2 is not in yet");
-        mb.got(9, 2);
-        assert_eq!(mb.poll(ms(400), false).unwrap().i, 3);
-        assert_eq!(
-            mb.poll(ms(400) + TIMEOUT - Duration::from_millis(1), false),
-            None,
-            "the timeout counts from the latest chunk"
-        );
-        let again = mb.poll(ms(400) + TIMEOUT, false).unwrap();
-        assert_eq!((again.seq, again.i), (10, 1), "stalled: everything again");
-    }
-
-    #[test]
-    fn mailbox_timeout_sends_everything_again_as_full() {
-        let t0 = Instant::now();
-        let ms = |n| t0 + Duration::from_millis(n);
-        let mut mb = Mailbox::new("0badf00d", dict(), 1);
-        mb.send(vec![rule("#A", "opacity", "1")], t0, false);
-        mb.ack(1);
-        mb.send(
-            vec![rule("#A", "opacity", "1"), rule("#B", "opacity", "0")],
-            ms(10),
-            false,
-        );
-        assert_eq!(
-            mb.poll(ms(10) + TIMEOUT - Duration::from_millis(1), false),
-            None
-        );
-        let again = mb.poll(ms(10) + TIMEOUT, false).unwrap();
-        let m = decode(&[words(&again)], &dict()).unwrap();
-        assert_eq!(again.seq, 3);
-        assert_eq!(m.kind, Kind::Full);
-        assert_eq!(
-            m.rules,
-            [rule("#A", "opacity", "1"), rule("#B", "opacity", "0")]
-        );
-        mb.ack(2);
-        assert!(
-            mb.pending(),
-            "a late ack for the lost message changes nothing"
-        );
-        mb.ack(3);
-        assert!(!mb.pending());
-    }
-
-    #[test]
-    fn mailbox_in_pull_mode_waits_for_the_key_and_asks_for_it_once() {
-        let t0 = Instant::now();
-        let mut mb = Mailbox::new("0badf00d", dict(), 1);
-        let first = mb.send(vec![rule("#A", "opacity", "1")], t0, true).unwrap();
-        assert!(first.needs_key);
-        assert!(mb.key_pending());
-        assert_eq!(
-            mb.poll(t0 + TIMEOUT * 10, true),
-            None,
-            "chunk 1 waits for the player"
-        );
-        let replaced = mb
-            .send(vec![rule("#A", "opacity", "0.5")], t0, true)
-            .unwrap();
-        assert_eq!(replaced.seq, 2);
-        assert!(!replaced.needs_key, "the key is still owed from before");
-        mb.heard();
-        assert!(!mb.key_pending());
-        mb.ack(2);
-        let m = decode(&[words(&replaced)], &dict()).unwrap();
-        assert!(m.pull);
-        let big = mb.send(many(30), t0, true).unwrap();
-        assert!(big.needs_key);
-        mb.got(3, 1);
-        assert!(!mb.key_pending(), "the game ran the file");
-        assert_eq!(mb.poll(t0, true).unwrap().i, 2);
-        assert_eq!(
-            mb.poll(t0 + TIMEOUT, true).unwrap().i,
-            1,
-            "a stalled pull starts the message again"
-        );
+        assert_eq!(newer.seq, 6);
+        assert_eq!(parse_titles(&newer.titles).unwrap().kind, Kind::Full);
+        mb.ack(5);
+        assert!(mb.pending(), "the replaced message's ack doesn't count");
+        assert_eq!(mb.poll(t0 + TIMEOUT - Duration::from_millis(1)), None);
+        let again = mb.poll(t0 + TIMEOUT + Duration::from_millis(10)).unwrap();
+        assert_eq!(again.seq, 7);
+        assert_eq!(parse_titles(&again.titles).unwrap().kind, Kind::Full);
     }
 
     #[test]
     fn mailbox_reload_starts_from_a_full_message() {
         let t0 = Instant::now();
-        let mut mb = Mailbox::new("0badf00d", dict(), 1);
-        mb.send(vec![rule("#A", "opacity", "1")], t0, false);
-        mb.ack(1);
-        assert_eq!(mb.poll(t0, false), None);
+        let mut mb = Mailbox::new("0badf00d", 1);
+        let a = rule("#TopBar", "opacity", "0.5");
+        let first = mb.send(vec![a.clone()], t0).unwrap();
+        mb.ack(first.seq);
+        assert_eq!(mb.poll(t0), None);
         mb.reload();
-        assert!(mb.pending());
-        let again = mb.poll(t0, false).unwrap();
-        assert_eq!(decode(&[words(&again)], &dict()).unwrap().kind, Kind::Full);
+        let again = mb.poll(t0).unwrap();
+        let m = parse_titles(&again.titles).unwrap();
+        assert_eq!((m.kind, m.rules), (Kind::Full, vec![a]));
+    }
+
+    #[test]
+    fn mailbox_never_uses_seq_0() {
+        let t0 = Instant::now();
+        let mut mb = Mailbox::new("0badf00d", 0);
+        assert_eq!(mb.send(Vec::new(), t0).unwrap().seq, 1);
+        let mut mb = Mailbox::new("0badf00d", u32::MAX);
+        assert_eq!(mb.send(Vec::new(), t0).unwrap().seq, u32::MAX);
+        assert_eq!(mb.send(Vec::new(), t0).unwrap().seq, 1);
     }
 
     #[test]
@@ -1576,12 +1021,8 @@ mod tests {
                 },
             ),
             (
-                "DEADTUNE_LIVE 12 got 2 0badf00d",
-                LiveLine::Got {
-                    seq: 12,
-                    have: 2,
-                    base: "0badf00d".into(),
-                },
+                "DEADTUNE_LIVE web fetch blocked TypeError: Failed to fetch",
+                LiveLine::Web("fetch blocked TypeError: Failed to fetch".into()),
             ),
         ];
         for (line, want) in cases {
@@ -1597,29 +1038,11 @@ mod tests {
             "DEADTUNE_LIVE",
             "DEADTUNE_LIVE x ok 0badf00d",
             "DEADTUNE_LIVE 3 maybe 0badf00d",
+            "DEADTUNE_LIVE web",
             "[InputService] exec: couldn't exec '{}cfg/deadtune_hud.cfg', unable to read file",
         ] {
             assert_eq!(parse_line(line), None, "{line}");
         }
-    }
-
-    #[test]
-    fn write_cfg_writes_plain_lines_and_empties_the_file() {
-        let dir = tempfile::tempdir().unwrap();
-        write_cfg(dir.path(), &reset_cmds()[..2]).unwrap();
-        let text = std::fs::read_to_string(dir.path().join(CFG_NAME)).unwrap();
-        assert_eq!(
-            text.lines().collect::<Vec<_>>(),
-            [
-                "tv_chattimelimit \"0.2\"",
-                "tv_broadcast_spew_threshold \"0.1\"",
-            ]
-        );
-        write_cfg(dir.path(), &[]).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join(CFG_NAME)).unwrap(),
-            ""
-        );
     }
 
     #[test]
@@ -1837,9 +1260,8 @@ mod tests {
                 assert!(l.features().contains(&n.feature), "{n:?}");
                 assert!(!n.why.is_empty());
             }
-            let d = dictionary(&l).unwrap();
             let m = msg(1, Kind::Full, got.clone());
-            let back = decode(&encode(&m, &d), &d).unwrap();
+            let back = parse_titles(&titles(&m)).unwrap();
             assert_eq!(back.rules, got, "every generator's rules survive the codec");
         }
         let mut all = HudLayout::default();
@@ -1944,28 +1366,19 @@ mod tests {
     }
 
     #[test]
-    fn script_carries_the_base_and_compile_adds_it_with_the_slots() {
-        let d = dict();
-        let text = script("0badf00d", &d);
+    fn script_carries_the_base_and_compile_adds_it() {
+        let text = script("0badf00d");
         assert!(
             text.starts_with(
-                "var DT_LIVE = { base: \"0badf00d\", baseWords: [2989, 61453], ctl: \"DtLiveCtl\", ctlMax: 1048575, probe: \"DtLiveProbe\", data: [\"DtLiveD0\", "
+                "var DT_LIVE = { base: \"0badf00d\", page: \"https://simulieren.github.io/deadtune/bridge/\", port: 47613, protocol: \"DTLIVE:v1\", poll: 0.25, retry: 20, retries: 5 };\n(function () {"
             ),
             "{text}"
         );
-        assert!(text.contains("dict: [\"^transform^translateX(\", "));
-        assert!(text.contains(
-            "cfg: \"deadtune_hud\", poll: 0.25, pull: 0.3, pullTimeout: 3, webPort: 47613 };\n(function () {"
-        ));
         assert!(
-            !text.contains("GetSettingString("),
-            "no read API call, only the probe"
+            !text.contains("CitadelConCommand"),
+            "the script runs no console command"
         );
         assert_eq!(js_string("a\"b\\c\u{e9}"), "\"a\\\"b\\\\c\\u00e9\"");
-        assert!(
-            TIMEOUT.as_secs_f64() > 2.0 * PULL_SECS + 2.0 * POLL_SECS,
-            "a pull round trip fits in the timeout"
-        );
         let mut l = element_layout(&[(
             crate::hud::ElementId::Chat,
             ElementEdit {
@@ -1984,13 +1397,8 @@ mod tests {
         let patch = layout::compile(&l).unwrap();
         let edit = &patch.layouts[HUD_LAYOUT];
         assert_eq!(edit.script_includes, [format!("s2r://{OWN_SCRIPT}")]);
-        assert_eq!(edit.panels.len(), 1);
-        assert_eq!(edit.panels[0].0, Anchor::After("TopBar".into()));
-        assert_eq!(edit.panels[0].1.id(), Some(SLOTS_ID));
-        assert_eq!(
-            patch.own_files[OWN_SCRIPT],
-            script(&base_id(&l).unwrap(), &dictionary(&l).unwrap())
-        );
+        assert!(edit.panels.is_empty(), "the script makes its own web panel");
+        assert_eq!(patch.own_files[OWN_SCRIPT], script(&base_id(&l).unwrap()));
         let alone = layout::compile(&HudLayout {
             live: true,
             ..HudLayout::default()
@@ -1999,167 +1407,6 @@ mod tests {
         assert!(
             alone.is_empty(),
             "the switch alone ships nothing: Vanilla has no pak"
-        );
-    }
-
-    fn pairs(cmds: &[ConsoleCmd]) -> Vec<(String, String)> {
-        cmds.iter()
-            .map(|c| (c.name.clone(), c.value.clone()))
-            .collect()
-    }
-
-    /// The real script in `tests/fixtures/live_hud_sim.js`, a stand-in for Panorama. Skipped
-    /// where Node is missing; the Mac that builds releases has it.
-    #[test]
-    fn the_script_reads_the_sliders_quietly_and_applies_a_pulled_message() {
-        use serde_json::{Value, json};
-        if std::process::Command::new("node")
-            .arg("--version")
-            .output()
-            .is_err()
-        {
-            eprintln!("node not found; skipping the script simulation");
-            return;
-        }
-        let mut baked = HudLayout::default();
-        for (i, e) in ELEMENTS.iter().enumerate() {
-            baked.elements.insert(
-                e.id,
-                ElementEdit {
-                    offset_x: 10 + i as i32,
-                    offset_y: -3,
-                    opacity_pct: 70,
-                    ..ElementEdit::default()
-                },
-            );
-        }
-        let base = base_id(&baked).unwrap();
-        let dict = dictionary(&baked).unwrap();
-        let wanted = rules(&baked).unwrap();
-        let seq = 77;
-        let chunks = encode(
-            &Message {
-                seq,
-                base: base.clone(),
-                kind: Kind::Full,
-                pull: true,
-                rules: wanted.clone(),
-            },
-            &dict,
-        );
-        assert!(chunks.len() > 2, "{} chunks", chunks.len());
-        let panels: BTreeSet<&str> = wanted
-            .iter()
-            .filter_map(|r| r.selector.strip_prefix('#'))
-            .filter(|id| !id.contains([' ', '.', ':']))
-            .collect();
-        let scenario = json!({
-            "script": script(&base, &dict),
-            "exec": exec_line(),
-            "ctl": { "id": CTL.id, "convar": CTL.convar },
-            "data": DATA.iter().map(|s| json!({ "id": s.id, "convar": s.convar })).collect::<Vec<_>>(),
-            "probe_id": PROBE_ID,
-            "panels": panels,
-            "boot": pairs(&probe_cmds()),
-            "chunks": chunks
-                .iter()
-                .enumerate()
-                .map(|(k, words)| pairs(&chunk_cmds(seq, k + 1, words)))
-                .collect::<Vec<_>>(),
-            "ping": [[CTL.convar, ((seq + 1) << 10).to_string()]],
-        });
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("scenario.json");
-        std::fs::write(&path, scenario.to_string()).unwrap();
-        let sim = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/live_hud_sim.js"
-        );
-        let out = std::process::Command::new("node")
-            .arg(sim)
-            .arg(&path)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let report: Value = serde_json::from_slice(&out.stdout).unwrap();
-        let lines = |k: &str| -> Vec<String> {
-            report[k]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_str().unwrap().to_string())
-                .collect()
-        };
-        let hello = format!(
-            "echo DEADTUNE_LIVE hello {base} ctl=1024 raw=1.024/0 col=1024 d=1000,1001,1002,1003,1004,1005,1006,1007,1008,1009 n=10 api=missing"
-        );
-        let start = lines("start");
-        assert_eq!(start.len(), 1, "{start:?}");
-        assert!(start[0].starts_with(&hello), "{}", start[0]);
-        assert_eq!(
-            lines("idle"),
-            Vec::<String>::new(),
-            "an idle HUD prints nothing"
-        );
-        let message = lines("message");
-        let execs = message.iter().filter(|l| **l == exec_line()).count();
-        let n = chunks.len();
-        assert!(
-            (n - 1..=3 * n).contains(&execs),
-            "the script pulls each further chunk: {message:?}"
-        );
-        assert_eq!(
-            message.last().unwrap(),
-            &format!("echo DEADTUNE_LIVE {seq} ok {base}"),
-            "{message:?}"
-        );
-        for k in 1..n {
-            assert!(
-                message.contains(&format!("echo DEADTUNE_LIVE {seq} got {k} {base}")),
-                "{message:?}"
-            );
-        }
-        for r in &wanted {
-            let Some(id) = r
-                .selector
-                .strip_prefix('#')
-                .filter(|id| panels.contains(id))
-            else {
-                continue;
-            };
-            let prop = r
-                .prop
-                .split('-')
-                .enumerate()
-                .map(|(i, w)| {
-                    if i == 0 {
-                        w.to_string()
-                    } else {
-                        w[..1].to_uppercase() + &w[1..]
-                    }
-                })
-                .collect::<String>();
-            assert_eq!(
-                report["styles"][id][&prop].as_str(),
-                Some(r.value.as_str()),
-                "{id} {prop}"
-            );
-        }
-        assert_eq!(
-            lines("after"),
-            Vec::<String>::new(),
-            "quiet again after the message"
-        );
-        let ping = lines("ping");
-        assert_eq!(ping.len(), 1, "{ping:?}");
-        assert!(
-            ping[0].contains(&format!("hello {base} ctl={}", (seq + 1) << 10)),
-            "{}",
-            ping[0]
         );
     }
 
@@ -2179,19 +1426,7 @@ mod tests {
             text.contains("<include src=\"s2r://panorama/scripts/deadtune/live_hud.vjs_c\" />"),
             "{text}"
         );
-        let top = text.find("id=\"TopBar\"").unwrap();
-        let slots = text.find("id=\"DtLive\"").unwrap();
-        let map = text.find("id=\"minimap_persp\"").unwrap();
-        assert!(
-            top < slots && slots < map,
-            "the slots sit right after the top bar"
-        );
-        assert!(text.contains(
-            "<CitadelSettingsSlider id=\"DtLiveCtl\" class=\"VideoPreview\" convar=\"tv_chattimelimit\" min=\"0\" max=\"1048575\" snap=\"1\" percentage=\"false\" displayprecision=\"0\" text=\"DtLiveCtl\" textentry=\"true\" />"
-        ), "{text}");
-        assert!(text.contains("convar=\"tv_timeout\" min=\"0\" max=\"65535\""));
-        assert!(text.contains("id=\"DtLiveProbe\""));
-        assert!(text.contains("visibility: collapse;"));
+        assert!(!text.contains("DtLive"), "no hidden panels in the layout");
         let resource = inject::script_resource(&patch.own_files[OWN_SCRIPT]);
         let parsed = crate::hud::resource::Resource::parse(&resource).unwrap();
         assert!(

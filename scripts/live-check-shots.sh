@@ -8,7 +8,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 states=("$@")
 if [ ${#states[@]} -eq 0 ]; then
-  states=(showing shown asking works old_pak pending no_condebug script_error no_sliders sliders not_followed not_seen system:old_pak)
+  states=(showing shown asking works old_pak pending no_condebug script_error no_page fetch_blocked port_busy not_followed not_seen system:old_pak)
 fi
 fake="$root/target/fake-deadlock"
 game="$fake/steamapps/common/Deadlock"
@@ -22,7 +22,7 @@ bin="$root/target/fast/deadtune"
 
 for state in "${states[@]}"; do
   section=hud
-  case "$state" in old_pak|pending|*:old_pak) hud=stale ;; no_condebug|script_error|no_sliders) hud=waiting_long ;; *) hud=live ;; esac
+  case "$state" in old_pak|pending|*:old_pak) hud=stale ;; no_condebug|script_error) hud=waiting_long ;; no_page|fetch_blocked|port_busy) hud=waiting_page ;; *) hud=live ;; esac
   name="$state"
   case "$state" in
     system:*) section=system; state="${state#system:}"; name="system-$state" ;;

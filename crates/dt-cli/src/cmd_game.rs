@@ -96,13 +96,6 @@ pub fn launch(env: &Env, args: &Args) -> CliResult {
             bind_key: "F8".into(),
             live,
             version: env!("CARGO_PKG_VERSION").into(),
-            live_hud: dt_core::hud::install::read_record(&env.records())
-                .ok()
-                .flatten()
-                .is_some_and(|r| {
-                    r.features
-                        .contains(&dt_core::hud::layout::HudFeature::LivePreview)
-                }),
         }
         .write(&paths.cfg_dir)?;
         println!("Wrote {}", boot_path.display());

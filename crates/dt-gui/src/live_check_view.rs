@@ -4,11 +4,10 @@
 use std::time::{Duration, Instant};
 
 use dt_core::doctor::CheckStatus;
-use dt_core::hud::live_check::{BridgeFacts, Tone};
+use dt_core::hud::live_check::Tone;
 use eframe::egui::{self, RichText, Ui};
 
 use crate::checks_view::status_glyph;
-use crate::live::BridgeKind;
 use crate::live_check::LiveCheck;
 use crate::state::{AppState, Status};
 use crate::theme::{self, ACCENT, BAD, GOOD, TEXT, WARN, WEAK};
@@ -76,19 +75,6 @@ fn showing(ui: &mut Ui, state: &mut AppState, now: Instant) {
                     RichText::new(
                         "It is half again as big and moved toward the centre for a few seconds.",
                     )
-                    .color(WEAK),
-                );
-            } else if state.settings.bridge == BridgeKind::ExecFile {
-                let key = &state.settings.bind_key;
-                title(
-                    ui,
-                    &format!("Press {key} in game now \u{b7} {secs}"),
-                    ACCENT,
-                );
-                ui.label(
-                    RichText::new(format!(
-                        "DeadTune sent a bigger minimap. The game picks it up when you press {key}."
-                    ))
                     .color(WEAK),
                 );
             } else {
@@ -245,13 +231,9 @@ fn result(ui: &mut Ui, state: &mut AppState, done: &crate::live_check::Done) {
         Ok(path) => format!("Saved to {}", path.display()),
         Err(e) => format!("Couldn't save the report: {e}"),
     };
-    let bridge = match &done.facts.bridge {
-        BridgeFacts::Netcon => "netcon",
-        BridgeFacts::Key(_) => "key press",
-        BridgeFacts::Clipboard => "clipboard",
-    };
+    let polls = done.facts.web.counters.polls;
     ui.label(
-        RichText::new(format!("{saved} \u{b7} bridge: {bridge}"))
+        RichText::new(format!("{saved} \u{b7} bridge page requests: {polls}"))
             .small()
             .color(WEAK),
     );

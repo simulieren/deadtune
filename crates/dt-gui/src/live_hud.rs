@@ -1,18 +1,18 @@
-//! Live HUD preview in the window: which state the preview is in and what to send to the
-//! game's script when. Pure: `AppState` feeds it events and delivers what `tick` returns.
-//! Design: docs/plans/live-hud/plan.md section 5.
+//! Live HUD preview in the window: which state the preview is in and what to hand the
+//! bridge page when. Pure: `AppState` feeds it events and the page's news, and posts what
+//! `tick` returns to `web_bridge`. Design: docs/plans/live-hud/plan.md section 5.
 
 use std::time::{Duration, Instant, SystemTime};
 
-use dt_core::bridge::ConsoleCmd;
 use dt_core::bridge::conlog::{TailReport, TailState};
 use dt_core::hud::install::InstallRecord;
 use dt_core::hud::layout::{HudFeature, HudLayout};
-use dt_core::hud::live::{self, Batch, LiveLine, Mailbox, NotLive};
+use dt_core::hud::live::{self, LiveLine, Mailbox, NotLive, Post};
+use dt_core::hud::web_bridge::{CONNECTED, PageNews};
 
 /// Edits closer together than this go out as one message.
 pub const DEBOUNCE: Duration = Duration::from_millis(100);
-/// How long the script's hello may take before the page explains what to check.
+/// How long the script and its page may take before the page explains what to check.
 pub const HELLO_WAIT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,7 +26,7 @@ pub enum LiveHud {
     Stale {
         base: Option<String>,
     },
-    /// The game runs and the script has not answered yet.
+    /// The game runs and the script's page hasn't reached DeadTune yet.
     Waiting {
         since: Instant,
     },
@@ -74,7 +74,7 @@ impl StatusLine {
     }
 }
 
-/// Where the game's console log stands, for a hello that is slow to come.
+/// Where the game's console log stands, for a script that is slow to show up.
 fn log_line(logs: &[TailReport], now: Instant) -> String {
     let read = logs
         .iter()
@@ -102,20 +102,17 @@ fn log_line(logs: &[TailReport], now: Instant) -> String {
     }) {
         return format!("DeadTune can't read {}: {why}", report.path.display());
     }
-    "DeadTune can't find the game's console log. Launch Deadlock through DeadTune so -condebug \
-     is on."
+    "No word from the live script yet, and DeadTune can't find the game's console log. Press \
+     Check live preview."
         .to_string()
 }
 
-/// What `AppState` writes or sends for the preview.
+/// What `AppState` hands the bridge page.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Delivery {
-    /// A chunk for the slots: into `deadtune_hud.cfg`, and over netcon when that is on.
-    Chunk(Batch),
-    /// The slots back to the game's defaults.
-    Restore(Vec<ConsoleCmd>),
-    /// An empty `deadtune_hud.cfg`, so `exec deadtune_hud` always finds a file.
-    Blank,
+    Post(Post),
+    /// The session ended: nothing waits for the page.
+    Clear,
 }
 
 /// The layout the installed pak baked, when that pak carries the live script.
@@ -125,7 +122,6 @@ struct Baked {
     source: String,
     layout: HudLayout,
     base: String,
-    dict: Vec<String>,
     /// When the pak file was written; a game started earlier runs another one.
     written: Option<SystemTime>,
 }
@@ -168,19 +164,20 @@ pub struct LivePreview {
     on: bool,
     baked: Option<Baked>,
     game: Game,
-    /// The base the script last announced (hello, ack or wrongbase), and when.
+    /// The base the script last announced (hello, ack, wrongbase or the page), and when.
     hello: Option<(String, Instant)>,
+    /// The bridge page polled DeadTune within `CONNECTED`.
+    connected: bool,
+    last_poll: Option<Instant>,
     error: Option<String>,
     desired: HudLayout,
     not_live: Vec<NotLive>,
     session: Option<Session>,
-    /// The slots still need setting back to the game's defaults.
-    restore: bool,
-    /// The cfg still needs writing for this session.
-    blank: bool,
+    /// The bridge still holds a message of an ended session.
+    clear: bool,
     next_seq: u32,
-    /// Set by the screenshot lever: the state stays put, with this key wait.
-    fake: Option<bool>,
+    /// Set by the screenshot lever: the state stays put.
+    fake: bool,
     /// A HUD change waits for the game to close, so the game runs an older HUD.
     paks_waiting: bool,
     /// The check's bigger minimap, sent in place of the profile's layout while it lasts.
@@ -213,14 +210,15 @@ impl LivePreview {
             baked: None,
             game: Game::Unknown,
             hello: None,
+            connected: false,
+            last_poll: None,
             error: None,
             desired: HudLayout::default(),
             not_live: Vec::new(),
             session: None,
-            restore: false,
-            blank: false,
+            clear: false,
             next_seq: seed,
-            fake: None,
+            fake: false,
             paks_waiting: false,
             flash: None,
         }
@@ -245,20 +243,22 @@ impl LivePreview {
             .collect()
     }
 
-    /// A batch is waiting for its time or for the script's answer.
+    /// A message is waiting for its time or for the script's answer.
     pub fn busy(&self) -> bool {
-        self.restore
-            || self.blank
+        self.clear
             || self
                 .session
                 .as_ref()
                 .is_some_and(|s| s.due.is_some() || s.undo || s.mailbox.pending())
     }
 
-    /// The page's line for the current state. `key` is the bound key, `logs` the console
-    /// log candidates.
-    pub fn status(&self, key: &str, logs: &[TailReport], now: Instant) -> Option<StatusLine> {
-        let press = format!("Press {key} in game");
+    /// The bridge page polled DeadTune lately; it may drop away.
+    pub fn connected(&self) -> bool {
+        self.connected
+    }
+
+    /// The page's line for the current state. `logs` are the console log candidates.
+    pub fn status(&self, logs: &[TailReport], now: Instant) -> Option<StatusLine> {
         let close = "Close Deadlock, then press Launch.";
         Some(match &self.state {
             LiveHud::Off => return None,
@@ -296,18 +296,17 @@ impl LivePreview {
                 )
                 .hover(why)
             }
-            LiveHud::Waiting { .. } if self.key_pending() => {
-                StatusLine::new(format!("{press} to connect the live preview"), Tone::Weak).hover(
-                    format!(
-                        "The key runs the file DeadTune just wrote; the script answers through the \
-                 console log. {}",
-                        log_line(logs, now)
-                    ),
-                )
-            }
             LiveHud::Waiting { since } if now.saturating_duration_since(*since) < HELLO_WAIT => {
                 StatusLine::new("Looking for the live script in game\u{2026}", Tone::Weak)
             }
+            LiveHud::Waiting { .. } if self.hello.is_some() => StatusLine::new(
+                "The live script runs, but its page hasn't reached DeadTune. Press Check live preview.",
+                Tone::Warn,
+            )
+            .hover(
+                "The script opens DeadTune's bridge page from simulieren.github.io; that page \
+                 talks to DeadTune on this PC.",
+            ),
             LiveHud::Waiting { .. } => StatusLine::new(log_line(logs, now), Tone::Weak),
             LiveHud::Live { base, acked, .. } => {
                 let answer = match acked {
@@ -317,29 +316,11 @@ impl LivePreview {
                     ),
                     None => "No answer from the game yet.".to_string(),
                 };
-                let text = if self.key_pending() {
-                    format!("Live in game \u{b7} {press} to show your latest edits")
-                } else {
-                    "Live in game".to_string()
-                };
-                StatusLine::new(text, Tone::Good).hover(format!("HUD {base} is running. {answer}"))
+                StatusLine::new("Live in game", Tone::Good)
+                    .hover(format!("HUD {base} is running. {answer}"))
             }
             LiveHud::Error(message) => StatusLine::new(message.clone(), Tone::Bad),
         })
-    }
-
-    /// The installed HUD pak carries the live script and the preview is on.
-    pub fn script_installed(&self) -> bool {
-        self.on && self.baked.is_some()
-    }
-
-    /// A chunk waits in the cfg for the player to press the bound key.
-    pub fn key_pending(&self) -> bool {
-        self.fake.unwrap_or(false)
-            || self
-                .session
-                .as_ref()
-                .is_some_and(|s| s.mailbox.key_pending())
     }
 
     /// A HUD change waits for the game to close.
@@ -410,7 +391,6 @@ impl LivePreview {
             Some(Baked {
                 source: source.to_string(),
                 base: live::base_id(&layout).ok()?,
-                dict: live::dictionary(&layout).ok()?,
                 layout,
                 written,
             })
@@ -443,6 +423,32 @@ impl LivePreview {
         self.settle();
     }
 
+    /// The script said which HUD it runs. `fresh`: it just loaded, so it shows the baked
+    /// HUD or what its page restored, and everything goes again.
+    fn heard(&mut self, base: String, now: Instant, fresh: bool) {
+        self.hello = Some((base, now));
+        if fresh && let Some(session) = self.session.as_mut() {
+            session.mailbox.reload();
+            session.due = Some(now);
+        }
+        self.settle();
+    }
+
+    /// The script applied message `done`.
+    fn applied(&mut self, done: u32, now: Instant) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        session.mailbox.ack(done);
+        if let Some(flash) = self.flash.as_mut().filter(|f| f.seq == Some(done)) {
+            flash.applied = Some(now);
+        }
+        if let LiveHud::Live { seq, acked, .. } = &mut self.state {
+            *seq = Some(done);
+            *acked = Some(now);
+        }
+    }
+
     /// A console log line; only the script's own lines mean anything.
     pub fn line(&mut self, text: &str, now: Instant) {
         let Some(line) = live::parse_line(text) else {
@@ -452,45 +458,49 @@ impl LivePreview {
             return;
         }
         match line {
-            LiveLine::Hello { base, .. } => {
-                let same = self.hello.as_ref().is_some_and(|(b, _)| *b == base);
-                self.hello = Some((base, now));
-                if let (true, Some(session)) = (same, self.session.as_mut()) {
-                    session.mailbox.reload();
-                    session.due = Some(now);
-                }
-                self.settle();
-            }
-            LiveLine::WrongBase { base, .. } => {
-                if let Some(session) = self.session.as_mut() {
-                    session.mailbox.heard();
-                }
-                self.hello = Some((base, now));
-                self.settle();
-            }
-            LiveLine::Ok { seq: done, base } => {
-                if let Some(session) = self.session.as_mut()
-                    && session.mailbox.base() == base
+            LiveLine::Hello { base, .. } => self.heard(base, now, true),
+            LiveLine::WrongBase { base, .. } => self.heard(base, now, false),
+            LiveLine::Ok { seq, base } => {
+                if self
+                    .session
+                    .as_ref()
+                    .is_some_and(|s| s.mailbox.base() == base)
                 {
-                    session.mailbox.ack(done);
-                    if let Some(flash) = self.flash.as_mut().filter(|f| f.seq == Some(done)) {
-                        flash.applied = Some(now);
-                    }
-                    self.hello = Some((base, now));
-                    self.settle();
-                    if let LiveHud::Live { seq, acked, .. } = &mut self.state {
-                        *seq = Some(done);
-                        *acked = Some(now);
-                    }
+                    self.heard(base, now, false);
+                    self.applied(seq, now);
                 }
             }
-            LiveLine::Got { seq, have, base } => {
-                if let Some(session) = self.session.as_mut()
-                    && session.mailbox.base() == base
-                {
-                    session.mailbox.got(seq, have);
-                }
-            }
+            LiveLine::Web(_) => {}
+        }
+    }
+
+    /// What the bridge page did since the last call: a page that opened is a fresh script,
+    /// its polls say it is connected, and its acks count like the console's.
+    pub fn page(&mut self, news: PageNews, now: Instant) {
+        if matches!(self.game, Game::Closed) {
+            return;
+        }
+        self.last_poll = news.last_poll;
+        if let Some(base) = news.hello {
+            self.heard(base, now, true);
+        } else if let Some(base) = news.base
+            && self.hello.as_ref().is_none_or(|(b, _)| *b != base)
+        {
+            self.heard(base, now, false);
+        }
+        for seq in news.acked {
+            self.applied(seq, now);
+        }
+        self.reconnect(now);
+    }
+
+    fn reconnect(&mut self, now: Instant) {
+        let connected = self
+            .last_poll
+            .is_some_and(|t| now.saturating_duration_since(t) < CONNECTED);
+        if connected != self.connected {
+            self.connected = connected;
+            self.settle();
         }
     }
 
@@ -522,7 +532,7 @@ impl LivePreview {
         }
     }
 
-    /// Delivering failed; `message` is one plain sentence.
+    /// Something went wrong; `message` is one plain sentence.
     pub fn fail(&mut self, message: String) {
         if self.error.as_ref() == Some(&message) {
             return;
@@ -531,25 +541,20 @@ impl LivePreview {
         self.settle();
     }
 
-    /// What to deliver now, if anything. `pull`: the game reads chunks through the bound
-    /// key and the script's own execs, not over netcon.
-    pub fn tick(&mut self, now: Instant, pull: bool) -> Option<Delivery> {
-        if std::mem::take(&mut self.restore) {
-            return Some(Delivery::Restore(live::reset_cmds()));
-        }
-        if std::mem::take(&mut self.blank) {
-            return Some(Delivery::Blank);
+    /// What to hand the bridge page now, if anything.
+    pub fn tick(&mut self, now: Instant) -> Option<Delivery> {
+        self.reconnect(now);
+        if std::mem::take(&mut self.clear) {
+            return Some(Delivery::Clear);
         }
         let baked = self.baked.as_ref()?;
         let session = self.session.as_mut()?;
         if !session.undo && session.due.is_none_or(|due| now < due) {
-            let batch = session.mailbox.poll(now, pull);
-            if let (Some(flash), Some(b)) = (self.flash.as_mut(), &batch)
-                && b.i == 1
-            {
-                flash.seq = Some(b.seq);
+            let post = session.mailbox.poll(now);
+            if let (Some(flash), Some(p)) = (self.flash.as_mut(), &post) {
+                flash.seq = Some(p.seq);
             }
-            return batch.map(Delivery::Chunk);
+            return post.map(Delivery::Post);
         }
         let undo = std::mem::take(&mut session.undo);
         session.due = None;
@@ -561,23 +566,17 @@ impl LivePreview {
         };
         match rules {
             Ok(rules) => {
-                let batch = session.mailbox.send(rules, now, pull);
-                if let (Some(flash), Some(b)) = (self.flash.as_mut(), &batch) {
-                    flash.seq = Some(b.seq);
+                let post = session.mailbox.send(rules, now);
+                if let (Some(flash), Some(p)) = (self.flash.as_mut(), &post) {
+                    flash.seq = Some(p.seq);
                 }
-                batch.map(Delivery::Chunk)
+                post.map(Delivery::Post)
             }
             Err(e) => {
                 self.fail(format!("The live preview can't read this layout: {e}"));
-                self.tick(now, pull)
+                self.tick(now)
             }
         }
-    }
-
-    /// What to write when DeadTune closes: the slots back to their defaults, if a session
-    /// may have set them.
-    pub fn exit_cmds(&self) -> Option<Vec<ConsoleCmd>> {
-        (self.restore || self.session.is_some()).then(live::reset_cmds)
     }
 
     /// The check's bigger minimap as sent, for the screenshot lever.
@@ -589,18 +588,20 @@ impl LivePreview {
         });
     }
 
-    /// Puts the preview in `state` without a game, for the screenshot lever.
-    pub fn inject(&mut self, state: LiveHud, key_pending: bool) {
+    /// Puts the preview in `state` without a game, for the screenshot lever; `heard` is
+    /// the base the script announced, if it did.
+    pub fn inject(&mut self, state: LiveHud, heard: Option<&str>) {
         self.on = state != LiveHud::Off;
         self.session = None;
-        self.fake = Some(key_pending);
+        self.fake = true;
+        self.hello = heard.map(|base| (base.to_string(), Instant::now()));
         self.state = state;
     }
 
     /// The state the inputs call for. A session runs while the state is `Waiting` or
-    /// `Live` and ends on leaving them, owing the restore batch.
+    /// `Live`; leaving them clears what the bridge holds.
     fn settle(&mut self) {
-        if self.fake.is_some() {
+        if self.fake {
             return;
         }
         let next = match (&self.baked, self.game.running(), &self.hello) {
@@ -619,8 +620,7 @@ impl LivePreview {
             {
                 LiveHud::Stale { base: None }
             }
-            (Some(_), Some(game), None) => LiveHud::Waiting { since: game.since },
-            (Some(baked), Some(_), Some(_)) => match &self.state {
+            (Some(baked), Some(_), Some(_)) if self.connected => match &self.state {
                 LiveHud::Live { base, .. } if *base == baked.base => return,
                 _ => LiveHud::Live {
                     base: baked.base.clone(),
@@ -628,6 +628,10 @@ impl LivePreview {
                     acked: None,
                     undone: false,
                 },
+            },
+            (Some(_), Some(game), _) => match &self.state {
+                LiveHud::Waiting { since } => LiveHud::Waiting { since: *since },
+                _ => LiveHud::Waiting { since: game.since },
             },
         };
         let in_session = matches!(next, LiveHud::Waiting { .. } | LiveHud::Live { .. });
@@ -637,16 +641,15 @@ impl LivePreview {
                 // Sessions of one run never reuse a seq: the script skips the seq it applied last.
                 self.next_seq = self.next_seq.wrapping_add(97);
                 self.session = Some(Session {
-                    mailbox: Mailbox::new(&baked.base, baked.dict.clone(), first_seq),
+                    mailbox: Mailbox::new(&baked.base, first_seq),
                     due: self.game.running().map(|game| game.since),
                     undo: false,
                 });
-                self.blank = true;
             }
             (false, Some(_), _) => {
                 self.session = None;
                 self.flash = None;
-                self.restore = true;
+                self.clear = true;
             }
             _ => {}
         }
@@ -659,7 +662,7 @@ mod tests {
     use super::*;
     use dt_core::hud::elements::ElementId;
     use dt_core::hud::layout::ElementEdit;
-    use dt_core::hud::live::{DATA, Kind};
+    use dt_core::hud::live::Kind;
 
     fn moved(x: i32) -> HudLayout {
         let mut layout = HudLayout::default();
@@ -689,69 +692,58 @@ mod tests {
         }
     }
 
+    fn base(layout: &HudLayout) -> String {
+        live::base_id(layout).unwrap()
+    }
+
     fn hello(layout: &HudLayout) -> String {
         format!(
-            "[Console] DEADTUNE_LIVE hello {} ctl=1024 d=1000,1001 n=11 gi=0",
-            live::base_id(layout).unwrap()
+            "[PanoramaScript] DEADTUNE_LIVE hello {} web=panel",
+            base(layout)
         )
     }
 
     fn ok(seq: u32, layout: &HudLayout) -> String {
-        format!("DEADTUNE_LIVE {seq} ok {}", live::base_id(layout).unwrap())
+        format!("DEADTUNE_LIVE {seq} ok {}", base(layout))
     }
 
-    fn chunk(d: Option<Delivery>) -> Batch {
+    /// The page polled at `now`; `hello` when it just opened, with `acked` acks.
+    fn page(p: &mut LivePreview, layout: &HudLayout, now: Instant, hello: bool, acked: &[u32]) {
+        p.page(
+            PageNews {
+                hello: hello.then(|| base(layout)),
+                base: Some(base(layout)),
+                last_poll: Some(now),
+                acked: acked.to_vec(),
+            },
+            now,
+        );
+    }
+
+    fn post(d: Option<Delivery>) -> Post {
         match d {
-            Some(Delivery::Chunk(b)) => b,
-            other => panic!("expected a chunk, got {other:?}"),
+            Some(Delivery::Post(p)) => p,
+            other => panic!("expected a post, got {other:?}"),
         }
     }
 
-    fn message(baked: &HudLayout, batch: &Batch) -> live::Message {
-        let words: Vec<u32> = batch.cmds[1..]
-            .iter()
-            .map(|c| c.value.parse().unwrap())
-            .collect();
-        live::decode(&[words], &live::dictionary(baked).unwrap()).unwrap()
+    fn message(p: &Post) -> live::Message {
+        live::parse_titles(&p.titles).unwrap()
     }
 
-    /// Every chunk of the message `first` opens, as the script would collect them.
-    fn whole(p: &mut LivePreview, first: Batch, baked: &HudLayout, now: Instant) -> live::Message {
-        let base = live::base_id(baked).unwrap();
-        let mut chunks = vec![first.clone()];
-        while chunks.len() < first.n {
-            p.line(
-                &format!("DEADTUNE_LIVE {} got {} {base}", first.seq, chunks.len()),
-                now,
-            );
-            chunks.push(chunk(p.tick(now, false)));
-        }
-        let words: Vec<Vec<u32>> = chunks
-            .iter()
-            .map(|b| {
-                b.cmds[1..]
-                    .iter()
-                    .map(|c| c.value.parse().unwrap())
-                    .collect()
-            })
-            .collect();
-        live::decode(&words, &live::dictionary(baked).unwrap()).unwrap()
-    }
-
-    /// A preview on a running game whose script said hello for `baked`, with its first
-    /// message delivered and acked, so the next tick starts clean.
+    /// A preview on a running game whose page opened for `baked`, with its first message
+    /// applied, so the next tick starts clean.
     fn live_on(baked: &HudLayout, t0: Instant) -> LivePreview {
         let mut p = LivePreview::new(100);
         p.toggle(true);
         p.edit(baked, t0);
         p.record(Some(&record_of(baked, true)), None);
         p.game(true, None, t0);
-        assert_eq!(p.tick(t0, false), Some(Delivery::Blank));
-        p.line(&hello(baked), t0);
-        let first = chunk(p.tick(t0, false));
-        assert_eq!(first.cmds.len(), 1 + DATA.len());
-        p.line(&ok(100, baked), t0);
-        assert_eq!(p.tick(t0 + Duration::from_secs(5), false), None);
+        page(&mut p, baked, t0, true, &[]);
+        let first = post(p.tick(t0));
+        assert_eq!(message(&first).kind, Kind::Full);
+        page(&mut p, baked, t0, false, &[first.seq]);
+        assert_eq!(p.tick(t0 + Duration::from_secs(1)), None);
         p
     }
 
@@ -766,7 +758,7 @@ mod tests {
     }
 
     #[test]
-    fn record_with_the_script_waits_for_the_game_then_sends_and_waits_for_an_answer() {
+    fn the_page_makes_the_preview_live_with_no_key_and_no_log() {
         let t0 = Instant::now();
         let baked = moved(10);
         let mut p = LivePreview::new(1);
@@ -776,35 +768,54 @@ mod tests {
         assert_eq!(p.state(), &LiveHud::GameClosed);
         p.game(true, None, t0);
         assert_eq!(p.state(), &LiveHud::Waiting { since: t0 });
-        assert_eq!(
-            p.tick(t0, true),
-            Some(Delivery::Blank),
-            "the cfg exists from now on"
-        );
-        let first = chunk(p.tick(t0, true));
+        let early = post(p.tick(t0));
+        assert_eq!(message(&early).kind, Kind::Full);
+        let t1 = t0 + Duration::from_secs(2);
+        page(&mut p, &baked, t1, true, &[]);
         assert!(
-            first.needs_key,
-            "the first message asks the game, through the key"
-        );
-        assert!(p.key_pending());
-        p.game(true, None, t0 + Duration::from_secs(3));
-        assert_eq!(p.state(), &LiveHud::Waiting { since: t0 }, "idempotent");
-        p.record(Some(&record_of(&baked, true)), None);
-        assert_eq!(p.state(), &LiveHud::Waiting { since: t0 });
-        p.line(&ok(1, &baked), t0 + Duration::from_secs(4));
-        assert!(
-            matches!(p.state(), LiveHud::Live { seq: Some(1), .. }),
-            "the ack is the hello: {:?}",
+            matches!(p.state(), LiveHud::Live { seq: None, .. }),
+            "{:?}",
             p.state()
         );
-        assert!(!p.key_pending());
-        p.game(false, None, t0 + Duration::from_secs(5));
-        assert_eq!(p.state(), &LiveHud::GameClosed);
-        assert_eq!(
-            p.tick(t0, true),
-            Some(Delivery::Restore(live::reset_cmds())),
-            "the slots go back"
+        let again = post(p.tick(t1));
+        assert!(again.seq > early.seq, "a new page gets everything again");
+        assert_eq!(message(&again).kind, Kind::Full);
+        page(&mut p, &baked, t1, false, &[again.seq]);
+        assert!(
+            matches!(p.state(), LiveHud::Live { seq: Some(s), acked: Some(_), .. } if *s == again.seq)
         );
+        assert!(!p.busy());
+        p.game(false, None, t1);
+        assert_eq!(p.state(), &LiveHud::GameClosed);
+        assert_eq!(p.tick(t1), Some(Delivery::Clear), "the bridge lets go");
+        assert_eq!(p.tick(t1), None, "once");
+    }
+
+    #[test]
+    fn a_console_hello_alone_waits_for_the_page_and_a_silent_page_drops_back() {
+        let t0 = Instant::now();
+        let baked = moved(10);
+        let mut p = LivePreview::new(1);
+        p.toggle(true);
+        p.record(Some(&record_of(&baked, true)), None);
+        p.game(true, None, t0);
+        p.line(&hello(&baked), t0);
+        assert_eq!(p.state(), &LiveHud::Waiting { since: t0 });
+        let later = t0 + HELLO_WAIT;
+        assert_eq!(
+            p.status(&[], later).unwrap().text,
+            "The live script runs, but its page hasn't reached DeadTune. Press Check live preview."
+        );
+        page(&mut p, &baked, later, false, &[]);
+        assert!(matches!(p.state(), LiveHud::Live { .. }));
+        assert!(p.connected());
+        p.tick(later + CONNECTED);
+        assert_eq!(
+            p.state(),
+            &LiveHud::Waiting { since: t0 },
+            "the page went quiet"
+        );
+        assert!(!p.connected());
     }
 
     #[test]
@@ -817,45 +828,33 @@ mod tests {
         p.record(Some(&record_of(&baked, true)), Some(written));
         p.game(true, Some(written - Duration::from_secs(60)), t0);
         assert_eq!(p.state(), &LiveHud::Stale { base: None });
-        assert_eq!(p.tick(t0, true), None, "nothing is sent to an older HUD");
+        assert_eq!(p.tick(t0), None, "nothing is sent to an older HUD");
         p.game(false, None, t0);
         p.game(true, Some(written + Duration::from_secs(60)), t0);
         assert_eq!(p.state(), &LiveHud::Waiting { since: t0 });
     }
 
     #[test]
-    fn hello_with_the_installed_base_is_live_and_another_is_stale() {
+    fn another_base_from_the_page_or_the_log_is_stale() {
         let t0 = Instant::now();
         let baked = moved(10);
         let mut p = LivePreview::new(1);
         p.toggle(true);
         p.record(Some(&record_of(&baked, true)), None);
         p.game(true, None, t0);
-        p.line(&hello(&moved(99)), t0);
+        page(&mut p, &moved(99), t0, true, &[]);
         assert_eq!(
             p.state(),
             &LiveHud::Stale {
-                base: Some(live::base_id(&moved(99)).unwrap())
+                base: Some(base(&moved(99)))
             }
         );
-        assert_eq!(
-            p.tick(t0, false),
-            Some(Delivery::Restore(live::reset_cmds())),
-            "leaving the session restores the slots"
-        );
-        p.line(&hello(&baked), t0);
-        let live = LiveHud::Live {
-            base: live::base_id(&baked).unwrap(),
-            seq: None,
-            acked: None,
-            undone: false,
-        };
-        assert_eq!(p.state(), &live);
-        assert_eq!(p.tick(t0, false), Some(Delivery::Blank));
-        let first = chunk(p.tick(t0, false));
-        assert_eq!(message(&baked, &first).kind, Kind::Full);
+        assert_eq!(p.tick(t0), Some(Delivery::Clear), "leaving the session");
+        page(&mut p, &baked, t0, true, &[]);
+        assert!(matches!(p.state(), LiveHud::Live { .. }));
+        assert_eq!(message(&post(p.tick(t0))).kind, Kind::Full);
         p.line(
-            "[Console] DEADTUNE_LIVE 1 wrongbase cafe0001\r",
+            "[PanoramaScript] DEADTUNE_LIVE 1 wrongbase cafe0001\r",
             t0 + Duration::from_secs(1),
         );
         assert_eq!(
@@ -868,15 +867,14 @@ mod tests {
     }
 
     #[test]
-    fn simons_hello_line_counts_even_before_the_first_game_poll() {
+    fn a_page_that_was_open_before_deadtune_started_counts_without_a_hello() {
         let t0 = Instant::now();
         let baked = moved(10);
-        let base = live::base_id(&baked).unwrap();
         let mut p = LivePreview::new(1);
         p.toggle(true);
         p.record(Some(&record_of(&baked, true)), None);
-        p.line(&format!("[Console] DEADTUNE_LIVE hello {base}\r"), t0);
-        assert_eq!(p.state(), &LiveHud::GameClosed);
+        page(&mut p, &baked, t0, false, &[]);
+        assert_eq!(p.state(), &LiveHud::GameClosed, "no game poll yet");
         p.game(true, None, t0);
         assert!(
             matches!(p.state(), LiveHud::Live { .. }),
@@ -894,29 +892,18 @@ mod tests {
         p.record(Some(&record_of(&baked, true)), None);
         p.game(false, None, t0);
         p.line(&hello(&baked), t0);
+        page(&mut p, &baked, t0, true, &[]);
         p.game(true, None, t0);
         assert_eq!(p.state(), &LiveHud::Waiting { since: t0 });
-        p.line(&hello(&baked), t0);
+        page(&mut p, &baked, t0, true, &[]);
         assert!(matches!(p.state(), LiveHud::Live { .. }));
         p.game(false, None, t0);
         p.game(true, None, t0);
         assert_eq!(
             p.state(),
             &LiveHud::Waiting { since: t0 },
-            "a new game needs its own hello"
+            "a new game needs its own page"
         );
-    }
-
-    #[test]
-    fn a_second_hello_means_the_script_reloaded_and_everything_goes_again() {
-        let t0 = Instant::now();
-        let baked = moved(10);
-        let mut p = live_on(&baked, t0);
-        let t1 = t0 + Duration::from_secs(30);
-        p.line(&hello(&baked), t1);
-        assert!(matches!(p.state(), LiveHud::Live { .. }));
-        let again = chunk(p.tick(t1, false));
-        assert_eq!(message(&baked, &again).kind, Kind::Full);
     }
 
     #[test]
@@ -924,85 +911,62 @@ mod tests {
         let t0 = Instant::now();
         let baked = moved(10);
         let mut p = live_on(&baked, t0);
-        let t1 = t0 + Duration::from_secs(10);
+        let t1 = t0 + Duration::from_secs(1);
         p.edit(&moved(20), t1);
         p.edit(&moved(30), t1 + Duration::from_millis(50));
         assert_eq!(
-            p.tick(t1 + Duration::from_millis(120), false),
+            p.tick(t1 + Duration::from_millis(120)),
             None,
             "still editing"
         );
-        let batch = chunk(p.tick(t1 + Duration::from_millis(160), false));
-        let m = message(&baked, &batch);
+        let sent = post(p.tick(t1 + Duration::from_millis(160)));
+        let m = message(&sent);
         assert_eq!(m.kind, Kind::Patch);
         assert_eq!(m.rules.len(), 1);
         assert_eq!(m.rules[0].value, "translateX(30px) translateY(0px)");
-        assert_eq!(
-            p.tick(t1 + Duration::from_millis(200), false),
-            None,
-            "sent once"
-        );
+        assert_eq!(p.tick(t1 + Duration::from_millis(200)), None, "sent once");
         p.edit(&moved(30), t1 + Duration::from_millis(300));
         assert_eq!(
-            p.tick(t1 + Duration::from_millis(500), false),
+            p.tick(t1 + Duration::from_millis(500)),
             None,
             "the same layout is not an edit"
         );
     }
 
     #[test]
-    fn the_next_message_waits_for_the_ack_unless_the_last_was_never_read() {
+    fn a_newer_edit_replaces_the_message_in_flight_and_either_ack_counts() {
         let t0 = Instant::now();
         let baked = moved(10);
         let mut p = live_on(&baked, t0);
-        let t1 = t0 + Duration::from_secs(10);
+        let t1 = t0 + Duration::from_secs(1);
         p.edit(&moved(20), t1);
-        let first = chunk(p.tick(t1 + DEBOUNCE, false));
+        let first = post(p.tick(t1 + DEBOUNCE));
         p.edit(&moved(30), t1 + DEBOUNCE);
-        let replaced = chunk(p.tick(t1 + DEBOUNCE * 3, false));
-        assert_ne!(replaced.seq, first.seq, "an unread message is replaced");
-        p.line(
-            &format!(
-                "DEADTUNE_LIVE {} got 1 {}",
-                replaced.seq,
-                live::base_id(&baked).unwrap()
-            ),
-            t1 + DEBOUNCE * 3,
-        );
-        p.edit(&moved(40), t1 + DEBOUNCE * 3);
+        let second = post(p.tick(t1 + DEBOUNCE * 3));
+        assert_eq!(second.seq, first.seq + 1);
         assert_eq!(
-            p.tick(t1 + DEBOUNCE * 5, false),
-            None,
-            "the script is reading, so the next waits"
+            message(&second).rules[0].value,
+            "translateX(30px) translateY(0px)"
         );
-        p.line(&ok(replaced.seq, &baked), t1 + DEBOUNCE * 5);
-        assert!(matches!(
-            p.state(),
-            LiveHud::Live {
-                seq: Some(_),
-                acked: Some(_),
-                ..
-            }
-        ));
-        let next = chunk(p.tick(t1 + DEBOUNCE * 5, false));
-        assert_eq!(next.seq, replaced.seq + 1);
+        p.line(&ok(second.seq, &baked), t1 + DEBOUNCE * 3);
+        assert!(matches!(p.state(), LiveHud::Live { seq: Some(s), .. } if *s == second.seq));
+        assert!(!p.busy(), "the console's ok counts like the page's");
     }
 
     #[test]
-    fn undo_sends_the_baked_rules_as_a_full_message() {
+    fn undo_sends_the_baked_rules() {
         let t0 = Instant::now();
         let baked = moved(10);
         let mut p = live_on(&baked, t0);
-        let t1 = t0 + Duration::from_secs(10);
+        let t1 = t0 + Duration::from_secs(1);
         p.edit(&moved(20), t1);
-        let sent = chunk(p.tick(t1 + DEBOUNCE, false));
-        p.line(&ok(sent.seq, &baked), t1 + DEBOUNCE);
+        let sent = post(p.tick(t1 + DEBOUNCE));
+        page(&mut p, &baked, t1 + DEBOUNCE, false, &[sent.seq]);
         p.undo();
         assert!(matches!(p.state(), LiveHud::Live { undone: true, .. }));
-        let batch = chunk(p.tick(t1 + DEBOUNCE, false));
-        let msg = message(&baked, &batch);
-        assert_eq!(msg.kind, Kind::Patch, "the keys stay, only values change");
-        assert_eq!(msg.rules, live::rules(&baked).unwrap());
+        let m = message(&post(p.tick(t1 + DEBOUNCE)));
+        assert_eq!(m.kind, Kind::Patch, "the keys stay, only values change");
+        assert_eq!(m.rules, live::rules(&baked).unwrap());
         p.edit(&moved(40), t1 + Duration::from_secs(1));
         assert!(matches!(p.state(), LiveHud::Live { undone: false, .. }));
     }
@@ -1012,112 +976,40 @@ mod tests {
         let t0 = Instant::now();
         let baked = HudLayout::default();
         let mut p = live_on(&baked, t0);
-        let t1 = t0 + Duration::from_secs(10);
+        let t1 = t0 + Duration::from_secs(1);
         p.edit(&moved(20), t1);
-        let sent = chunk(p.tick(t1 + DEBOUNCE, false));
-        p.line(&ok(sent.seq, &baked), t1 + DEBOUNCE);
+        let sent = post(p.tick(t1 + DEBOUNCE));
+        page(&mut p, &baked, t1 + DEBOUNCE, false, &[sent.seq]);
         p.edit(&baked, t1 + DEBOUNCE);
-        let batch = chunk(p.tick(t1 + DEBOUNCE * 2, false));
-        assert_eq!(message(&baked, &batch).kind, Kind::Full);
+        assert_eq!(message(&post(p.tick(t1 + DEBOUNCE * 2))).kind, Kind::Full);
     }
 
     #[test]
-    fn game_stopping_restores_the_slots_once() {
-        let t0 = Instant::now();
-        let baked = moved(10);
-        let mut p = live_on(&baked, t0);
-        let t1 = t0 + Duration::from_secs(10);
-        p.game(false, None, t1);
-        assert_eq!(p.state(), &LiveHud::GameClosed);
-        assert_eq!(
-            p.tick(t1, false),
-            Some(Delivery::Restore(live::reset_cmds()))
-        );
-        assert_eq!(p.tick(t1, false), None, "once");
-        p.game(false, None, t1);
-        assert_eq!(p.tick(t1, false), None, "idempotent");
-    }
-
-    #[test]
-    fn toggling_off_while_live_restores() {
+    fn toggling_off_while_live_clears_the_bridge() {
         let t0 = Instant::now();
         let baked = moved(10);
         let mut p = live_on(&baked, t0);
         p.toggle(false);
         assert_eq!(p.state(), &LiveHud::Off);
-        assert_eq!(
-            p.tick(t0, false),
-            Some(Delivery::Restore(live::reset_cmds()))
-        );
+        assert_eq!(p.tick(t0), Some(Delivery::Clear));
         p.toggle(false);
-        assert_eq!(p.tick(t0, false), None);
-        assert_eq!(p.exit_cmds(), None);
+        assert_eq!(p.tick(t0), None);
     }
 
     #[test]
-    fn a_failed_write_is_an_error_until_the_preview_is_turned_off() {
+    fn an_error_holds_until_the_preview_is_turned_off() {
         let t0 = Instant::now();
         let baked = moved(10);
         let mut p = live_on(&baked, t0);
-        p.fail("Couldn't write cfg".into());
-        assert_eq!(p.state(), &LiveHud::Error("Couldn't write cfg".into()));
+        p.fail("The live preview can't read this layout".into());
         assert_eq!(
-            p.tick(t0, false),
-            Some(Delivery::Restore(live::reset_cmds())),
-            "leaving live restores"
+            p.state(),
+            &LiveHud::Error("The live preview can't read this layout".into())
         );
+        assert_eq!(p.tick(t0), Some(Delivery::Clear));
         p.toggle(false);
         p.toggle(true);
         assert!(matches!(p.state(), LiveHud::Live { .. }));
-    }
-
-    #[test]
-    fn long_messages_go_in_chunks_as_the_script_reports_them() {
-        let t0 = Instant::now();
-        let baked = HudLayout::default();
-        let mut p = live_on(&baked, t0);
-        let mut big = baked.clone();
-        for (i, id) in [
-            ElementId::TopBar,
-            ElementId::Minimap,
-            ElementId::HealthAndAmmo,
-            ElementId::AbilitySlots,
-            ElementId::ItemSlots,
-            ElementId::Chat,
-            ElementId::KillFeed,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            big.elements.insert(
-                id,
-                ElementEdit {
-                    offset_x: 10 + i as i32,
-                    offset_y: -20,
-                    scale_pct: 120,
-                    opacity_pct: 80,
-                    ..ElementEdit::default()
-                },
-            );
-        }
-        let t1 = t0 + Duration::from_secs(10);
-        p.edit(&big, t1);
-        let first = chunk(p.tick(t1 + DEBOUNCE, true));
-        assert!(first.n > 1, "{} chunks", first.n);
-        assert!(first.needs_key);
-        assert_eq!(p.tick(t1 + DEBOUNCE, true), None);
-        p.line(
-            &format!(
-                "DEADTUNE_LIVE {} got 1 {}",
-                first.seq,
-                live::base_id(&baked).unwrap()
-            ),
-            t1 + DEBOUNCE,
-        );
-        assert!(!p.key_pending(), "the game ran the file");
-        let second = chunk(p.tick(t1 + DEBOUNCE, true));
-        assert_eq!((second.seq, second.i), (first.seq, 2));
-        assert!(!second.needs_key, "the script pulls the rest itself");
     }
 
     #[test]
@@ -1125,8 +1017,7 @@ mod tests {
         use std::path::PathBuf;
         let t0 = Instant::now();
         let baked = moved(10);
-        let text =
-            |p: &LivePreview, logs: &[TailReport], now| p.status("F8", logs, now).map(|l| l.text);
+        let text = |p: &LivePreview, logs: &[TailReport], now| p.status(logs, now).map(|l| l.text);
         let mut p = LivePreview::new(1);
         assert_eq!(text(&p, &[], t0), None);
         p.toggle(true);
@@ -1163,7 +1054,7 @@ mod tests {
         assert!(
             text(&p, &[], later)
                 .unwrap()
-                .contains("Launch Deadlock through DeadTune"),
+                .contains("can't find the game's console log. Press Check live preview."),
             "no log at all"
         );
         let log = TailReport {
@@ -1177,15 +1068,7 @@ mod tests {
             text(&p, std::slice::from_ref(&log), later).unwrap(),
             r"No word from the live script yet. DeadTune reads C:\Deadlock\game\citadel\console.log and its last line came 3 s ago."
         );
-        assert_eq!(p.tick(later, true), Some(Delivery::Blank));
-        chunk(p.tick(later, true));
-        assert_eq!(
-            text(&p, &[], later).unwrap(),
-            "Press F8 in game to connect the live preview"
-        );
-        p.line(&hello(&baked), later);
-        assert!(text(&p, &[], later).unwrap().starts_with("Live in game"));
-        p.line(&ok(1, &baked), later);
+        page(&mut p, &baked, later, true, &[]);
         assert_eq!(text(&p, &[], later).unwrap(), "Live in game");
     }
 
@@ -1195,15 +1078,15 @@ mod tests {
         let baked = moved(10);
         let mut p = live_on(&baked, t0);
         let big = dt_core::hud::live_check::test_layout(&baked);
-        assert!(p.flash(big.clone(), t0));
-        let sent = chunk(p.tick(t0, false));
-        let msg = whole(&mut p, sent.clone(), &baked, t0);
+        assert!(p.flash(big, t0));
+        let sent = post(p.tick(t0));
         assert!(
-            msg.rules
+            message(&sent)
+                .rules
                 .iter()
                 .any(|r| r.value.contains("translateX(-150px)")),
             "{:?}",
-            msg.rules
+            message(&sent).rules
         );
         assert_eq!(
             p.flash_state(),
@@ -1213,18 +1096,17 @@ mod tests {
             })
         );
         let t1 = t0 + Duration::from_secs(1);
-        p.line(&ok(sent.seq, &baked), t1);
+        page(&mut p, &baked, t1, false, &[sent.seq]);
         assert_eq!(p.flash_state().unwrap().applied, Some(t1));
         p.end_flash(t1);
         assert_eq!(p.flash_state(), None);
-        let back = chunk(p.tick(t1, false));
-        let msg = whole(&mut p, back, &baked, t1);
+        let back = message(&post(p.tick(t1)));
         assert!(
-            msg.rules
+            back.rules
                 .iter()
                 .any(|r| r.value == "translateX(10px) translateY(0px)"),
             "the profile's layout again: {:?}",
-            msg.rules
+            back.rules
         );
     }
 
